@@ -6,14 +6,13 @@ import {
   Kanban,
   CheckSquare,
   Calendar,
-  Search,
   BarChart3,
+  Megaphone,
+  WandSparkles,
+  FileText,
   UsersRound,
-  ScrollText,
-  Bell,
-  Radio,
-  ShieldCheck,
   Settings,
+  MessageCircle,
 } from "lucide-react";
 
 const workspaceNav = [
@@ -24,19 +23,12 @@ const workspaceNav = [
   { label: "Pipeline", href: "/pipeline", icon: Kanban },
   { label: "Tasks", href: "/tasks", icon: CheckSquare },
   { label: "Calendar", href: "/calendar", icon: Calendar },
-  { label: "Search", href: "/search", icon: Search },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
-];
-
-const managementNav = [
+  { label: "Campaigns", href: "/search", icon: Megaphone },
+  { label: "Automation", href: "/notifications", icon: WandSparkles },
+  { label: "Reports", href: "/audit-log", icon: FileText },
   { label: "Team", href: "/team", icon: UsersRound },
-  { label: "Audit Log", href: "/audit-log", icon: ScrollText },
-  { label: "Notifications", href: "/notifications", icon: Bell },
-];
-
-const adminNav = [
-  { label: "WhatsApp Connection", href: "/settings/whatsapp", icon: Radio },
-  { label: "Roles & Permissions", href: "/settings/roles", icon: ShieldCheck },
+  { label: "WhatsApp Accounts", href: "/settings/whatsapp", icon: MessageCircle },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -48,18 +40,18 @@ function NavSection({
   items: typeof workspaceNav;
 }) {
   return (
-    <div className="mb-6">
-      <p className="px-3 mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
+    <div className="mb-5">
+      <p className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-white/35">
         {title}
       </p>
-      <ul className="space-y-0.5">
+      <ul className="space-y-1">
         {items.map(({ label, href, icon: Icon }) => (
           <li key={href}>
             <Link
               to={href}
-              className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors"
+              className="flex items-center gap-3 rounded-xl px-3 py-2.25 text-[13px] font-medium text-white/72 transition-colors hover:bg-white/6 hover:text-white"
             >
-              <Icon size={16} strokeWidth={2} />
+              <Icon size={15} strokeWidth={2} />
               <span>{label}</span>
             </Link>
           </li>
@@ -71,18 +63,36 @@ function NavSection({
 
 export function Sidebar() {
   return (
-    <aside className="hidden md:flex md:flex-col w-[248px] shrink-0 border-r border-border-muted bg-sidebar h-screen sticky top-0 overflow-y-auto px-3 py-4">
-      <div className="flex items-center gap-2 px-3 mb-6">
-        <div className="h-7 w-7 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
-          W
+    <aside className="hidden md:flex md:flex-col w-[248px] shrink-0 border-r border-white/8 bg-[#091017] h-screen sticky top-0 overflow-y-auto px-3 py-3.5 text-white shadow-[inset_-1px_0_0_rgba(255,255,255,0.03)]">
+      <div className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#25d366] text-sm font-black text-[#06120a] shadow-[0_0_0_4px_rgba(37,211,102,0.12)]">
+            W
+          </div>
+          <span className="font-semibold text-[15px] tracking-[-0.02em]">
+            WA CRM
+          </span>
         </div>
-        <span className="font-semibold text-text-primary text-[15px]">
-          WhatsApp CRM
-        </span>
+        <button type="button" className="rounded-lg p-2 text-white/45 hover:bg-white/5 hover:text-white">
+          <Settings size={16} />
+        </button>
       </div>
-      <NavSection title="Workspace" items={workspaceNav} />
-      <NavSection title="Management" items={managementNav} />
-      <NavSection title="Administration" items={adminNav} />
+      <div className="mt-2.5 px-3">
+        <NavSection title="Main Menu" items={workspaceNav} />
+      </div>
+      <div className="mt-auto px-3 pb-2">
+        <div className="rounded-2xl border border-white/8 bg-white/4 p-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#2ecf6e] to-[#167a3f] font-semibold text-white">
+              AJ
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-white">Alex Johnson</p>
+              <p className="text-xs text-white/45">Admin</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </aside>
   );
 }

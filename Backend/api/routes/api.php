@@ -6,9 +6,12 @@ use App\Http\Controllers\Api\V1\ConversationController;
 use App\Http\Controllers\Api\V1\CrmController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\RoleController;
+use App\Http\Controllers\Api\V1\SearchController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WhatsAppWebhookController;
+use App\Http\Controllers\Api\V1\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -47,7 +50,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/crm/leads/{lead}/archive', [CrmController::class, 'archiveLead'])
             ->middleware('permission:leads.update');
         Route::delete('/crm/leads/{lead}', [CrmController::class, 'destroyLead'])
-            ->middleware('permission:leads.delete');
+            ->middleware('permission:leads.delete')
+            ->withTrashed();
         Route::get('/crm/customers', [CrmController::class, 'customers'])
             ->middleware('permission:customers.view');
         Route::post('/crm/customers', [CrmController::class, 'storeCustomer'])
@@ -57,7 +61,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/crm/customers/{customer}/archive', [CrmController::class, 'archiveCustomer'])
             ->middleware('permission:customers.update');
         Route::delete('/crm/customers/{customer}', [CrmController::class, 'destroyCustomer'])
-            ->middleware('permission:customers.delete');
+            ->middleware('permission:customers.delete')
+            ->withTrashed();
         Route::get('/crm/tasks', [CrmController::class, 'tasks'])
             ->middleware('permission:tasks.view');
         Route::post('/crm/tasks', [CrmController::class, 'storeTask'])
@@ -67,7 +72,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/crm/tasks/{task}/archive', [CrmController::class, 'archiveTask'])
             ->middleware('permission:tasks.assign');
         Route::delete('/crm/tasks/{task}', [CrmController::class, 'destroyTask'])
-            ->middleware('permission:tasks.complete');
+            ->middleware('permission:tasks.complete')
+            ->withTrashed();
         Route::get('/crm/calendar', [CrmController::class, 'calendar'])
             ->middleware('permission:tasks.view');
         Route::post('/crm/calendar', [CrmController::class, 'storeCalendarEvent'])
@@ -77,7 +83,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/crm/calendar/{event}/archive', [CrmController::class, 'archiveCalendarEvent'])
             ->middleware('permission:tasks.assign');
         Route::delete('/crm/calendar/{event}', [CrmController::class, 'destroyCalendarEvent'])
-            ->middleware('permission:tasks.complete');
+            ->middleware('permission:tasks.complete')
+            ->withTrashed();
 
         Route::get('/conversations', [ConversationController::class, 'index'])
             ->middleware('permission:conversations.view');
@@ -103,5 +110,20 @@ Route::prefix('v1')->group(function () {
             ->middleware('permission:audit.view');
         Route::get('/users', [UserController::class, 'index'])
             ->middleware('permission:users.view');
+        Route::post('/users', [UserController::class, 'store'])
+            ->middleware('permission:users.invite');
+        Route::patch('/users/{user}', [UserController::class, 'update'])
+            ->middleware('permission:users.invite');
+        Route::patch('/users/{user}/status', [UserController::class, 'suspend'])
+            ->middleware('permission:users.suspend');
+
+        Route::patch('/workspace', [WorkspaceController::class, 'update'])
+            ->middleware('permission:settings.general.manage');
+
+        Route::get('/search', [SearchController::class, 'index']);
+
+        Route::get('/notifications', [NotificationController::class, 'index']);
+        Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
+        Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
     });
 });
