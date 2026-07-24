@@ -1,0 +1,13 @@
+# Root repository ignores
+Backend/api/vendor/
+Backend/node_modules/
+Backend/api/storage/logs/
+Backend/api/storage/framework/cache/
+Backend/api/storage/framework/sessions/
+Backend/api/storage/framework/views/
+Backend/api/bootstrap/cache/*.php
+Frontend/node_modules/
+Frontend/dist/
+*.log
+.DS_Store
+Thumbs.db

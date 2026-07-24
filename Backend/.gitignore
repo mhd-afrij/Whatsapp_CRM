@@ -1,0 +1,4 @@
+# Root-level ignores; api/ and whatsapp-sync/ each also have their own
+# .gitignore for tool-specific artifacts.
+.DS_Store
+Thumbs.db
