@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
-use App\Models\Notification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -86,17 +85,6 @@ class ConversationController extends Controller
         ]);
 
         $conversation->fill($data)->save();
-
-        if (! empty($data['assignee_id']) && $data['assignee_id'] !== $request->user()->id) {
-            Notification::create([
-                'workspace_id' => $conversation->workspace_id,
-                'user_id' => $data['assignee_id'],
-                'type' => 'conversation.assigned',
-                'title' => 'A conversation with '.($conversation->contact_name ?? $conversation->contact_phone).' was assigned to you.',
-                'entity_type' => 'conversation',
-                'entity_id' => $conversation->id,
-            ]);
-        }
 
         return response()->json(['data' => $conversation]);
     }

@@ -6,10 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\CalendarEvent;
 use App\Models\Customer;
 use App\Models\Lead;
-use App\Models\Notification;
 use App\Models\Task;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 
 class CrmController extends Controller
 {
@@ -138,7 +137,7 @@ class CrmController extends Controller
         return response()->json([
             'data' => Task::where('workspace_id', $request->user()->workspace_id)
                 ->with('assignee:id,name,email')
-                ->orderByRaw("CASE status WHEN 'open' THEN 0 WHEN 'completed' THEN 1 ELSE 2 END")
+                ->orderByRaw("FIELD(status, 'open', 'completed', 'cancelled')")
                 ->orderByDesc('priority')
                 ->get(),
         ]);
@@ -156,8 +155,6 @@ class CrmController extends Controller
 
         $task = Task::create($data + ['workspace_id' => $request->user()->workspace_id]);
 
-        $this->notifyTaskAssignee($task, $request->user()->id);
-
         return response()->json(['data' => $task], 201);
     }
 
@@ -173,30 +170,9 @@ class CrmController extends Controller
             'assignee_id' => ['nullable', 'integer', 'exists:users,id'],
         ]);
 
-        $previousAssigneeId = $task->assignee_id;
         $task->fill($data)->save();
 
-        if ($task->assignee_id !== $previousAssigneeId) {
-            $this->notifyTaskAssignee($task, $request->user()->id);
-        }
-
         return response()->json(['data' => $task]);
-    }
-
-    private function notifyTaskAssignee(Task $task, int $actorId): void
-    {
-        if (! $task->assignee_id || $task->assignee_id === $actorId) {
-            return;
-        }
-
-        Notification::create([
-            'workspace_id' => $task->workspace_id,
-            'user_id' => $task->assignee_id,
-            'type' => 'task.assigned',
-            'title' => "The task \"{$task->title}\" was assigned to you.",
-            'entity_type' => 'task',
-            'entity_id' => $task->id,
-        ]);
     }
 
     public function archiveTask(Request $request, Task $task): JsonResponse
