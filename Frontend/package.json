@@ -1,12 +1,13 @@
 {
-  "name": "web",
+  "name": "whatsapp-crm-frontend",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "vite preview",
-    "lint": "eslint"
+    "preview": "vite preview",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
