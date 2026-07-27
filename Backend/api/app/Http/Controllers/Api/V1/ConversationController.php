@@ -14,11 +14,46 @@ class ConversationController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        $query = Conversation::where('workspace_id', $request->user()->workspace_id)
+            ->with('assignee:id,name,email')
+            ->orderByRaw('last_message_at IS NULL, last_message_at DESC');
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
+
+        if ($request->filled('assignee_id')) {
+            $assigneeId = $request->input('assignee_id');
+            if ($assigneeId === 'unassigned') {
+                $query->whereNull('assignee_id');
+            } else {
+                $query->where('assignee_id', $assigneeId);
+            }
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('contact_name', 'like', "%{$search}%")
+                    ->orWhere('contact_phone', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('tag')) {
+            $query->whereJsonContains('tags', $request->input('tag'));
+        }
+
+        $perPage = min((int) $request->input('per_page', 50), 100);
+        $conversations = $query->paginate($perPage);
+
         return response()->json([
-            'data' => Conversation::where('workspace_id', $request->user()->workspace_id)
-                ->with('assignee:id,name,email')
-                ->orderByRaw('last_message_at IS NULL, last_message_at DESC')
-                ->get(),
+            'data' => $conversations->items(),
+            'meta' => [
+                'current_page' => $conversations->currentPage(),
+                'last_page' => $conversations->lastPage(),
+                'per_page' => $conversations->perPage(),
+                'total' => $conversations->total(),
+            ],
         ]);
     }
 
@@ -28,8 +63,21 @@ class ConversationController extends Controller
 
         $conversation->forceFill(['unread_count' => 0])->save();
 
+        $perPage = min((int) $request->input('per_page', 50), 100);
+        $messages = $conversation->messages()
+            ->orderBy('sent_at', 'desc')
+            ->paginate($perPage);
+
+        $messages->setCollection($messages->getCollection()->reverse()->values());
+
         return response()->json([
-            'data' => $conversation->messages()->orderBy('sent_at')->get(),
+            'data' => $messages->items(),
+            'meta' => [
+                'current_page' => $messages->currentPage(),
+                'last_page' => $messages->lastPage(),
+                'per_page' => $messages->perPage(),
+                'total' => $messages->total(),
+            ],
         ]);
     }
 
@@ -86,7 +134,7 @@ class ConversationController extends Controller
 
         $conversation->fill($data)->save();
 
-        return response()->json(['data' => $conversation]);
+        return response()->json(['data' => $conversation->fresh('assignee:id,name,email')]);
     }
 
     public function close(Request $request, Conversation $conversation): JsonResponse
@@ -112,5 +160,44 @@ class ConversationController extends Controller
         $conversation->forceFill(['tags' => array_values(array_unique($data['tags']))])->save();
 
         return response()->json(['data' => $conversation]);
+    }
+
+    public function markRead(Request $request, Conversation $conversation): JsonResponse
+    {
+        abort_unless($conversation->workspace_id === $request->user()->workspace_id, 404);
+
+        $conversation->forceFill(['unread_count' => 0])->save();
+
+        return response()->json(['data' => $conversation]);
+    }
+
+    public function updateMessageStatus(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'wa_message_id' => ['required', 'string'],
+            'status' => ['required', 'string', 'in:sent,delivered,read'],
+        ]);
+
+        $message = Message::where('wa_message_id', $data['wa_message_id'])->first();
+
+        if (! $message) {
+            return response()->json(['message' => 'Message not found.'], 404);
+        }
+
+        $statusOrder = ['sent' => 0, 'delivered' => 1, 'read' => 2];
+        if (($statusOrder[$data['status']] ?? 0) > ($statusOrder[$message->status] ?? 0)) {
+            $message->forceFill(['status' => $data['status']])->save();
+        }
+
+        return response()->json(['data' => $message]);
+    }
+
+    public function getAgents(Request $request): JsonResponse
+    {
+        $agents = \App\Models\User::where('workspace_id', $request->user()->workspace_id)
+            ->where('status', 'active')
+            ->get(['id', 'name', 'email', 'avatar_path']);
+
+        return response()->json(['data' => $agents]);
     }
 }

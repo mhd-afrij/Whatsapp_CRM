@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\LeadController;
 use App\Http\Controllers\Api\V1\ReportController;
+use App\Http\Controllers\Api\V1\SystemSettingController;
 use App\Http\Controllers\Api\V1\TaskController;
 use Illuminate\Support\Facades\Route;
 
@@ -26,13 +27,38 @@ Route::prefix('v1')->group(function () {
             ->middleware('permission:conversations.close');
         Route::patch('/conversations/{conversation}/tags', [ConversationController::class, 'updateTags'])
             ->middleware('permission:tags.manage');
+        Route::post('/conversations/{conversation}/read', [ConversationController::class, 'markRead'])
+            ->middleware('permission:conversations.view');
+        Route::get('/conversations/agents', [ConversationController::class, 'getAgents'])
+            ->middleware('permission:conversations.assign');
+
+        // Message status (from whatsapp-sync webhook)
+        Route::post('/internal/message-status', [ConversationController::class, 'updateMessageStatus']);
 
         // Dashboard
         Route::get('/dashboard/stats', [DashboardController::class, 'stats'])
             ->middleware('permission:analytics.view');
+        Route::get('/dashboard/agent-performance', [DashboardController::class, 'agentPerformance'])
+            ->middleware('permission:analytics.view');
+        Route::get('/dashboard/message-volume', [DashboardController::class, 'messageVolumeTimeSeries'])
+            ->middleware('permission:analytics.view');
+        Route::get('/dashboard/funnel', [DashboardController::class, 'conversionFunnel'])
+            ->middleware('permission:analytics.view');
+        Route::get('/dashboard/activity', [DashboardController::class, 'recentActivity'])
+            ->middleware('permission:analytics.view');
 
         // Reports
         Route::get('/reports', [ReportController::class, 'index'])
+            ->middleware('permission:analytics.view');
+        Route::get('/reports/agents', [ReportController::class, 'agentReport'])
+            ->middleware('permission:analytics.view');
+        Route::get('/reports/contact-growth', [ReportController::class, 'contactGrowth'])
+            ->middleware('permission:analytics.view');
+        Route::get('/reports/lead-conversion', [ReportController::class, 'leadConversion'])
+            ->middleware('permission:analytics.view');
+        Route::get('/reports/messages', [ReportController::class, 'messageAnalytics'])
+            ->middleware('permission:analytics.view');
+        Route::get('/reports/export', [ReportController::class, 'export'])
             ->middleware('permission:analytics.view');
 
         // Contacts
@@ -82,5 +108,13 @@ Route::prefix('v1')->group(function () {
             ->middleware('permission:tasks.assign');
         Route::delete('/crm/calendar/{event}', [TaskController::class, 'destroyCalendarEvent'])
             ->middleware('permission:tasks.complete');
+
+        // Settings
+        Route::get('/settings', [SystemSettingController::class, 'index'])
+            ->middleware('permission:settings.view');
+        Route::put('/settings', [SystemSettingController::class, 'update'])
+            ->middleware('permission:settings.manage');
+        Route::get('/settings/{key}', [SystemSettingController::class, 'show'])
+            ->middleware('permission:settings.view');
     });
 });

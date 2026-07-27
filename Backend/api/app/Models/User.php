@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use App\Models\UserPermissionOverride;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -80,6 +81,11 @@ class User extends Authenticatable
         return $this->hasMany(RefreshToken::class);
     }
 
+    public function permissionOverrides(): HasMany
+    {
+        return $this->hasMany(UserPermissionOverride::class);
+    }
+
     public function hasRole(string $slug): bool
     {
         return $this->roles->contains('slug', $slug);
@@ -87,6 +93,20 @@ class User extends Authenticatable
 
     public function hasPermission(string $permissionKey): bool
     {
+        $this->loadMissing(['roles.permissions', 'permissionOverrides.permission']);
+
+        $override = $this->permissionOverrides->first(function (UserPermissionOverride $override) use ($permissionKey) {
+            return $override->permission?->key === $permissionKey;
+        });
+
+        if ($override?->effect === 'deny') {
+            return false;
+        }
+
+        if ($override?->effect === 'grant') {
+            return true;
+        }
+
         return $this->roles
             ->loadMissing('permissions')
             ->flatMap(fn (Role $role) => $role->permissions->pluck('key'))
