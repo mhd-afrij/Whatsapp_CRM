@@ -9,6 +9,7 @@ import RolesPage from "../pages/team/RolesPage.jsx";
 import WhatsAppConnectionPage from "../pages/whatsapp/WhatsAppConnectionPage.jsx";
 import SettingsPage from "../pages/settings/SettingsPage.jsx";
 import ReportsPage from "../pages/reports/ReportsPage.jsx";
+import AuditLogsPage from "../pages/audit/AuditLogsPage.jsx";
 
 function WorkspaceRoute({ children }) {
   return (
@@ -30,6 +31,7 @@ export function AppRoutes() {
       <Route path="/settings/whatsapp" element={<WorkspaceRoute><WhatsAppConnectionPage /></WorkspaceRoute>} />
       <Route path="/settings" element={<WorkspaceRoute><SettingsPage /></WorkspaceRoute>} />
       <Route path="/reports" element={<WorkspaceRoute><ReportsPage /></WorkspaceRoute>} />
+      <Route path="/audit-log" element={<WorkspaceRoute><AuditLogsPage /></WorkspaceRoute>} />
       <Route path="/customers" element={<WorkspaceRoute><InboxPage title="Customers" /></WorkspaceRoute>} />
       <Route path="/leads" element={<WorkspaceRoute><InboxPage title="Leads" /></WorkspaceRoute>} />
       <Route path="/pipeline" element={<WorkspaceRoute><InboxPage title="Pipeline" /></WorkspaceRoute>} />
