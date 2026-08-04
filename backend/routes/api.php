@@ -1,0 +1,293 @@
+<?php
+
+use App\Http\Controllers\Api\V1\AnalyticsController;
+use App\Http\Controllers\Api\V1\AuditLogController;
+use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\ContactController;
+use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\ConversationController;
+use App\Http\Controllers\Api\V1\DealController;
+use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\InternalNoteController;
+use App\Http\Controllers\Api\V1\LabelController;
+use App\Http\Controllers\Api\V1\LeadController;
+use App\Http\Controllers\Api\V1\MediaController;
+use App\Http\Controllers\Api\V1\NotificationController;
+use App\Http\Controllers\Api\V1\NotificationPreferenceController;
+use App\Http\Controllers\Api\V1\PermissionController;
+use App\Http\Controllers\Api\V1\PipelineController;
+use App\Http\Controllers\Api\V1\ReportExportController;
+use App\Http\Controllers\Api\V1\RoleController;
+use App\Http\Controllers\Api\V1\SearchController;
+use App\Http\Controllers\Api\V1\TaskController;
+use App\Http\Controllers\Api\V1\TeamController;
+use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\WhatsappController;
+use App\Http\Controllers\Api\V1\WorkspaceSettingController;
+use Illuminate\Support\Facades\Route;
+
+Route::prefix('v1')->name('api.v1.')->group(function () {
+    Route::get('/health', HealthController::class)->name('health');
+
+    Route::prefix('auth')->name('auth.')->group(function () {
+        Route::post('/login', [AuthController::class, 'login'])
+            ->middleware('throttle:login')
+            ->name('login');
+        Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])
+            ->middleware('throttle:password-reset')
+            ->name('forgot-password');
+        Route::post('/reset-password', [AuthController::class, 'resetPassword'])
+            ->middleware('throttle:password-reset')
+            ->name('reset-password');
+        Route::post('/invitations/accept', [AuthController::class, 'acceptInvitation'])
+            ->middleware('throttle:invitation-accept')
+            ->name('invitations.accept');
+
+        Route::middleware(['auth:sanctum', 'active'])->group(function () {
+            Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+            Route::get('/me', [AuthController::class, 'me'])->name('me');
+
+            // Permission matrix (docs/07-permission-matrix.md) names this
+            // "invitations.manage" — used here instead of a non-existent "users.create".
+            Route::post('/invitations', [AuthController::class, 'invite'])
+                ->middleware(['permission:invitations.manage', 'throttle:invitation-create'])
+                ->name('invitations.create');
+        });
+    });
+
+    Route::middleware(['auth:sanctum', 'active'])->group(function () {
+        Route::get('/users', [UserController::class, 'index'])->name('users.index');
+        Route::get('/users/{user}', [UserController::class, 'show'])->name('users.show');
+        Route::patch('/users/{user}', [UserController::class, 'update'])->name('users.update');
+
+        // The matrix has no dedicated "users.suspend" permission; "users.manage" covers it.
+        Route::patch('/users/{user}/suspend', [UserController::class, 'suspend'])
+            ->middleware('permission:users.manage')
+            ->name('users.suspend');
+        Route::patch('/users/{user}/reactivate', [UserController::class, 'reactivate'])
+            ->middleware('permission:users.manage')
+            ->name('users.reactivate');
+        Route::post('/invitations/{invitation}/resend', [UserController::class, 'resendInvitation'])
+            ->middleware('permission:invitations.manage')
+            ->name('invitations.resend');
+
+        Route::prefix('teams')->name('teams.')->group(function () {
+            Route::get('/', [TeamController::class, 'index'])->name('index');
+            Route::post('/', [TeamController::class, 'store'])->name('store');
+            Route::get('/{team}', [TeamController::class, 'show'])->name('show');
+            Route::patch('/{team}', [TeamController::class, 'update'])->name('update');
+            Route::delete('/{team}', [TeamController::class, 'destroy'])->name('destroy');
+            Route::post('/{team}/members', [TeamController::class, 'addMember'])->name('members.add');
+            Route::delete('/{team}/members/{user}', [TeamController::class, 'removeMember'])->name('members.remove');
+        });
+
+        Route::prefix('roles')->name('roles.')->group(function () {
+            Route::get('/', [RoleController::class, 'index'])->name('index');
+            Route::post('/', [RoleController::class, 'store'])->name('store');
+            Route::get('/{role}', [RoleController::class, 'show'])->name('show');
+            Route::patch('/{role}', [RoleController::class, 'update'])->name('update');
+            Route::delete('/{role}', [RoleController::class, 'destroy'])->name('destroy');
+        });
+
+        Route::get('/permissions', [PermissionController::class, 'index'])->name('permissions.index');
+
+        Route::prefix('whatsapp')->name('whatsapp.')->middleware('permission:whatsapp.connection.manage')->group(function () {
+            Route::get('/status', [WhatsappController::class, 'status'])->name('status');
+            Route::get('/qr', [WhatsappController::class, 'qr'])->name('qr');
+            Route::post('/connect', [WhatsappController::class, 'connect'])->name('connect');
+            Route::post('/disconnect', [WhatsappController::class, 'disconnect'])->name('disconnect');
+            Route::post('/reconnect', [WhatsappController::class, 'reconnect'])->name('reconnect');
+            Route::get('/connection-history', [WhatsappController::class, 'connectionHistory'])->name('connection-history');
+        });
+
+        Route::prefix('conversations')->name('conversations.')->group(function () {
+            Route::get('/', [ConversationController::class, 'index'])
+                ->middleware('permission:conversations.view')->name('index');
+            Route::get('/{conversation}', [ConversationController::class, 'show'])
+                ->middleware('permission:conversations.view')->name('show');
+            Route::get('/{conversation}/messages', [ConversationController::class, 'messages'])
+                ->middleware('permission:conversations.view')->name('messages.index');
+            Route::post('/{conversation}/messages', [ConversationController::class, 'storeMessage'])
+                ->middleware('permission:conversations.reply')->name('messages.store');
+            Route::patch('/{conversation}/assign', [ConversationController::class, 'assign'])
+                ->middleware('permission:conversations.assign')->name('assign');
+            Route::patch('/{conversation}/close', [ConversationController::class, 'close'])
+                ->middleware('permission:conversations.close')->name('close');
+            Route::patch('/{conversation}/reopen', [ConversationController::class, 'reopen'])
+                ->middleware('permission:conversations.reopen')->name('reopen');
+            Route::patch('/{conversation}/priority', [ConversationController::class, 'changePriority'])
+                ->middleware('permission:conversations.change_priority')->name('priority');
+            Route::patch('/{conversation}/read', [ConversationController::class, 'markRead'])
+                ->middleware('permission:conversations.view')->name('read');
+            Route::get('/{conversation}/messages/{message}/media/{media}/url', [MediaController::class, 'url'])
+                ->middleware('permission:conversations.view')->name('messages.media.url');
+            Route::post('/{conversation}/labels/{label}', [ConversationController::class, 'attachLabel'])
+                ->middleware('permission:conversations.reply')->name('labels.attach');
+            Route::delete('/{conversation}/labels/{label}', [ConversationController::class, 'detachLabel'])
+                ->middleware('permission:conversations.reply')->name('labels.detach');
+        });
+
+        Route::prefix('contacts')->name('contacts.')->group(function () {
+            Route::get('/', [ContactController::class, 'index'])
+                ->middleware('permission:contacts.view')->name('index');
+            Route::get('/export', [ContactController::class, 'export'])
+                ->middleware(['permission:contacts.export', 'throttle:export'])->name('export');
+            Route::post('/import', [ContactController::class, 'import'])
+                ->middleware('permission:contacts.create')->name('import');
+            Route::post('/', [ContactController::class, 'store'])
+                ->middleware('permission:contacts.create')->name('store');
+            Route::get('/{contact}', [ContactController::class, 'show'])
+                ->middleware('permission:contacts.view')->name('show');
+            Route::patch('/{contact}', [ContactController::class, 'update'])
+                ->name('update');
+            Route::delete('/{contact}', [ContactController::class, 'destroy'])
+                ->middleware('permission:contacts.delete')->name('destroy');
+            Route::post('/{id}/restore', [ContactController::class, 'restore'])
+                ->middleware('permission:contacts.delete')->name('restore');
+
+            Route::post('/{contact}/convert-to-lead', [LeadController::class, 'convertFromContact'])
+                ->middleware('permission:leads.manage')->name('convert-to-lead');
+
+            Route::post('/{contact}/labels/{label}', [ContactController::class, 'attachLabel'])
+                ->middleware('permission:contacts.view')->name('labels.attach');
+            Route::delete('/{contact}/labels/{label}', [ContactController::class, 'detachLabel'])
+                ->middleware('permission:contacts.view')->name('labels.detach');
+        });
+
+        Route::prefix('conversations')->name('conversations.leads.')->group(function () {
+            Route::post('/{conversation}/convert-to-lead', [LeadController::class, 'convertFromConversation'])
+                ->middleware('permission:leads.manage')->name('convert-to-lead');
+        });
+
+        Route::prefix('leads')->name('leads.')->middleware('permission:leads.manage')->group(function () {
+            Route::get('/', [LeadController::class, 'index'])->name('index');
+            Route::post('/', [LeadController::class, 'store'])->name('store');
+            Route::get('/{lead}', [LeadController::class, 'show'])->name('show');
+            Route::patch('/{lead}', [LeadController::class, 'update'])->name('update');
+            Route::delete('/{lead}', [LeadController::class, 'destroy'])->name('destroy');
+            Route::post('/{lead}/labels/{label}', [LeadController::class, 'attachLabel'])->name('labels.attach');
+            Route::delete('/{lead}/labels/{label}', [LeadController::class, 'detachLabel'])->name('labels.detach');
+        });
+
+        Route::prefix('deals')->name('deals.')->middleware('permission:deals.manage')->group(function () {
+            Route::get('/', [DealController::class, 'index'])->name('index');
+            Route::post('/', [DealController::class, 'store'])->name('store');
+            Route::get('/{deal}', [DealController::class, 'show'])->name('show');
+            Route::patch('/{deal}', [DealController::class, 'update'])->name('update');
+            Route::patch('/{deal}/stage', [DealController::class, 'moveStage'])->name('stage');
+            Route::post('/{deal}/won', [DealController::class, 'won'])->name('won');
+            Route::post('/{deal}/lost', [DealController::class, 'lost'])->name('lost');
+            Route::delete('/{deal}', [DealController::class, 'destroy'])->name('destroy');
+            Route::post('/{deal}/labels/{label}', [DealController::class, 'attachLabel'])->name('labels.attach');
+            Route::delete('/{deal}/labels/{label}', [DealController::class, 'detachLabel'])->name('labels.detach');
+        });
+
+        Route::prefix('pipelines')->name('pipelines.')->group(function () {
+            // Read access follows deals.manage - anyone who can work deals can see the board.
+            Route::get('/', [PipelineController::class, 'index'])
+                ->middleware('permission:deals.manage')->name('index');
+            Route::get('/{pipeline}', [PipelineController::class, 'show'])
+                ->middleware('permission:deals.manage')->name('show');
+            Route::get('/{pipeline}/board', [PipelineController::class, 'board'])
+                ->middleware('permission:deals.manage')->name('board');
+
+            // Pipeline/stage configuration is an admin-only action.
+            Route::post('/', [PipelineController::class, 'store'])
+                ->middleware('permission:pipelines.manage')->name('store');
+            Route::patch('/{pipeline}', [PipelineController::class, 'update'])
+                ->middleware('permission:pipelines.manage')->name('update');
+            Route::delete('/{pipeline}', [PipelineController::class, 'destroy'])
+                ->middleware('permission:pipelines.manage')->name('destroy');
+            Route::post('/{pipeline}/stages', [PipelineController::class, 'storeStage'])
+                ->middleware('permission:pipelines.manage')->name('stages.store');
+            Route::patch('/{pipeline}/stages/{stage}', [PipelineController::class, 'updateStage'])
+                ->middleware('permission:pipelines.manage')->name('stages.update');
+            Route::delete('/{pipeline}/stages/{stage}', [PipelineController::class, 'destroyStage'])
+                ->middleware('permission:pipelines.manage')->name('stages.destroy');
+        });
+
+        Route::prefix('tasks')->name('tasks.')->group(function () {
+            Route::get('/', [TaskController::class, 'index'])->name('index');
+            Route::post('/', [TaskController::class, 'store'])->name('store');
+            Route::get('/{task}', [TaskController::class, 'show'])->name('show');
+            Route::patch('/{task}', [TaskController::class, 'update'])->name('update');
+            Route::delete('/{task}', [TaskController::class, 'destroy'])->name('destroy');
+            Route::post('/{task}/complete', [TaskController::class, 'complete'])->name('complete');
+            Route::post('/{task}/reopen', [TaskController::class, 'reopen'])->name('reopen');
+            Route::get('/{task}/comments', [TaskController::class, 'comments'])->name('comments.index');
+            Route::post('/{task}/comments', [TaskController::class, 'storeComment'])->name('comments.store');
+        });
+
+        Route::prefix('notes')->name('notes.')->group(function () {
+            Route::get('/', [InternalNoteController::class, 'index'])->name('index');
+            Route::post('/', [InternalNoteController::class, 'store'])->name('store');
+            Route::patch('/{internalNote}', [InternalNoteController::class, 'update'])->name('update');
+            Route::delete('/{internalNote}', [InternalNoteController::class, 'destroy'])->name('destroy');
+        });
+
+        Route::prefix('labels')->name('labels.')->group(function () {
+            Route::get('/', [LabelController::class, 'index'])->name('index');
+            Route::post('/', [LabelController::class, 'store'])
+                ->middleware('permission:labels.manage')->name('store');
+            Route::patch('/{label}', [LabelController::class, 'update'])
+                ->middleware('permission:labels.manage')->name('update');
+            Route::delete('/{label}', [LabelController::class, 'destroy'])
+                ->middleware('permission:labels.manage')->name('destroy');
+        });
+
+        // search.global is granted to every seeded role; the SearchController itself narrows
+        // per-category based on the requesting user's actual view permissions.
+        Route::get('/search', [SearchController::class, 'index'])
+            ->middleware(['permission:search.global', 'throttle:search'])->name('search');
+
+        // No dedicated permission gate - a notification is always scoped to the
+        // requesting user (see NotificationController), so any authenticated user may
+        // read/manage their own.
+        Route::prefix('notifications')->name('notifications.')->group(function () {
+            Route::get('/', [NotificationController::class, 'index'])->name('index');
+            Route::patch('/{notification}/read', [NotificationController::class, 'markRead'])->name('read');
+            Route::post('/mark-all-read', [NotificationController::class, 'markAllRead'])->name('mark-all-read');
+        });
+
+        Route::prefix('notification-preferences')->name('notification-preferences.')->group(function () {
+            Route::get('/', [NotificationPreferenceController::class, 'index'])->name('index');
+            Route::patch('/', [NotificationPreferenceController::class, 'update'])->name('update');
+        });
+
+        // Phase 13/14 - Dashboard & Analytics (see docs/08-implementation-roadmap.md and
+        // PROJECT_STATUS.md for why analytics.view/analytics.export exist beyond the
+        // original docs/07-permission-matrix.md table).
+        Route::get('/dashboard/summary', [DashboardController::class, 'summary'])
+            ->middleware('permission:dashboard.view_workspace')->name('dashboard.summary');
+
+        Route::prefix('analytics')->name('analytics.')->middleware('permission:analytics.view')->group(function () {
+            Route::get('/conversation-volume', [AnalyticsController::class, 'conversationVolume'])->name('conversation-volume');
+            Route::get('/response-time-trend', [AnalyticsController::class, 'responseTimeTrend'])->name('response-time-trend');
+            Route::get('/lead-funnel', [AnalyticsController::class, 'leadFunnel'])->name('lead-funnel');
+            Route::get('/pipeline-stage-distribution', [AnalyticsController::class, 'pipelineStageDistribution'])->name('pipeline-stage-distribution');
+            Route::get('/won-vs-lost', [AnalyticsController::class, 'wonVsLost'])->name('won-vs-lost');
+            Route::get('/agent-performance', [AnalyticsController::class, 'agentPerformance'])->name('agent-performance');
+            Route::get('/task-completion-rate', [AnalyticsController::class, 'taskCompletionRate'])->name('task-completion-rate');
+        });
+
+        Route::prefix('workspace')->name('workspace.')->middleware('permission:workspace.settings.manage')->group(function () {
+            Route::get('/', [WorkspaceSettingController::class, 'show'])->name('show');
+            Route::match(['patch', 'post'], '/', [WorkspaceSettingController::class, 'update'])->name('update');
+        });
+
+        Route::prefix('audit-logs')->name('audit-logs.')->middleware('permission:audit_logs.view')->group(function () {
+            Route::get('/', [AuditLogController::class, 'index'])->name('index');
+            Route::get('/{auditLog}', [AuditLogController::class, 'show'])->name('show');
+        });
+
+        Route::prefix('reports')->name('reports.')->group(function () {
+            Route::post('/export', [ReportExportController::class, 'store'])
+                ->middleware(['permission:analytics.export', 'throttle:export'])->name('export.store');
+            // Download is scoped to the requesting user's own notification/export (see
+            // ReportExportController::download) - no separate permission gate needed beyond
+            // authentication, same rationale as the notifications routes above.
+            Route::get('/export/{notification}/download', [ReportExportController::class, 'download'])
+                ->name('export.download');
+        });
+    });
+});

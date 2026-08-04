@@ -1,0 +1,112 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+
+  /* CRM brand palette (light) */
+  --color-primary: #16a34a;
+  --color-primary-dark: #15803d;
+  --color-primary-soft: #dcfce7;
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-muted: #64748b;
+  --color-success: #16a34a;
+  --color-warning: #f59e0b;
+  --color-danger: #dc2626;
+  --color-info: #2563eb;
+
+  /* Chart categorical series (validated palette, see dataviz skill references/palette.md) */
+  --chart-series-1: #2a78d6; /* blue */
+  --chart-series-2: #eb6834; /* orange */
+  --chart-series-3: #1baf7a; /* aqua */
+  --chart-series-4: #eda100; /* yellow */
+  --chart-series-5: #e34948; /* red */
+  --chart-series-6: #4a3aa7; /* violet */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Expose CRM palette as Tailwind utilities: bg-primary, text-danger, border-border, etc. */
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-primary-soft: var(--color-primary-soft);
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-border: var(--color-border);
+  --color-text: var(--color-text);
+  --color-muted: var(--color-muted);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+  --color-info: var(--color-info);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b1220;
+    --foreground: #f1f5f9;
+
+    /* CRM brand palette (dark) */
+    --color-primary: #22c55e;
+    --color-primary-dark: #16a34a;
+    --color-primary-soft: #14532d;
+    --color-bg: #0b1220;
+    --color-surface: #0f172a;
+    --color-border: #1e293b;
+    --color-text: #f1f5f9;
+    --color-muted: #94a3b8;
+    --color-success: #22c55e;
+    --color-warning: #fbbf24;
+    --color-danger: #f87171;
+    --color-info: #60a5fa;
+
+    /* Chart categorical series (dark-mode step, see dataviz skill references/palette.md) */
+    --chart-series-1: #3987e5;
+    --chart-series-2: #d95926;
+    --chart-series-3: #199e70;
+    --chart-series-4: #c98500;
+    --chart-series-5: #e66767;
+    --chart-series-6: #9085e9;
+  }
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* WhatsApp-style message list background: a very faint dot texture that
+   follows the active theme instead of a strong image, keeping message
+   readability high while breaking up the flat panel colour. */
+.message-list-bg {
+  background-color: var(--color-surface);
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    color-mix(in srgb, var(--color-muted) 14%, transparent) 1px,
+    transparent 0
+  );
+  background-size: 22px 22px;
+}
+
+/* Respect the user's reduced-motion preference: cut all animation/transition
+   duration to effectively zero instead of disabling styles altogether, so
+   layout doesn't jump but nothing "moves" for users who opt out of motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
