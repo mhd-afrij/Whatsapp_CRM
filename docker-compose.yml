@@ -1,0 +1,203 @@
+version: "3.9"
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: crm_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootsecret}
+      MYSQL_DATABASE: ${DB_DATABASE:-crm_whatsapp}
+      MYSQL_USER: ${DB_USERNAME:-crm_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-crm_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./infrastructure/scripts/mysql-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootsecret}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+    networks: [crm_net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: crm_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-}"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+    networks: [crm_net]
+
+  minio:
+    image: minio/minio:latest
+    container_name: crm_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+    networks: [crm_net]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crm_backend
+    restart: unless-stopped
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      DB_HOST: mysql
+      DB_DATABASE: ${DB_DATABASE:-crm_whatsapp}
+      DB_USERNAME: ${DB_USERNAME:-crm_user}
+      DB_PASSWORD: ${DB_PASSWORD:-crm_password}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      AWS_ENDPOINT: http://minio:9000
+      # Backend -> gateway internal calls must use the container/service name on
+      # the compose network, not "localhost" (that would resolve to the backend
+      # container itself). backend/.env.example defaults to localhost:3000 for
+      # non-docker local dev, so it is overridden explicitly here.
+      WHATSAPP_GATEWAY_URL: http://whatsapp-gateway:4000
+      WHATSAPP_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:-change-me-to-a-long-random-secret}
+    env_file:
+      - path: ./backend/.env
+        required: false
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/var/www/html
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+    networks: [crm_net]
+
+  whatsapp-gateway:
+    build:
+      context: ./whatsapp-gateway
+      dockerfile: Dockerfile
+    container_name: crm_gateway
+    restart: unless-stopped
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 4000
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${DB_DATABASE:-crm_whatsapp}
+      MYSQL_USER: ${DB_USERNAME:-crm_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-crm_password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      LARAVEL_INTERNAL_API_URL: http://backend:8000/api/internal
+      # Required by the gateway's env schema (src/config/env.ts) but not yet
+      # consumed by any gateway->backend call in this codebase as of Phase 19
+      # - reserved for when that direction of internal API traffic is wired
+      # up. Kept here so the container still boots (Zod validation fails hard
+      # on a missing value) rather than being silently dropped.
+      INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-change-me-shared-secret}
+      SOCKET_CORS_ORIGIN: ${FRONTEND_URL:-http://localhost:3000}
+      WHATSAPP_SESSION_DIR: /app/sessions
+      # Must match WHATSAPP_GATEWAY_TOKEN sent by the backend service above.
+      INTERNAL_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:-change-me-to-a-long-random-secret}
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      WHATSAPP_WORKSPACE_ID: ${WHATSAPP_WORKSPACE_ID:-1}
+    env_file:
+      - path: ./whatsapp-gateway/.env
+        required: false
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./whatsapp-gateway:/app
+      - gateway_sessions:/app/sessions
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/healthz', r => process.exit(r.statusCode===200?0:1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+    networks: [crm_net]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: crm_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-http://localhost:4000}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', r => process.exit(r.statusCode<500?0:1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+    networks: [crm_net]
+
+  nginx:
+    image: nginx:alpine
+    container_name: crm_nginx
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+      - whatsapp-gateway
+    ports:
+      - "80:80"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    logging: *default-logging
+    networks: [crm_net]
+
+networks:
+  crm_net:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
+  minio_data:
+  gateway_sessions:

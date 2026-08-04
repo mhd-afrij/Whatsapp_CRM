@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (Laravel)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: mbstring, pdo_mysql, pdo_sqlite, zip, gd, bcmath, opcache
+          coverage: none
+
+      - name: Copy .env
+        run: cp .env.testing .env
+
+      - name: Install composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Generate app key
+        run: php artisan key:generate --force
+
+      - name: Lint (Laravel Pint, dry-run)
+        run: vendor/bin/pint --test
+
+      - name: Run tests
+        # phpunit.xml pins DB_CONNECTION=sqlite / DB_DATABASE=database/testing.sqlite
+        # for the testing environment, so no MySQL/Redis service container is
+        # required to run the real backend test suite.
+        run: |
+          mkdir -p database
+          touch database/testing.sqlite
+          php artisan test
+
+  gateway:
+    name: WhatsApp Gateway (Node)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: whatsapp-gateway
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_DATABASE: crm_whatsapp
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: whatsapp-gateway/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Run tests
+        env:
+          NODE_ENV: test
+          PORT: 4000
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: crm_whatsapp
+          MYSQL_USER: root
+          MYSQL_PASSWORD: ""
+          LARAVEL_INTERNAL_API_URL: http://localhost:8000/api/internal
+          INTERNAL_SHARED_SECRET: ci-test-secret
+          SOCKET_CORS_ORIGIN: http://localhost:3000
+          WHATSAPP_SESSION_DIR: ./sessions
+          INTERNAL_GATEWAY_TOKEN: ci-test-secret
+          CREDENTIALS_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000"
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  frontend:
+    name: Frontend (Next.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+          NEXT_PUBLIC_SOCKET_URL: http://localhost:4000
+        run: npm run build
