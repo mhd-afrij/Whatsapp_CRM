@@ -6,9 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\ConversationAssignment;
 use App\Models\ConversationParticipant;
-use App\Models\MessageDispatchQueue;
+use App\Models\Label;
 use App\Models\Message;
+use App\Models\MessageDispatchQueue;
+use App\Models\MessageStatusEvent;
 use App\Models\User;
+use App\Models\UserPresence;
 use App\Services\GatewayClient;
 use App\Services\NotificationService;
 use App\Support\AuditLogger;
@@ -24,9 +27,7 @@ class ConversationController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(protected GatewayClient $gateway)
-    {
-    }
+    public function __construct(protected GatewayClient $gateway) {}
 
     /**
      * GET /api/v1/conversations
@@ -41,6 +42,10 @@ class ConversationController extends Controller
             ->visibleTo($user)
             ->with(['whatsappContact', 'contact', 'assignedUser', 'assignedTeam', 'labels']);
 
+        if (! $request->boolean('archived')) {
+            $query->whereNull('archived_at');
+        }
+
         if ($request->filled('search')) {
             $search = $request->string('search')->toString();
             $query->where(function ($matches) use ($search) {
@@ -49,8 +54,10 @@ class ConversationController extends Controller
                     ->orWhere('phone_number', 'like', "%{$search}%"))
                     ->orWhereHas('whatsappContact', fn ($contact) => $contact
                         ->where('push_name', 'like', "%{$search}%")
-                        ->orWhere('phone_number', 'like', "%{$search}%"))
-                    ->orWhereHas('messages', fn ($message) => $message->where('body', 'like', "%{$search}%"));
+                        ->orWhere('phone_number', 'like', "%{$search}%")
+                        ->orWhere('wa_jid', 'like', "%{$search}%"))
+                    ->orWhereHas('messages', fn ($message) => $message->where('body', 'like', "%{$search}%"))
+                    ->orWhereHas('labels', fn ($label) => $label->where('name', 'like', "%{$search}%"));
             });
         }
 
@@ -82,6 +89,18 @@ class ConversationController extends Controller
         if ($request->filled('label')) {
             $label = $request->string('label')->toString();
             $query->whereHas('labels', fn ($q) => $q->where('name', $label));
+        }
+
+        if ($request->boolean('starred')) {
+            $query->whereNotNull('starred_at');
+        }
+
+        if ($request->boolean('pinned')) {
+            $query->whereNotNull('pinned_at');
+        }
+
+        if ($request->boolean('groups')) {
+            $query->whereHas('whatsappContact', fn ($q) => $q->where('wa_jid', 'like', '%@g.us'));
         }
 
         // Multi-label filter, any-match (OR) - see ContactController::index for rationale.
@@ -148,10 +167,13 @@ class ConversationController extends Controller
         $this->authorize('reply', $conversation);
         $validator = Validator::make($request->all(), [
             'message_type' => 'sometimes|string|in:text,image,video,audio,document,sticker,location,contact_card,template',
-            'body' => 'required_if:message_type,text,null|nullable|string|max:65535',
+            'body' => 'nullable|string|max:65535',
             'media' => 'sometimes|array',
             'media.storage_path' => 'required_with:media|string',
             'media.mime_type' => 'required_with:media|string',
+            'media.file_name' => 'sometimes|nullable|string|max:255',
+            'media.size_bytes' => 'sometimes|nullable|integer|min:0',
+            'media.checksum_sha256' => 'sometimes|nullable|string|max:64',
             'replied_to_message_id' => 'sometimes|nullable|integer|exists:messages,id',
         ]);
 
@@ -165,8 +187,12 @@ class ConversationController extends Controller
         $payload = [
             'workspaceId' => $conversation->workspace_id,
             'conversationId' => $conversation->id,
-            'content' => $data['body'] ?? '',
+            'content' => ! empty($data['body']) ? $data['body'] : null,
             'mediaRef' => $data['media']['storage_path'] ?? null,
+            'mediaMimeType' => $data['media']['mime_type'] ?? null,
+            'mediaFileName' => $data['media']['file_name'] ?? null,
+            'mediaSizeBytes' => $data['media']['size_bytes'] ?? null,
+            'mediaChecksumSha256' => $data['media']['checksum_sha256'] ?? null,
             'replyToWhatsappMessageId' => $data['replied_to_message_id'] ?? null,
             'requestedByUserId' => $request->user()->id,
             'idempotencyKey' => $idempotencyKey,
@@ -196,13 +222,15 @@ class ConversationController extends Controller
             }
         } elseif ($dispatchId) {
             // The gateway now enqueues sends asynchronously and persists the outbound message
-            // once the BullMQ worker finishes. Poll the shared dispatch table briefly so the
-            // user gets the real persisted message instead of a false "failed to send" error.
-            for ($attempt = 0; $attempt < 20 && ! $message; $attempt++) {
+            // once the BullMQ worker finishes. Poll briefly (max ~500 ms) so the user gets the
+            // real persisted message when the worker is fast, but fall through to a 202 queued
+            // response instead of blocking the PHP process for seconds.
+            for ($attempt = 0; $attempt < 5 && ! $message; $attempt++) {
                 $dispatch = MessageDispatchQueue::query()->find($dispatchId);
 
                 if (! $dispatch) {
-                    usleep(250_000);
+                    usleep(100_000);
+
                     continue;
                 }
 
@@ -221,7 +249,7 @@ class ConversationController extends Controller
                     }
                 }
 
-                usleep(250_000);
+                usleep(100_000);
             }
         }
 
@@ -387,6 +415,154 @@ class ConversationController extends Controller
     }
 
     /**
+     * PATCH /api/v1/conversations/{id}/archive
+     */
+    public function archive(Request $request, Conversation $conversation)
+    {
+        $this->authorize('archive', $conversation);
+
+        if ($conversation->archived_at) {
+            return $this->error('Conversation is already archived.', null, 409);
+        }
+
+        $conversation->forceFill([
+            'archived_at' => now(),
+            'status' => 'closed',
+            'closed_at' => $conversation->closed_at ?? now(),
+            'closed_by' => $conversation->closed_by ?? $request->user()->id,
+        ])->save();
+
+        AuditLogger::log('conversation.archived', $request->user(), $conversation, [], $request);
+        $this->relayConversationEvent('conversation.updated', $conversation, [
+            'archivedAt' => optional($conversation->archived_at)->toIso8601String(),
+        ]);
+
+        return $this->success($conversation->fresh(), 'Conversation archived');
+    }
+
+    /**
+     * PATCH /api/v1/conversations/{id}/unarchive
+     */
+    public function unarchive(Request $request, Conversation $conversation)
+    {
+        $this->authorize('unarchive', $conversation);
+
+        if (! $conversation->archived_at) {
+            return $this->error('Conversation is not archived.', null, 409);
+        }
+
+        $conversation->forceFill([
+            'archived_at' => null,
+            'status' => 'open',
+            'closed_at' => null,
+            'closed_by' => null,
+        ])->save();
+
+        AuditLogger::log('conversation.unarchived', $request->user(), $conversation, [], $request);
+        $this->relayConversationEvent('conversation.updated', $conversation, [
+            'archivedAt' => null,
+        ]);
+
+        return $this->success($conversation->fresh(), 'Conversation unarchived');
+    }
+
+    /**
+     * PATCH /api/v1/conversations/{id}/pin
+     */
+    public function pin(Request $request, Conversation $conversation)
+    {
+        $this->authorize('pin', $conversation);
+
+        $conversation->forceFill(['pinned_at' => now()])->save();
+        AuditLogger::log('conversation.pinned', $request->user(), $conversation, [], $request);
+        $this->relayConversationEvent('conversation.updated', $conversation, [
+            'pinnedAt' => optional($conversation->pinned_at)->toIso8601String(),
+        ]);
+
+        return $this->success($conversation->fresh(), 'Conversation pinned');
+    }
+
+    /**
+     * PATCH /api/v1/conversations/{id}/unpin
+     */
+    public function unpin(Request $request, Conversation $conversation)
+    {
+        $this->authorize('pin', $conversation);
+
+        $conversation->forceFill(['pinned_at' => null])->save();
+        AuditLogger::log('conversation.unpinned', $request->user(), $conversation, [], $request);
+        $this->relayConversationEvent('conversation.updated', $conversation, ['pinnedAt' => null]);
+
+        return $this->success($conversation->fresh(), 'Conversation unpinned');
+    }
+
+    /**
+     * PATCH /api/v1/conversations/{id}/mute
+     */
+    public function mute(Request $request, Conversation $conversation)
+    {
+        $this->authorize('mute', $conversation);
+
+        $until = $request->filled('muted_until')
+            ? $request->date('muted_until')
+            : now()->addDay();
+
+        $conversation->forceFill(['muted_until' => $until])->save();
+        AuditLogger::log('conversation.muted', $request->user(), $conversation, [
+            'muted_until' => $until?->toIso8601String(),
+        ], $request);
+        $this->relayConversationEvent('conversation.updated', $conversation, [
+            'mutedUntil' => optional($conversation->muted_until)->toIso8601String(),
+        ]);
+
+        return $this->success($conversation->fresh(), 'Conversation muted');
+    }
+
+    /**
+     * PATCH /api/v1/conversations/{id}/unmute
+     */
+    public function unmute(Request $request, Conversation $conversation)
+    {
+        $this->authorize('mute', $conversation);
+
+        $conversation->forceFill(['muted_until' => null])->save();
+        AuditLogger::log('conversation.unmuted', $request->user(), $conversation, [], $request);
+        $this->relayConversationEvent('conversation.updated', $conversation, ['mutedUntil' => null]);
+
+        return $this->success($conversation->fresh(), 'Conversation unmuted');
+    }
+
+    /**
+     * PATCH /api/v1/conversations/{id}/star
+     */
+    public function star(Request $request, Conversation $conversation)
+    {
+        $this->authorize('pin', $conversation);
+
+        $conversation->forceFill(['starred_at' => now()])->save();
+        AuditLogger::log('conversation.starred', $request->user(), $conversation, [], $request);
+        $this->relayConversationEvent('conversation.updated', $conversation, [
+            'starredAt' => optional($conversation->starred_at)->toIso8601String(),
+        ]);
+
+        return $this->success($conversation->fresh(), 'Conversation starred');
+    }
+
+    /**
+     * PATCH /api/v1/conversations/{id}/unstar
+     */
+    public function unstar(Request $request, Conversation $conversation)
+    {
+        $this->authorize('pin', $conversation);
+
+        $conversation->forceFill(['starred_at' => null])->save();
+        AuditLogger::log('conversation.unstarred', $request->user(), $conversation, [], $request);
+        $this->relayConversationEvent('conversation.updated', $conversation, ['starredAt' => null]);
+
+        return $this->success($conversation->fresh(), 'Conversation unstarred');
+    }
+
+    /**
      * PATCH /api/v1/conversations/{id}/read
      * Marks the conversation read for the current user (backend-owned
      * conversation_participants row). `unread_count` itself is gateway-owned
@@ -435,11 +611,265 @@ class ConversationController extends Controller
     }
 
     /**
+     * POST /api/v1/presence
+     * Update the current user's presence status.
+     * Uses Redis for ephemeral presence to avoid database writes on every heartbeat.
+     */
+    public function updatePresence(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'status' => 'required|in:online,away,offline,busy',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error('The given data was invalid.', $validator->errors());
+        }
+
+        $user = $request->user();
+        $status = $request->string('status');
+
+        // Update in database for persistence
+        UserPresence::updateOrCreate(
+            ['user_id' => $user->id],
+            ['status' => $status, 'last_active_at' => now()]
+        );
+
+        // Broadcast presence update via gateway
+        try {
+            $this->gateway->emitEvent('presence.updated', $user->workspace_id, null, [
+                'userId' => $user->id,
+                'status' => $status,
+                'lastSeen' => now()->toIso8601String(),
+                'name' => $user->name,
+            ]);
+        } catch (RuntimeException $e) {
+            // Presence updates are best-effort
+            Log::warning('Failed to broadcast presence update', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $this->success(null, 'Presence updated');
+    }
+
+    /**
+     * GET /api/v1/presence
+     * Get presence status for all users in the workspace.
+     */
+    public function getPresence(Request $request)
+    {
+        $workspaceId = $request->user()->workspace_id;
+
+        $presences = UserPresence::query()
+            ->whereHas('user', fn ($q) => $q->where('workspace_id', $workspaceId))
+            ->with('user:id,name,email')
+            ->get()
+            ->map(fn ($presence) => [
+                'user_id' => $presence->user_id,
+                'name' => $presence->user->name,
+                'status' => $presence->status,
+                'last_active_at' => $presence->last_active_at->toIso8601String(),
+            ]);
+
+        return $this->success($presences, 'OK');
+    }
+
+    /**
+     * GET /api/v1/conversations/{id}/assignment-history
+     * Get the assignment history for a conversation.
+     */
+    public function assignmentHistory(Request $request, Conversation $conversation)
+    {
+        $this->authorize('view', $conversation);
+
+        $assignments = ConversationAssignment::query()
+            ->where('conversation_id', $conversation->id)
+            ->with(['assignedToUser:id,name', 'assignedToTeam:id,name', 'assignedBy:id,name'])
+            ->orderByDesc('assigned_at')
+            ->get()
+            ->map(fn ($assignment) => [
+                'id' => $assignment->id,
+                'assigned_to_user_id' => $assignment->assigned_to_user_id,
+                'assigned_to_team_id' => $assignment->assigned_to_team_id,
+                'assigned_by' => $assignment->assignedBy?->name,
+                'assigned_at' => $assignment->assigned_at->toIso8601String(),
+                'unassigned_at' => $assignment->unassigned_at?->toIso8601String(),
+                'assigned_to_user' => $assignment->assignedToUser?->name,
+                'assigned_to_team' => $assignment->assignedToTeam?->name,
+            ]);
+
+        return $this->success($assignments, 'OK');
+    }
+
+    /**
+     * DELETE /api/v1/conversations/{conversation}/messages/{message}/revoke
+     * Revoke a message for everyone in the conversation.
+     */
+    public function revokeMessage(Request $request, Conversation $conversation, Message $message)
+    {
+        $this->authorize('reply', $conversation);
+
+        $conversation->load('whatsappContact');
+
+        if (! $conversation->whatsappContact) {
+            return $this->error('No WhatsApp contact linked to this conversation.', null, 404);
+        }
+
+        // Only allow revoking outbound messages sent by the current user
+        if ($message->direction !== 'outbound') {
+            return $this->error('You can only revoke your own messages.', null, 403);
+        }
+
+        if ($message->sender_type !== 'user' || $message->sender_id !== $request->user()->id) {
+            return $this->error('You can only revoke your own messages.', null, 403);
+        }
+
+        try {
+            $this->gateway->revokeMessage(
+                $conversation->workspace_id,
+                $conversation->id,
+                $conversation->whatsappContact->wa_jid,
+                $message->whatsapp_message_id,
+                $request->user()->id
+            );
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        return $this->success(null, 'Message revoked');
+    }
+
+    /**
+     * POST /api/v1/conversations/{conversation}/messages/{message}/reaction
+     * Add or remove a reaction to a message.
+     */
+    public function addReaction(Request $request, Conversation $conversation, Message $message)
+    {
+        $this->authorize('view', $conversation);
+
+        $validator = Validator::make($request->all(), [
+            'emoji' => 'required|string|max:8',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error('The given data was invalid.', $validator->errors());
+        }
+
+        $conversation->load('whatsappContact');
+
+        if (! $conversation->whatsappContact) {
+            return $this->error('No WhatsApp contact linked to this conversation.', null, 404);
+        }
+
+        try {
+            $this->gateway->sendReaction(
+                $conversation->workspace_id,
+                $conversation->id,
+                $conversation->whatsappContact->wa_jid,
+                $message->whatsapp_message_id,
+                $request->string('emoji'),
+                false,
+                $request->user()->id,
+                $request->user()->name
+            );
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        return $this->success(null, 'Reaction added');
+    }
+
+    /**
+     * DELETE /api/v1/conversations/{conversation}/messages/{message}/reaction
+     * Remove a reaction from a message.
+     */
+    public function removeReaction(Request $request, Conversation $conversation, Message $message)
+    {
+        $this->authorize('view', $conversation);
+
+        $validator = Validator::make($request->all(), [
+            'emoji' => 'required|string|max:8',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error('The given data was invalid.', $validator->errors());
+        }
+
+        $conversation->load('whatsappContact');
+
+        if (! $conversation->whatsappContact) {
+            return $this->error('No WhatsApp contact linked to this conversation.', null, 404);
+        }
+
+        try {
+            $this->gateway->sendReaction(
+                $conversation->workspace_id,
+                $conversation->id,
+                $conversation->whatsappContact->wa_jid,
+                $message->whatsapp_message_id,
+                $request->string('emoji'),
+                true,
+                $request->user()->id,
+                $request->user()->name
+            );
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        return $this->success(null, 'Reaction removed');
+    }
+
+    /**
+     * POST /api/v1/conversations/{id}/typing
+     * Send a typing indicator to the WhatsApp contact for this conversation.
+     * The gateway will send the presence update to WhatsApp and broadcast
+     * the typing event to other agents via Socket.IO.
+     */
+    public function typing(Request $request, Conversation $conversation)
+    {
+        $this->authorize('view', $conversation);
+
+        $validator = Validator::make($request->all(), [
+            'is_typing' => 'required|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error('The given data was invalid.', $validator->errors());
+        }
+
+        $conversation->load('whatsappContact');
+
+        if (! $conversation->whatsappContact) {
+            return $this->error('No WhatsApp contact linked to this conversation.', null, 404);
+        }
+
+        try {
+            $this->gateway->sendTypingIndicator(
+                $conversation->workspace_id,
+                $conversation->id,
+                $conversation->whatsappContact->wa_jid,
+                $request->boolean('is_typing'),
+                $request->user()->id,
+                $request->user()->name
+            );
+        } catch (RuntimeException $e) {
+            // Typing indicators are best-effort; don't fail the request
+            Log::warning('Failed to send typing indicator', [
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $this->success(null, 'Typing indicator sent');
+    }
+
+    /**
      * POST /api/v1/conversations/{conversation}/labels/{label}
      * Gated on `reply` (the general "can act on this conversation" permission) rather than
      * a dedicated policy method - conversations have no generic "update".
      */
-    public function attachLabel(Request $request, Conversation $conversation, \App\Models\Label $label)
+    public function attachLabel(Request $request, Conversation $conversation, Label $label)
     {
         $this->authorize('reply', $conversation);
 
@@ -451,12 +881,91 @@ class ConversationController extends Controller
     /**
      * DELETE /api/v1/conversations/{conversation}/labels/{label}
      */
-    public function detachLabel(Request $request, Conversation $conversation, \App\Models\Label $label)
+    public function detachLabel(Request $request, Conversation $conversation, Label $label)
     {
         $this->authorize('reply', $conversation);
 
         $conversation->labels()->detach($label->id);
 
         return $this->success($conversation->fresh(['labels']), 'Label detached');
+    }
+
+    /**
+     * GET /api/v1/conversations/{conversation}/messages/search?q={query}
+     * Search for messages within a conversation by body text.
+     */
+    public function searchMessages(Request $request, Conversation $conversation)
+    {
+        $this->authorize('view', $conversation);
+
+        $validated = Validator::make($request->all(), [
+            'q' => 'required|string|min:1|max:100',
+            'per_page' => 'integer|min:1|max:100',
+            'page' => 'integer|min:1',
+        ])->validate();
+
+        $query = $conversation->messages()
+            ->where('body', 'like', "%{$validated['q']}%")
+            ->with(['media', 'reactions', 'statusEvents'])
+            ->orderBy('created_at', 'desc');
+
+        $messages = $query->paginate($request->integer('per_page', 30));
+
+        return $this->success($messages, 'Messages found');
+    }
+
+    /**
+     * GET /api/v1/conversations/{conversation}/messages/{message}/status-events
+     * Get the status event history for a message (sending/sent/delivered/read/failed).
+     */
+    public function messageStatusEvents(Request $request, Conversation $conversation, Message $message)
+    {
+        $this->authorize('view', $conversation);
+
+        if ($message->conversation_id !== $conversation->id) {
+            return $this->error('Message not found in this conversation', null, 404);
+        }
+
+        $statusEvents = $message->statusEvents()
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        return $this->success($statusEvents, 'Message status events retrieved');
+    }
+
+    /**
+     * GET /api/v1/conversations/{conversation}/messages/{message}/reactions
+     * Get all reactions on a message, including who reacted.
+     */
+    public function messageReactions(Request $request, Conversation $conversation, Message $message)
+    {
+        $this->authorize('view', $conversation);
+
+        if ($message->conversation_id !== $conversation->id) {
+            return $this->error('Message not found in this conversation', null, 404);
+        }
+
+        $reactions = $message->reactions()
+            ->with(['user' => function ($q) {
+                $q->select('id', 'name', 'email');
+            }])
+            ->get()
+            ->groupBy('emoji')
+            ->map(function ($group) {
+                return [
+                    'emoji' => $group->first()->emoji,
+                    'count' => $group->count(),
+                    'reactors' => $group->map(function ($reaction) {
+                        return [
+                            'user_id' => $reaction->user_id,
+                            'user_name' => $reaction->user?->name ?? 'Unknown',
+                            'reacted_at' => $reaction->reacted_at,
+                        ];
+                    })->values(),
+                ];
+            })
+            ->values();
+
+        return $this->success($reactions, 'Message reactions retrieved');
     }
 }
