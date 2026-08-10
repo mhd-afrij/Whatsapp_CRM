@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
+import { X } from "lucide-react";
 import { ChatPanel } from "@/components/inbox/chat-panel";
 import { ContactContextPanel } from "@/components/inbox/contact-context-panel";
-import { X, Menu } from "lucide-react";
 
 export default function ConversationPage() {
   const params = useParams<{ conversationId: string }>();
@@ -20,50 +20,40 @@ export default function ConversationPage() {
   }
 
   return (
-    <div className="relative flex h-full min-h-0 min-w-0 overflow-hidden xl:grid xl:grid-cols-[minmax(0,1fr)_clamp(280px,24vw,380px)]">
-      <ChatPanel conversationId={conversationId} />
+    <div className="relative grid h-full min-h-0 min-w-0 overflow-hidden grid-cols-1 xl:grid-cols-[minmax(0,1fr)_clamp(300px,22vw,330px)]">
+      <ChatPanel conversationId={conversationId} onOpenContactInfo={() => setPanelOpen(true)} />
 
-      {/* Mobile drawer toggle */}
-      <button
-        type="button"
-        onClick={() => setPanelOpen(true)}
-        className="absolute right-2 top-2 z-40 rounded-full p-2 text-muted hover:bg-primary-soft/60 lg:hidden"
-        aria-label="Open contact info"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
+      <div className="hidden xl:block min-h-0 min-w-0">
+        <ContactContextPanel conversationId={conversationId} />
+      </div>
 
-      {/* Mobile drawer overlay */}
       {panelOpen && (
         <div
           key="overlay"
           onClick={() => setPanelOpen(false)}
-          className="fixed inset-0 z-50 bg-black/40 lg:hidden"
+          className="fixed inset-0 z-50 bg-black/40 xl:hidden"
           aria-hidden="true"
         />
       )}
 
-      {/* Mobile drawer panel */}
-      <div
-        className={`
-          fixed inset-y-0 right-0 z-40 flex w-[320px] max-w-full translate-x-full
-          transform items-stretch transition-transform duration-200 ease-out
-          ${panelOpen ? "translate-x-0" : "translate-x-full"}
-          lg:static lg:translate-x-0 lg:flex lg:flex-col
-        `}
-      >
-        <button
-          type="button"
-          onClick={() => setPanelOpen(false)}
-          className="absolute top-2 right-2 z-50 rounded-full p-2 text-muted hover:bg-primary-soft/60 lg:hidden"
-          aria-label="Close contact panel"
+      {panelOpen && (
+        <div
+          className="fixed inset-y-0 right-0 z-50 flex w-[min(90vw,330px)] max-w-full xl:hidden"
+          aria-hidden={!panelOpen}
         >
-          <X className="h-4 w-4" />
-        </button>
-        <div className="flex h-full min-w-0">
-          <ContactContextPanel conversationId={conversationId} />
+          <button
+            type="button"
+            onClick={() => setPanelOpen(false)}
+            className="absolute right-2 top-2 z-50 rounded-full p-2 text-muted hover:bg-primary-soft/60"
+            aria-label="Close contact panel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <div className="h-full min-w-0 w-full">
+            <ContactContextPanel conversationId={conversationId} />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

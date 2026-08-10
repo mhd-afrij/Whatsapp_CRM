@@ -8,6 +8,7 @@ use App\Models\Workspace;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\WorkspaceSeeder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 
 trait CreatesWorkspaceUsers
@@ -45,7 +46,7 @@ trait CreatesWorkspaceUsers
      */
     protected function asUser(User $user): static
     {
-        \Illuminate\Support\Facades\Auth::forgetGuards();
+        Auth::forgetGuards();
 
         $token = $user->createToken('api')->plainTextToken;
 

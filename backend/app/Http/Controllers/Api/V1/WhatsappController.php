@@ -14,9 +14,7 @@ class WhatsappController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(protected GatewayClient $gateway)
-    {
-    }
+    public function __construct(protected GatewayClient $gateway) {}
 
     public function status(Request $request)
     {
@@ -27,6 +25,17 @@ class WhatsappController extends Controller
         }
 
         return $this->success($result['data'] ?? null, $result['message'] ?? 'OK');
+    }
+
+    public function health(Request $request)
+    {
+        try {
+            $result = $this->gateway->health();
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        return $this->success($result['data'] ?? $result, 'OK');
     }
 
     public function qr(Request $request)
@@ -70,6 +79,19 @@ class WhatsappController extends Controller
         AuditLogger::log('whatsapp.disconnect', $request->user(), null, [], $request);
 
         return $this->success($result['data'] ?? null, $result['message'] ?? 'Disconnected');
+    }
+
+    public function logout(Request $request)
+    {
+        try {
+            $result = $this->gateway->logout();
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        AuditLogger::log('whatsapp.logout', $request->user(), null, [], $request);
+
+        return $this->success($result['data'] ?? null, $result['message'] ?? 'Logged out; re-authentication required');
     }
 
     public function reconnect(Request $request)

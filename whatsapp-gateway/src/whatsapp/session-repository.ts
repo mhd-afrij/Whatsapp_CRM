@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
-import { getMysqlPool } from '../lib/mysql';
+import type { RowDataPacket } from 'mysql2/promise';
+import { query, execute } from '../lib/mysql';
 import { encryptCredentialValue, decryptCredentialValue } from '../lib/crypto';
 import { logger } from '../lib/logger';
 
@@ -43,8 +43,7 @@ export interface SessionRow extends RowDataPacket {
  */
 export class SessionRepository {
   async getOrCreateSession(workspaceId: number): Promise<SessionRow> {
-    const pool = getMysqlPool();
-    const [rows] = await pool.query<SessionRow[]>(
+    const [rows] = await query<SessionRow[]>(
       'SELECT * FROM whatsapp_sessions WHERE workspace_id = ? LIMIT 1',
       [workspaceId],
     );
@@ -53,13 +52,13 @@ export class SessionRepository {
       return rows[0];
     }
 
-    const [result] = await pool.query<ResultSetHeader>(
+    const result = await execute(
       `INSERT INTO whatsapp_sessions (workspace_id, status, created_at, updated_at)
        VALUES (?, 'initializing', NOW(), NOW())`,
       [workspaceId],
     );
 
-    const [created] = await pool.query<SessionRow[]>(
+    const [created] = await query<SessionRow[]>(
       'SELECT * FROM whatsapp_sessions WHERE id = ? LIMIT 1',
       [result.insertId],
     );
@@ -80,8 +79,7 @@ export class SessionRepository {
       qrExpiresAt: Date | null;
     }> = {},
   ): Promise<void> {
-    const pool = getMysqlPool();
-    await pool.query(
+    await execute(
       `UPDATE whatsapp_sessions SET
          status = ?,
          phone_number = COALESCE(?, phone_number),
@@ -113,8 +111,7 @@ export class SessionRepository {
     eventType: ConnectionEventType,
     metadata: Record<string, unknown> = {},
   ): Promise<void> {
-    const pool = getMysqlPool();
-    await pool.query(
+    await execute(
       `INSERT INTO whatsapp_connection_events
          (workspace_id, whatsapp_session_id, event_type, metadata, occurred_at, created_at)
        VALUES (?, ?, ?, ?, NOW(), NOW())`,
@@ -123,8 +120,7 @@ export class SessionRepository {
   }
 
   async listConnectionEvents(sessionId: number, limit = 50): Promise<RowDataPacket[]> {
-    const pool = getMysqlPool();
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const [rows] = await query<RowDataPacket[]>(
       `SELECT id, event_type, metadata, occurred_at
        FROM whatsapp_connection_events
        WHERE whatsapp_session_id = ?
@@ -148,14 +144,13 @@ export class SessionRepository {
       return;
     }
 
-    const pool = getMysqlPool();
     for (const file of files) {
       if (!file.endsWith('.json')) continue;
       const fullPath = path.join(authDir, file);
       const content = await fs.readFile(fullPath, 'utf8');
       const encrypted = encryptCredentialValue(content);
 
-      await pool.query(
+      await execute(
         `INSERT INTO whatsapp_session_credentials (whatsapp_session_id, key_name, value, created_at, updated_at)
          VALUES (?, ?, ?, NOW(), NOW())
          ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()`,
@@ -169,8 +164,7 @@ export class SessionRepository {
    * useMultiFileAuthState can pick them up on gateway restart.
    */
   async restoreCredentialsToDisk(sessionId: number, authDir: string): Promise<boolean> {
-    const pool = getMysqlPool();
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const [rows] = await query<RowDataPacket[]>(
       'SELECT key_name, value FROM whatsapp_session_credentials WHERE whatsapp_session_id = ?',
       [sessionId],
     );
@@ -191,8 +185,7 @@ export class SessionRepository {
   }
 
   async deleteCredentials(sessionId: number): Promise<void> {
-    const pool = getMysqlPool();
-    await pool.query('DELETE FROM whatsapp_session_credentials WHERE whatsapp_session_id = ?', [
+    await execute('DELETE FROM whatsapp_session_credentials WHERE whatsapp_session_id = ?', [
       sessionId,
     ]);
   }

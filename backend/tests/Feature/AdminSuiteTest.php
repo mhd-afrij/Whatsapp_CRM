@@ -13,7 +13,7 @@ use Tests\TestCase;
 
 class AdminSuiteTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     // --- Users admin ---
 

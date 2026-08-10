@@ -12,7 +12,7 @@ use Tests\TestCase;
 
 class LeadTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_viewer_without_permission_cannot_list_leads(): void
     {

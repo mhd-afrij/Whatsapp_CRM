@@ -6,13 +6,14 @@ use App\Models\Contact;
 use App\Models\Deal;
 use App\Models\Pipeline;
 use App\Models\PipelineStage;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\CreatesWorkspaceUsers;
 use Tests\TestCase;
 
 class PipelineTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_agent_cannot_manage_pipelines(): void
     {
@@ -80,7 +81,7 @@ class PipelineTest extends TestCase
     {
         $this->seedRbac();
         $admin = $this->userWithRole('Administrator');
-        $other = \App\Models\Workspace::factory()->create();
+        $other = Workspace::factory()->create();
         $foreign = Pipeline::factory()->create(['workspace_id' => $other->id]);
 
         $this->asUser($admin)->getJson("/api/v1/pipelines/{$foreign->id}")->assertStatus(404);

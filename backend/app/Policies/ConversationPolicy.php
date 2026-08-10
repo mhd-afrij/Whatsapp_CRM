@@ -55,6 +55,26 @@ class ConversationPolicy
         return $user->hasPermission('conversations.change_priority') && $this->view($user, $conversation);
     }
 
+    public function archive(User $user, Conversation $conversation): bool
+    {
+        return $user->hasPermission('conversations.close') && $this->view($user, $conversation);
+    }
+
+    public function unarchive(User $user, Conversation $conversation): bool
+    {
+        return $this->archive($user, $conversation);
+    }
+
+    public function pin(User $user, Conversation $conversation): bool
+    {
+        return $user->hasPermission('conversations.view') && $this->view($user, $conversation);
+    }
+
+    public function mute(User $user, Conversation $conversation): bool
+    {
+        return $this->pin($user, $conversation);
+    }
+
     public function delete(User $user): bool
     {
         return $user->hasPermission('conversations.delete');

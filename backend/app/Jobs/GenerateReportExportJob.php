@@ -38,8 +38,7 @@ class GenerateReportExportJob implements ShouldQueue
         public readonly string $type,
         public readonly ?string $from,
         public readonly ?string $to,
-    ) {
-    }
+    ) {}
 
     public function handle(): void
     {

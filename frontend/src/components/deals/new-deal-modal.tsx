@@ -3,26 +3,12 @@
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
-import { z } from "zod";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { useCreateDeal } from "@/hooks/use-deals";
 import { ContactPicker } from "@/components/contacts/contact-picker";
 import { ApiError } from "@/lib/api-client";
-
-const dealSchema = z.object({
-  contact_id: z.number({ message: "Select a contact" }).int().positive("Select a contact"),
-  title: z.string().min(1, "Title is required").max(255),
-  value_amount: z
-    .string()
-    .optional()
-    .refine((v) => !v || Number(v) >= 0, "Must be 0 or more"),
-  value_currency: z.string().length(3, "Use a 3-letter currency code"),
-  pipeline_stage_id: z.number({ message: "Select a stage" }).int().positive("Select a stage"),
-  expected_close_date: z.string().optional().or(z.literal("")),
-});
-
-type DealSchemaValues = z.infer<typeof dealSchema>;
+import { dealSchema, type DealSchemaValues } from "@/lib/schemas";
 
 export function NewDealModal({
   pipelineId,

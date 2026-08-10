@@ -9,6 +9,9 @@ import { useUsers } from "@/hooks/use-users";
 import { ApiError } from "@/lib/api-client";
 import type { TaskFilters, TaskPriority, TaskStatus } from "@/lib/tasks-api";
 import { ErrorState } from "@/components/ui/error-state";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { taskSchema, type TaskSchemaValues } from "@/lib/schemas";
 
 const PRIORITY_OPTIONS: TaskPriority[] = ["low", "medium", "high", "urgent"];
 const STATUS_OPTIONS: TaskStatus[] = ["open", "in_progress", "done", "cancelled"];
@@ -41,67 +44,86 @@ function priorityBadgeClass(priority: TaskPriority) {
 function CreateTaskForm({ onClose }: { onClose: () => void }) {
   const { data: users } = useUsers();
   const createMutation = useCreateTask();
-  const [title, setTitle] = useState("");
-  const [dueAt, setDueAt] = useState("");
-  const [priority, setPriority] = useState<TaskPriority>("medium");
-  const [assigneeId, setAssigneeId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const {
+    handleSubmit,
+    register,
+    formState: { errors, isSubmitting },
+  } = useForm<TaskSchemaValues>({
+    resolver: zodResolver(taskSchema),
+    defaultValues: {
+      title: "",
+      description: "",
+      due_at: "",
+      priority: "medium",
+      assignee_id: undefined,
+    },
+  });
+
+  const onSubmit = handleSubmit(async (values) => {
     setError(null);
     try {
       await createMutation.mutateAsync({
-        title,
-        due_at: dueAt || null,
-        priority,
-        assignee_id: assigneeId ? Number(assigneeId) : undefined,
+        title: values.title,
+        description: values.description || null,
+        due_at: values.due_at || null,
+        priority: values.priority,
+        assignee_id: values.assignee_id,
       });
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Unable to create task.");
     }
-  };
+  });
+
+  const PRIORITY_OPTIONS: TaskPriority[] = ["low", "medium", "high", "urgent"];
 
   return (
     <form onSubmit={onSubmit} className="space-y-3 rounded-lg border border-border bg-surface p-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <input
-          required
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Task title"
-          className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-text sm:col-span-2"
-        />
-        <input
-          type="datetime-local"
-          value={dueAt}
-          onChange={(e) => setDueAt(e.target.value)}
-          className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-text"
-        />
-        <select
-          value={priority}
-          onChange={(e) => setPriority(e.target.value as TaskPriority)}
-          className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-text"
-        >
-          {PRIORITY_OPTIONS.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-        <select
-          value={assigneeId}
-          onChange={(e) => setAssigneeId(e.target.value)}
-          className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-text sm:col-span-2"
-        >
-          <option value="">Assign to me</option>
-          {users?.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
-          ))}
-        </select>
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-sm font-medium text-text">Title</label>
+          <input
+            {...register("title")}
+            placeholder="Task title"
+            className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          />
+          {errors.title && <p className="text-xs text-danger">{errors.title.message}</p>}
+        </div>
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-text">Due date</label>
+          <input
+            type="datetime-local"
+            {...register("due_at")}
+            className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm text-text"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-text">Priority</label>
+          <select
+            {...register("priority")}
+            className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm text-text"
+          >
+            {PRIORITY_OPTIONS.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-sm font-medium text-text">Assignee</label>
+          <select
+            {...register("assignee_id", { valueAsNumber: true })}
+            className="w-full rounded-md border border-border bg-bg px-3 py-2 text-sm text-text"
+          >
+            <option value="">Assign to me</option>
+            {users?.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       {error && <p className="text-xs text-danger">{error}</p>}
       <div className="flex justify-end gap-2">
@@ -114,10 +136,10 @@ function CreateTaskForm({ onClose }: { onClose: () => void }) {
         </button>
         <button
           type="submit"
-          disabled={createMutation.isPending || !title.trim()}
+          disabled={isSubmitting}
           className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-dark disabled:opacity-50"
         >
-          {createMutation.isPending ? "Creating…" : "Create task"}
+          {isSubmitting ? "Creating…" : "Create task"}
         </button>
       </div>
     </form>

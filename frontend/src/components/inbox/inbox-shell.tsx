@@ -6,22 +6,19 @@ import { cn } from "@/lib/utils";
 import { ConversationListPanel } from "@/components/inbox/conversation-list-panel";
 
 /**
- * Inbox is a two-pane layout (conversation list + active thread) on desktop.
- * Below the `lg` breakpoint there isn't room for both panes side by side, so
- * we show only one at a time: the list on `/inbox`, and the thread once a
- * conversation is selected (`/inbox/[conversationId]`) - which also gives
- * mobile users a way back to the list (the back button in the thread header).
+ * Minimal inbox shell: left list plus the active panel. The route decides what
+ * the active panel is, but the shell keeps the layout readable and consistent.
  */
 export function InboxShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isThreadOpen = /\/inbox\/[^/]+/.test(pathname ?? "");
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 overflow-hidden rounded-lg border border-border lg:grid-cols-[clamp(240px,26vw,360px)_minmax(0,1fr)]">
-      <div className={cn("h-full min-w-0 lg:block", isThreadOpen ? "hidden" : "block")}>
+    <div className="grid h-full min-h-0 w-full min-w-0 overflow-hidden rounded-2xl border border-border bg-surface md:grid-cols-[clamp(280px,24vw,300px)_minmax(0,1fr)]">
+      <div className={cn("min-h-0 min-w-0", isThreadOpen ? "hidden md:block" : "block")}>
         <ConversationListPanel />
       </div>
-      <div className={cn("h-full min-w-0 lg:block", isThreadOpen ? "block" : "hidden")}>
+      <div className={cn("min-h-0 min-w-0 w-full", isThreadOpen ? "block" : "hidden md:block")}>
         {children}
       </div>
     </div>

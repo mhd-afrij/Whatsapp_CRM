@@ -10,7 +10,7 @@ use Tests\TestCase;
 
 class WhatsappConnectionTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_agent_without_permission_is_forbidden_from_status(): void
     {
@@ -71,7 +71,7 @@ class WhatsappConnectionTest extends TestCase
         Http::fake([
             '*/internal/whatsapp/connect' => Http::response([
                 'success' => true,
-                'message' => 'Connection initiated',
+                'message' => 'QR pairing initiated',
                 'data' => ['status' => 'connecting'],
             ], 200),
         ]);
@@ -101,6 +101,26 @@ class WhatsappConnectionTest extends TestCase
             ->assertJsonPath('data.status', 'disconnected');
 
         $this->assertDatabaseHas('audit_logs', ['action' => 'whatsapp.disconnect', 'user_id' => $admin->id]);
+    }
+
+    public function test_logout_proxies_gateway_and_writes_audit_log(): void
+    {
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+
+        Http::fake([
+            '*/internal/whatsapp/logout' => Http::response([
+                'success' => true,
+                'message' => 'Logged out; re-authentication required',
+                'data' => ['status' => 'auth_required'],
+            ], 200),
+        ]);
+
+        $this->asUser($admin)->postJson('/api/v1/whatsapp/logout')
+            ->assertOk()
+            ->assertJsonPath('data.status', 'auth_required');
+
+        $this->assertDatabaseHas('audit_logs', ['action' => 'whatsapp.logout', 'user_id' => $admin->id]);
     }
 
     public function test_reconnect_proxies_gateway_and_writes_audit_log(): void

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Deal;
 use App\Models\DealStageHistory;
+use App\Models\Label;
 use App\Models\PipelineStage;
 use App\Support\AuditLogger;
 use Illuminate\Http\Request;
@@ -262,7 +263,7 @@ class DealController extends Controller
     /**
      * POST /api/v1/deals/{deal}/labels/{label}
      */
-    public function attachLabel(Request $request, Deal $deal, \App\Models\Label $label)
+    public function attachLabel(Request $request, Deal $deal, Label $label)
     {
         $this->authorize('update', $deal);
 
@@ -274,7 +275,7 @@ class DealController extends Controller
     /**
      * DELETE /api/v1/deals/{deal}/labels/{label}
      */
-    public function detachLabel(Request $request, Deal $deal, \App\Models\Label $label)
+    public function detachLabel(Request $request, Deal $deal, Label $label)
     {
         $this->authorize('update', $deal);
 

@@ -6,6 +6,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\Workspace;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 
 /**
  * Seeds the 5 system roles (is_system = true) for a workspace and grants each
@@ -77,13 +78,15 @@ class RolePermissionSeeder extends Seeder
             // See PermissionSeeder for why these two exist beyond the original doc matrix.
             'analytics.view' => ['Super Administrator', 'Administrator', 'Manager', 'Viewer'],
             'analytics.export' => ['Super Administrator', 'Administrator', 'Manager'],
+
+            'dlq.manage' => ['Super Administrator', 'Administrator'],
         ];
 
         $roles = [
             'Super Administrator' => 'Full unrestricted access, including role/permission management and irreversible actions.',
             'Administrator' => 'Operational control over the whole workspace; cannot edit roles/permissions or hard-delete conversations.',
             'Manager' => 'Full visibility and management within their team(s); no workspace-admin or role-admin capability.',
-            'Agent' => "Day-to-day operator; manages their own contacts/leads/deals/tasks and replies to assigned/team conversations.",
+            'Agent' => 'Day-to-day operator; manages their own contacts/leads/deals/tasks and replies to assigned/team conversations.',
             'Viewer' => 'Read-only across contacts, conversations, dashboards, and reports.',
         ];
 
@@ -91,7 +94,7 @@ class RolePermissionSeeder extends Seeder
 
         foreach ($roles as $name => $description) {
             $definitions[$name] = [
-                'slug' => \Illuminate\Support\Str::slug($name),
+                'slug' => Str::slug($name),
                 'description' => $description,
                 'permissions' => [],
             ];

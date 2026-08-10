@@ -4,11 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\Permission;
 use App\Models\Role;
+use App\Models\User;
 use Database\Seeders\AdminUserSeeder;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Database\Seeders\WorkspaceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class RolePermissionSeedingTest extends TestCase
@@ -62,10 +64,10 @@ class RolePermissionSeedingTest extends TestCase
     {
         $this->seed();
 
-        $admin = \App\Models\User::query()->where('email', AdminUserSeeder::EMAIL)->firstOrFail();
+        $admin = User::query()->where('email', AdminUserSeeder::EMAIL)->firstOrFail();
 
         $this->assertNotSame(AdminUserSeeder::PLAINTEXT_PASSWORD, $admin->password);
-        $this->assertTrue(\Illuminate\Support\Facades\Hash::check(AdminUserSeeder::PLAINTEXT_PASSWORD, $admin->password));
+        $this->assertTrue(Hash::check(AdminUserSeeder::PLAINTEXT_PASSWORD, $admin->password));
         $this->assertTrue($admin->roles()->where('name', 'Super Administrator')->exists());
     }
 }

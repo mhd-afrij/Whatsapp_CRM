@@ -19,13 +19,13 @@ class AdminUserSeeder extends Seeder
 {
     public const EMAIL = 'admin@example.com';
 
-    public const PLAINTEXT_PASSWORD = 'password'; // dev-only seed credential, see PROJECT_STATUS.md
+    public const PLAINTEXT_PASSWORD = 'ChangeMe123!'; // dev-only seed credential, see PROJECT_STATUS.md
 
     public function run(): void
     {
         $workspace = Workspace::query()->where('slug', 'default')->firstOrFail();
 
-        $user = User::query()->firstOrCreate(
+        $user = User::query()->updateOrCreate(
             ['workspace_id' => $workspace->id, 'email' => static::EMAIL],
             [
                 'name' => 'Super Admin',

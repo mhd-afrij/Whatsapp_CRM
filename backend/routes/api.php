@@ -3,15 +3,18 @@
 use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\BusinessHoursController;
 use App\Http\Controllers\Api\V1\ContactController;
-use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\ConversationController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DealController;
+use App\Http\Controllers\Api\V1\FailedJobController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\InternalNoteController;
 use App\Http\Controllers\Api\V1\LabelController;
 use App\Http\Controllers\Api\V1\LeadController;
 use App\Http\Controllers\Api\V1\MediaController;
+use App\Http\Controllers\Api\V1\MessageTemplateController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\PermissionController;
@@ -19,6 +22,7 @@ use App\Http\Controllers\Api\V1\PipelineController;
 use App\Http\Controllers\Api\V1\ReportExportController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\SearchController;
+use App\Http\Controllers\Api\V1\SlaController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TeamController;
 use App\Http\Controllers\Api\V1\UserController;
@@ -91,13 +95,29 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
         Route::get('/permissions', [PermissionController::class, 'index'])->name('permissions.index');
 
+        Route::prefix('custom-field-definitions')->name('custom-field-definitions.')->middleware('permission:workspace.settings.manage')->group(function () {
+            Route::get('/', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'index'])->name('index');
+            Route::post('/', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'store'])->name('store');
+            Route::patch('/{id}', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'update'])->name('update');
+            Route::delete('/{id}', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'destroy'])->name('destroy');
+        });
+
         Route::prefix('whatsapp')->name('whatsapp.')->middleware('permission:whatsapp.connection.manage')->group(function () {
             Route::get('/status', [WhatsappController::class, 'status'])->name('status');
+            Route::get('/health', [WhatsappController::class, 'health'])->name('health');
             Route::get('/qr', [WhatsappController::class, 'qr'])->name('qr');
             Route::post('/connect', [WhatsappController::class, 'connect'])->name('connect');
             Route::post('/disconnect', [WhatsappController::class, 'disconnect'])->name('disconnect');
+            Route::post('/logout', [WhatsappController::class, 'logout'])->name('logout');
             Route::post('/reconnect', [WhatsappController::class, 'reconnect'])->name('reconnect');
             Route::get('/connection-history', [WhatsappController::class, 'connectionHistory'])->name('connection-history');
+        });
+
+        Route::prefix('presence')->name('presence.')->group(function () {
+            Route::post('/', [ConversationController::class, 'updatePresence'])
+                ->middleware('permission:conversations.view')->name('update');
+            Route::get('/', [ConversationController::class, 'getPresence'])
+                ->middleware('permission:conversations.view')->name('index');
         });
 
         Route::prefix('conversations')->name('conversations.')->group(function () {
@@ -117,10 +137,38 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:conversations.reopen')->name('reopen');
             Route::patch('/{conversation}/priority', [ConversationController::class, 'changePriority'])
                 ->middleware('permission:conversations.change_priority')->name('priority');
+            Route::patch('/{conversation}/archive', [ConversationController::class, 'archive'])
+                ->middleware('permission:conversations.close')->name('archive');
+            Route::patch('/{conversation}/unarchive', [ConversationController::class, 'unarchive'])
+                ->middleware('permission:conversations.close')->name('unarchive');
+            Route::patch('/{conversation}/pin', [ConversationController::class, 'pin'])
+                ->middleware('permission:conversations.view')->name('pin');
+            Route::patch('/{conversation}/unpin', [ConversationController::class, 'unpin'])
+                ->middleware('permission:conversations.view')->name('unpin');
+            Route::patch('/{conversation}/mute', [ConversationController::class, 'mute'])
+                ->middleware('permission:conversations.view')->name('mute');
+            Route::patch('/{conversation}/unmute', [ConversationController::class, 'unmute'])
+                ->middleware('permission:conversations.view')->name('unmute');
+            Route::patch('/{conversation}/star', [ConversationController::class, 'star'])
+                ->middleware('permission:conversations.view')->name('star');
+            Route::patch('/{conversation}/unstar', [ConversationController::class, 'unstar'])
+                ->middleware('permission:conversations.view')->name('unstar');
             Route::patch('/{conversation}/read', [ConversationController::class, 'markRead'])
                 ->middleware('permission:conversations.view')->name('read');
+            Route::post('/{conversation}/typing', [ConversationController::class, 'typing'])
+                ->middleware('permission:conversations.view')->name('typing');
+            Route::get('/{conversation}/assignment-history', [ConversationController::class, 'assignmentHistory'])
+                ->middleware('permission:conversations.view')->name('assignment-history');
             Route::get('/{conversation}/messages/{message}/media/{media}/url', [MediaController::class, 'url'])
                 ->middleware('permission:conversations.view')->name('messages.media.url');
+            Route::post('/{conversation}/media', [MediaController::class, 'store'])
+                ->middleware('permission:conversations.reply')->name('media.store');
+            Route::post('/{conversation}/messages/{message}/reaction', [ConversationController::class, 'addReaction'])
+                ->middleware('permission:conversations.view')->name('messages.reaction.add');
+            Route::delete('/{conversation}/messages/{message}/reaction', [ConversationController::class, 'removeReaction'])
+                ->middleware('permission:conversations.view')->name('messages.reaction.remove');
+            Route::delete('/{conversation}/messages/{message}/revoke', [ConversationController::class, 'revokeMessage'])
+                ->middleware('permission:conversations.reply')->name('messages.revoke');
             Route::post('/{conversation}/labels/{label}', [ConversationController::class, 'attachLabel'])
                 ->middleware('permission:conversations.reply')->name('labels.attach');
             Route::delete('/{conversation}/labels/{label}', [ConversationController::class, 'detachLabel'])
@@ -235,6 +283,34 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:labels.manage')->name('destroy');
         });
 
+        Route::prefix('sla')->name('sla.')->group(function () {
+            Route::get('/configs', [SlaController::class, 'index'])
+                ->middleware('permission:workspace.settings.manage')->name('configs.index');
+            Route::post('/configs', [SlaController::class, 'store'])
+                ->middleware('permission:workspace.settings.manage')->name('configs.store');
+            Route::patch('/configs/{slaConfig}', [SlaController::class, 'update'])
+                ->middleware('permission:workspace.settings.manage')->name('configs.update');
+            Route::delete('/configs/{slaConfig}', [SlaController::class, 'destroy'])
+                ->middleware('permission:workspace.settings.manage')->name('configs.destroy');
+            Route::get('/conversations/{conversation}/status', [SlaController::class, 'getStatus'])
+                ->middleware('permission:conversations.view')->name('status');
+        });
+
+        Route::prefix('message-templates')->name('message-templates.')->group(function () {
+            Route::get('/', [MessageTemplateController::class, 'index'])
+                ->middleware('permission:templates.use')->name('index');
+            Route::post('/', [MessageTemplateController::class, 'store'])
+                ->middleware('permission:templates.manage')->name('store');
+            Route::get('/{template}', [MessageTemplateController::class, 'show'])
+                ->middleware('permission:templates.use')->name('show');
+            Route::patch('/{template}', [MessageTemplateController::class, 'update'])
+                ->middleware('permission:templates.manage')->name('update');
+            Route::delete('/{template}', [MessageTemplateController::class, 'destroy'])
+                ->middleware('permission:templates.manage')->name('destroy');
+            Route::post('/preview', [MessageTemplateController::class, 'preview'])
+                ->middleware('permission:templates.use')->name('preview');
+        });
+
         // search.global is granted to every seeded role; the SearchController itself narrows
         // per-category based on the requesting user's actual view permissions.
         Route::get('/search', [SearchController::class, 'index'])
@@ -273,6 +349,12 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::prefix('workspace')->name('workspace.')->middleware('permission:workspace.settings.manage')->group(function () {
             Route::get('/', [WorkspaceSettingController::class, 'show'])->name('show');
             Route::match(['patch', 'post'], '/', [WorkspaceSettingController::class, 'update'])->name('update');
+            Route::get('/business-hours', [BusinessHoursController::class, 'show'])
+                ->name('business-hours.show');
+            Route::patch('/business-hours', [BusinessHoursController::class, 'update'])
+                ->name('business-hours.update');
+            Route::get('/business-hours/status', [BusinessHoursController::class, 'status'])
+                ->name('business-hours.status');
         });
 
         Route::prefix('audit-logs')->name('audit-logs.')->middleware('permission:audit_logs.view')->group(function () {
@@ -288,6 +370,14 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             // authentication, same rationale as the notifications routes above.
             Route::get('/export/{notification}/download', [ReportExportController::class, 'download'])
                 ->name('export.download');
+        });
+
+        // DLQ (Dead Letter Queue) management - Admin only
+        Route::prefix('failed-jobs')->name('failed-jobs.')->middleware('permission:dlq.manage')->group(function () {
+            Route::get('/', [FailedJobController::class, 'index'])->name('index');
+            Route::post('/{id}/retry', [FailedJobController::class, 'retry'])->name('retry');
+            Route::post('/retry-all', [FailedJobController::class, 'retryAll'])->name('retry-all');
+            Route::delete('/{id}', [FailedJobController::class, 'destroy'])->name('destroy');
         });
     });
 });

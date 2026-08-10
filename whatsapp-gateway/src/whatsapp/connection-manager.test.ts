@@ -53,21 +53,22 @@ function makeFakeSocket(): FakeSocketHandle {
     end: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),
     sendMessage: vi.fn().mockResolvedValue({ key: { id: 'ABC123' } }),
+    sendPresenceUpdate: vi.fn().mockResolvedValue(undefined),
   };
 
-  return {
-    socket,
-    triggerCredsUpdate: async () => {
-      await credsHandler?.();
-    },
-    triggerConnectionUpdate: async (update) => {
-      connectionHandler?.(update);
-      // allow the async handler chain (including QRCode.toDataURL) inside
-      // ConnectionManager to flush
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    },
-  };
-}
+    return {
+      socket,
+      triggerCredsUpdate: async () => {
+        await credsHandler?.();
+      },
+      triggerConnectionUpdate: async (update) => {
+        connectionHandler?.(update);
+        // allow the async handler chain (including QRCode.toDataURL) inside
+        // ConnectionManager to flush without depending on timer advancement.
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+    };
+  }
 
 describe('ConnectionManager', () => {
   let repository: SessionRepository;
@@ -103,7 +104,9 @@ describe('ConnectionManager', () => {
 
     await fakeSocket.triggerConnectionUpdate({ qr: 'raw-qr-payload' });
 
-    expect(manager.getStatus()).toBe('qr_pending');
+    await vi.waitFor(() => {
+      expect(manager.getStatus()).toBe('qr_pending');
+    });
     expect(repository.updateStatus).toHaveBeenCalledWith(
       1,
       'qr_pending',
@@ -211,5 +214,14 @@ describe('ConnectionManager', () => {
     await fakeSocket.triggerCredsUpdate();
 
     expect(repository.persistCredentialsFromDisk).toHaveBeenCalledWith(1, expect.stringContaining('sessions-test'));
+  });
+
+  it('starts a fresh QR pairing flow by clearing old creds and stopping any active socket', async () => {
+    await manager.startFreshPairing();
+
+    expect(fakeSocket.socket.end).toHaveBeenCalledWith(undefined);
+    expect(repository.deleteCredentials).toHaveBeenCalledWith(1);
+    expect(repository.getOrCreateSession).toHaveBeenCalledTimes(3);
+    expect(manager.getStatus()).toBe('connecting');
   });
 });

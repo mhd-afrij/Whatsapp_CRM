@@ -1,5 +1,5 @@
 import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
-import { getMysqlPool } from '../lib/mysql';
+import { query, execute } from '../lib/mysql';
 
 export type DispatchStatus = 'pending' | 'processing' | 'sent' | 'failed';
 
@@ -17,7 +17,7 @@ export interface DispatchRow extends RowDataPacket {
 
 export interface DispatchPayload {
   idempotencyKey: string;
-  content: string;
+  content: string | null;
   mediaRef?: string | null;
   replyToWhatsappMessageId?: string | null;
 }
@@ -35,8 +35,7 @@ export interface DispatchPayload {
  */
 export class DispatchRepository {
   async findByIdempotencyKey(workspaceId: number, idempotencyKey: string): Promise<DispatchRow | null> {
-    const pool = getMysqlPool();
-    const [rows] = await pool.query<DispatchRow[]>(
+    const [rows] = await query<DispatchRow[]>(
       `SELECT * FROM message_dispatch_queue
        WHERE workspace_id = ? AND idempotency_key = ? LIMIT 1`,
       [workspaceId, idempotencyKey],
@@ -50,15 +49,14 @@ export class DispatchRepository {
     requestedByUserId: number | null,
     payload: DispatchPayload,
   ): Promise<DispatchRow> {
-    const pool = getMysqlPool();
-    const [result] = await pool.query<ResultSetHeader>(
+    const [result] = await query<ResultSetHeader>(
       `INSERT INTO message_dispatch_queue
          (workspace_id, conversation_id, requested_by_user_id, idempotency_key, payload, status, attempts, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, 'pending', 0, NOW(), NOW())`,
       [workspaceId, conversationId, requestedByUserId, payload.idempotencyKey, JSON.stringify(payload)],
     );
 
-    const [rows] = await pool.query<DispatchRow[]>(
+    const [rows] = await query<DispatchRow[]>(
       'SELECT * FROM message_dispatch_queue WHERE id = ? LIMIT 1',
       [result.insertId],
     );
@@ -66,39 +64,34 @@ export class DispatchRepository {
   }
 
   async setBullmqJobId(id: number, bullmqJobId: string): Promise<void> {
-    const pool = getMysqlPool();
-    await pool.query('UPDATE message_dispatch_queue SET bullmq_job_id = ?, updated_at = NOW() WHERE id = ?', [
+    await execute('UPDATE message_dispatch_queue SET bullmq_job_id = ?, updated_at = NOW() WHERE id = ?', [
       bullmqJobId,
       id,
     ]);
   }
 
   async markProcessing(id: number): Promise<void> {
-    const pool = getMysqlPool();
-    await pool.query(
+    await execute(
       'UPDATE message_dispatch_queue SET status = "processing", attempts = attempts + 1, updated_at = NOW() WHERE id = ?',
       [id],
     );
   }
 
   async markSent(id: number, messageId: number): Promise<void> {
-    const pool = getMysqlPool();
-    await pool.query(
+    await execute(
       'UPDATE message_dispatch_queue SET status = "sent", message_id = ?, updated_at = NOW() WHERE id = ?',
       [messageId, id],
     );
   }
 
   async markFailed(id: number): Promise<void> {
-    const pool = getMysqlPool();
-    await pool.query('UPDATE message_dispatch_queue SET status = "failed", updated_at = NOW() WHERE id = ?', [
+    await execute('UPDATE message_dispatch_queue SET status = "failed", updated_at = NOW() WHERE id = ?', [
       id,
     ]);
   }
 
   async findById(id: number): Promise<DispatchRow | null> {
-    const pool = getMysqlPool();
-    const [rows] = await pool.query<DispatchRow[]>(
+    const [rows] = await query<DispatchRow[]>(
       'SELECT * FROM message_dispatch_queue WHERE id = ? LIMIT 1',
       [id],
     );

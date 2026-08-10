@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Contact;
+use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -11,13 +12,13 @@ use Tests\TestCase;
 
 class ContactTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_user_without_permission_cannot_list_contacts(): void
     {
         $this->seedRbac();
         $workspace = Workspace::query()->firstOrFail();
-        $user = \App\Models\User::factory()->create(['workspace_id' => $workspace->id]);
+        $user = User::factory()->create(['workspace_id' => $workspace->id]);
 
         $this->asUser($user)->getJson('/api/v1/contacts')
             ->assertStatus(403)

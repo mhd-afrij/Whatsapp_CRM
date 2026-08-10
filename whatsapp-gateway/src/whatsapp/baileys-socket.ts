@@ -3,7 +3,7 @@ import makeWASocket, {
   type AuthenticationState,
 } from '@whiskeysockets/baileys';
 import type { Contact } from '@whiskeysockets/baileys/lib/Types/Contact.js';
-import { logger } from '../lib/logger';
+import { createBaileysLogger } from '../lib/baileys-logger';
 
 /**
  * Minimal surface of a Baileys WASocket that ConnectionManager depends on.
@@ -24,6 +24,7 @@ export interface IBaileysSocket {
     jid: string,
     content: { text: string } | Record<string, unknown>,
   ): Promise<{ key: { id?: string | null } } | undefined>;
+  sendPresenceUpdate(presence: string, to: string): Promise<void>;
   downloadMediaMessage?: (message: unknown) => Promise<Buffer>;
 }
 
@@ -77,7 +78,7 @@ export async function loadAuthState(authDir: string): Promise<AuthStateBundle> {
  * warn-and-above: Baileys is extremely chatty at info/debug.
  */
 export function createBaileysSocket(state: AuthenticationState): IBaileysSocket {
-  const baileysLogger = logger.child({ module: 'baileys' }).child({}, { level: 'warn' });
+  const baileysLogger = createBaileysLogger();
   const socket = makeWASocket({
     auth: state,
     logger: baileysLogger as unknown as Parameters<typeof makeWASocket>[0]['logger'],

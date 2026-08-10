@@ -5,17 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { useAuth } from "@/context/auth-context";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-
-const loginSchema = z.object({
-  email: z.string().min(1, "Email is required").email("Enter a valid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-});
-
-type LoginFormValues = z.infer<typeof loginSchema>;
+import { loginSchema, type LoginSchemaValues } from "@/lib/schemas";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,12 +19,12 @@ export default function LoginPage() {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<LoginFormValues>({
+  } = useForm<LoginSchemaValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
   });
 
-  const onSubmit = async (values: LoginFormValues) => {
+  const onSubmit = async (values: LoginSchemaValues) => {
     setFormError(null);
     try {
       await login(values.email, values.password);

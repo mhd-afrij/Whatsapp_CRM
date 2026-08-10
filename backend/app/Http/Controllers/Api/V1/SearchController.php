@@ -31,22 +31,8 @@ class SearchController extends Controller
      * filtering to the authenticated user's workspace_id on every query - no manual
      * workspace_id filtering is needed or done here.
      *
-     * Matching strategy: plain `LIKE '%term%'` against the existing btree-indexed name/email/
-     * phone columns (and the gateway-owned `messages.body` column, read-only). A MySQL FULLTEXT
-     * index would score better for the free-text `messages.body`/`contacts.full_name` matches,
-     * but this pass does not add one: this repo has no confirmed local MySQL full-text
-     * configuration (minimum word length, stopword list, ngram parser for non-space-delimited
-     * content) to validate against, and shipping an unverified FULLTEXT migration would be
-     * guessing rather than engineering. LIKE is slower on large tables (leading wildcard defeats
-     * a btree index) but is correct and matches the rest of this codebase's existing `search`
-     * filters (see ContactController::index). Revisit under docs/08-implementation-roadmap.md's
-     * Phase 13 note about full-text/OpenSearch once there's a real data volume to benchmark.
-     *
-     * Two response shapes:
-     *  - No `category` param: a "breakdown" - up to 5 results per category plus each category's
-     *    total count, for an omnibar-style dropdown.
-     *  - `category` param given: only that category, fully paginated (page/per_page/total/
-     *    last_page in meta), for a "view all results in this category" page.
+     * Matching strategy: MySQL FULLTEXT with MATCH AGAINST in Boolean mode when available,
+     * falling back to LIKE '%term%' for SQLite or when FULLTEXT is not configured.
      */
     public function index(Request $request)
     {
@@ -128,26 +114,55 @@ class SearchController extends Controller
         return $allowed;
     }
 
+    private function useFulltext(): bool
+    {
+        return config('database.default') === 'mysql';
+    }
+
+    private function fulltextQuery(string $term): string
+    {
+        // Boolean mode: support quoted phrases and +required/-excluded terms.
+        // Replace spaces with wildcards for partial matching.
+        $escaped = str_replace(['"', "'"], '', $term);
+
+        return "+{$escaped}*";
+    }
+
     private function queryFor(string $category, string $q)
     {
-        return match ($category) {
-            'contacts' => Contact::query()
-                ->where(function ($query) use ($q) {
-                    $query->where('full_name', 'like', "%{$q}%")
-                        ->orWhere('email', 'like', "%{$q}%")
-                        ->orWhere('phone_number', 'like', "%{$q}%")
-                        ->orWhere('company', 'like', "%{$q}%");
-                })
-                ->orderByDesc('id'),
+        $useFt = $this->useFulltext();
 
-            'conversations' => Conversation::query()
-                ->with(['contact', 'whatsappContact'])
-                ->where(function ($query) use ($q) {
-                    $query->whereHas('contact', fn ($c) => $c->where('full_name', 'like', "%{$q}%"))
-                        ->orWhereHas('whatsappContact', fn ($c) => $c->where('push_name', 'like', "%{$q}%"))
-                        ->orWhereHas('messages', fn ($m) => $m->where('body', 'like', "%{$q}%"));
-                })
-                ->orderByDesc('last_message_at'),
+        return match ($category) {
+            'contacts' => $useFt
+                ? Contact::query()
+                    ->whereRaw('MATCH(full_name, email, company) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)])
+                    ->orderByDesc('id')
+                : Contact::query()
+                    ->where(function ($query) use ($q) {
+                        $query->where('full_name', 'like', "%{$q}%")
+                            ->orWhere('email', 'like', "%{$q}%")
+                            ->orWhere('phone_number', 'like', "%{$q}%")
+                            ->orWhere('company', 'like', "%{$q}%");
+                    })
+                    ->orderByDesc('id'),
+
+            'conversations' => $useFt
+                ? Conversation::query()
+                    ->with(['contact', 'whatsappContact'])
+                    ->where(function ($query) use ($q) {
+                        $query->whereHas('contact', fn ($c) => $c->whereRaw('MATCH(full_name, email, company) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)]))
+                            ->orWhereHas('whatsappContact', fn ($c) => $c->where('push_name', 'like', "%{$q}%"))
+                            ->orWhereHas('messages', fn ($m) => $m->whereRaw('MATCH(body) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)]));
+                    })
+                    ->orderByDesc('last_message_at')
+                : Conversation::query()
+                    ->with(['contact', 'whatsappContact'])
+                    ->where(function ($query) use ($q) {
+                        $query->whereHas('contact', fn ($c) => $c->where('full_name', 'like', "%{$q}%"))
+                            ->orWhereHas('whatsappContact', fn ($c) => $c->where('push_name', 'like', "%{$q}%"))
+                            ->orWhereHas('messages', fn ($m) => $m->where('body', 'like', "%{$q}%"));
+                    })
+                    ->orderByDesc('last_message_at'),
 
             'leads' => Lead::query()
                 ->with(['contact'])

@@ -20,6 +20,13 @@ vi.mock('../lib/media-access', () => ({
   resolveMediaAccess: (...args: unknown[]) => resolveMediaAccess(...args),
 }));
 
+const { putObjectMock } = vi.hoisted(() => ({
+  putObjectMock: vi.fn().mockResolvedValue('1/outbound/abc.png'),
+}));
+vi.mock('../lib/storage', () => ({
+  getStorageClient: () => ({ putObject: (...args: unknown[]) => putObjectMock(...args) }),
+}));
+
 const { emitConversationEvent, emitNotificationCreated } = vi.hoisted(() => ({
   emitConversationEvent: vi.fn(),
   emitNotificationCreated: vi.fn(),
@@ -53,6 +60,63 @@ describe('internal media/url and events/emit routes', () => {
   });
 
   const headers = { 'X-Internal-Gateway-Token': 'test-internal-gateway-token' };
+
+  describe('POST /internal/whatsapp/media/upload', () => {
+    function upload(file: Blob, extraFields: Record<string, string> = {}) {
+      const form = new FormData();
+      form.append('file', file, 'photo.png');
+      for (const [key, value] of Object.entries(extraFields)) {
+        form.append(key, value);
+      }
+      return fetch(`${baseUrl}/internal/whatsapp/media/upload`, {
+        method: 'POST',
+        headers: { 'X-Internal-Gateway-Token': 'test-internal-gateway-token' },
+        body: form,
+      });
+    }
+
+    it('stores an allowed file and returns only a storage key + metadata', async () => {
+      const bytes = Buffer.from('fake png bytes');
+      putObjectMock.mockResolvedValueOnce('1/outbound/abc.png');
+
+      const res = await upload(new Blob([bytes], { type: 'image/png' }), { workspaceId: '1' });
+
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as {
+        data: { storagePath: string; mimeType: string; sizeBytes: number; checksumSha256: string; fileName: string };
+      };
+      expect(body.data.storagePath).toMatch(/^1\/outbound\/[0-9a-f-]+\.png$/);
+      expect(body.data.mimeType).toBe('image/png');
+      expect(body.data.sizeBytes).toBe(bytes.length);
+      expect(body.data.checksumSha256).toHaveLength(64);
+      expect(putObjectMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a disallowed MIME type before storing anything', async () => {
+      const res = await upload(new Blob([Buffer.from('nope')], { type: 'application/x-msdownload' }), {
+        workspaceId: '1',
+      });
+
+      expect(res.status).toBe(415);
+      expect(putObjectMock).not.toHaveBeenCalled();
+    });
+
+    it('requires a workspaceId field', async () => {
+      const res = await upload(new Blob([Buffer.from('fake')], { type: 'image/png' }));
+
+      expect(res.status).toBe(400);
+      expect(putObjectMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects requests without the internal gateway token', async () => {
+      const form = new FormData();
+      form.append('file', new Blob([Buffer.from('fake')], { type: 'image/png' }), 'photo.png');
+      const res = await fetch(`${baseUrl}/internal/whatsapp/media/upload`, { method: 'POST', body: form });
+
+      expect(res.status).toBe(401);
+      expect(putObjectMock).not.toHaveBeenCalled();
+    });
+  });
 
   describe('GET /internal/whatsapp/media/:mediaId/url', () => {
     it('rejects requests without the internal gateway token', async () => {

@@ -5,24 +5,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { apiClient, type ApiResponse } from "@/lib/api-client";
 import { applyApiErrorsToForm } from "@/lib/form-errors";
 import { useToast } from "@/providers/toast-provider";
 import { cn } from "@/lib/utils";
-
-const schema = z
-  .object({
-    email: z.string().min(1, "Email is required").email("Enter a valid email address"),
-    password: z.string().min(8, "Password must be at least 8 characters"),
-    password_confirmation: z.string().min(1, "Please confirm your password"),
-  })
-  .refine((data) => data.password === data.password_confirmation, {
-    message: "Passwords do not match",
-    path: ["password_confirmation"],
-  });
-
-type FormValues = z.infer<typeof schema>;
+import { resetPasswordSchema, type ResetPasswordSchemaValues } from "@/lib/schemas";
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -37,12 +24,12 @@ function ResetPasswordForm() {
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+  } = useForm<ResetPasswordSchemaValues>({
+    resolver: zodResolver(resetPasswordSchema),
     defaultValues: { email: emailFromQuery, password: "", password_confirmation: "" },
   });
 
-  const onSubmit = async (values: FormValues) => {
+  const onSubmit = async (values: ResetPasswordSchemaValues) => {
     setFormError(null);
     if (!token) {
       setFormError("This reset link is missing its token. Please request a new one.");
@@ -57,7 +44,7 @@ function ResetPasswordForm() {
       toast("Password reset successfully. Please sign in.", "success");
       router.push("/login");
     } catch (error) {
-      const message = applyApiErrorsToForm<FormValues>(error, setError);
+      const message = applyApiErrorsToForm<ResetPasswordSchemaValues>(error, setError);
       setFormError(message);
     }
   };

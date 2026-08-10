@@ -15,21 +15,21 @@ class Label extends Model
 
     public function contacts(): BelongsToMany
     {
-        return $this->belongsToMany(Contact::class, 'contact_label')->withPivot("created_at");
+        return $this->belongsToMany(Contact::class, 'contact_label')->withPivot('created_at');
     }
 
     public function conversations(): BelongsToMany
     {
-        return $this->belongsToMany(Conversation::class, 'conversation_label')->withPivot("created_at");
+        return $this->belongsToMany(Conversation::class, 'conversation_label')->withPivot('created_at');
     }
 
     public function leads(): BelongsToMany
     {
-        return $this->belongsToMany(Lead::class, 'lead_label')->withPivot("created_at");
+        return $this->belongsToMany(Lead::class, 'lead_label')->withPivot('created_at');
     }
 
     public function deals(): BelongsToMany
     {
-        return $this->belongsToMany(Deal::class, 'deal_label')->withPivot("created_at");
+        return $this->belongsToMany(Deal::class, 'deal_label')->withPivot('created_at');
     }
 }

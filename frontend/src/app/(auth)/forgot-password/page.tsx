@@ -4,17 +4,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 import { apiClient, type ApiResponse } from "@/lib/api-client";
 import { applyApiErrorsToForm } from "@/lib/form-errors";
 import { useToast } from "@/providers/toast-provider";
 import { cn } from "@/lib/utils";
-
-const schema = z.object({
-  email: z.string().min(1, "Email is required").email("Enter a valid email address"),
-});
-
-type FormValues = z.infer<typeof schema>;
+import { forgotPasswordSchema, type ForgotPasswordSchemaValues } from "@/lib/schemas";
 
 export default function ForgotPasswordPage() {
   const { toast } = useToast();
@@ -26,12 +20,12 @@ export default function ForgotPasswordPage() {
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+  } = useForm<ForgotPasswordSchemaValues>({
+    resolver: zodResolver(forgotPasswordSchema),
     defaultValues: { email: "" },
   });
 
-  const onSubmit = async (values: FormValues) => {
+  const onSubmit = async (values: ForgotPasswordSchemaValues) => {
     setFormError(null);
     try {
       const { data } = await apiClient.post<ApiResponse<null>>("/auth/forgot-password", values);
@@ -39,7 +33,7 @@ export default function ForgotPasswordPage() {
       setSubmitted(true);
       toast(data.message, "success");
     } catch (error) {
-      const message = applyApiErrorsToForm<FormValues>(error, setError);
+      const message = applyApiErrorsToForm<ForgotPasswordSchemaValues>(error, setError);
       setFormError(message);
     }
   };

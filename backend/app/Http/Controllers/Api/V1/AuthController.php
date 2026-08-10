@@ -9,13 +9,13 @@ use App\Http\Requests\Auth\InviteUserRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Models\Invitation;
-use App\Models\Role;
+use App\Models\Permission;
 use App\Models\User;
 use App\Notifications\InvitationNotification;
 use App\Support\AuditLogger;
 use App\Traits\ApiResponse;
 use Illuminate\Auth\Events\PasswordReset;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -59,7 +59,7 @@ class AuthController extends Controller
         ], 'Logged in successfully.');
     }
 
-    public function logout(\Illuminate\Http\Request $request)
+    public function logout(Request $request)
     {
         $user = $request->user();
 
@@ -70,7 +70,7 @@ class AuthController extends Controller
         return $this->success(null, 'Logged out successfully.');
     }
 
-    public function me(\Illuminate\Http\Request $request)
+    public function me(Request $request)
     {
         return $this->success($this->userPayload($request->user()), 'Current user retrieved.');
     }
@@ -180,7 +180,7 @@ class AuthController extends Controller
             'is_active' => $user->is_active,
             'roles' => $user->roles()->pluck('name'),
             'permissions' => $user->isSuperAdmin()
-                ? \App\Models\Permission::pluck('name')
+                ? Permission::pluck('name')
                 : $user->permissionNames(),
         ];
     }

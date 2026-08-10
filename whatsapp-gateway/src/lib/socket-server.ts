@@ -169,6 +169,66 @@ export function emitNotificationCreated(
     .emit('notification.created', envelope('notification.created', workspaceId, payload));
 }
 
+/**
+ * Emit a message revoked event for a conversation.
+ */
+export function emitMessageRevoked(
+  workspaceId: number,
+  conversationId: number,
+  payload: {
+    messageId: number;
+    whatsappMessageId: string;
+    deletedBy?: string;
+  },
+): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}:conversation:${conversationId}`)
+    .to(`workspace:${workspaceId}:inbox`)
+    .emit('message.revoked', envelope('message.revoked', workspaceId, payload));
+}
+
+/**
+ * Emit a typing indicator event for a conversation.
+ * Used for both incoming (contact typing) and outgoing (agent typing) indicators.
+ */
+export function emitTypingUpdated(
+  workspaceId: number,
+  conversationId: number,
+  payload: {
+    conversationId: number;
+    userId?: number;
+    contactId?: number;
+    isTyping: boolean;
+    name?: string;
+  },
+): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}:conversation:${conversationId}`)
+    .to(`workspace:${workspaceId}:inbox`)
+    .emit('typing.updated', envelope('typing.updated', workspaceId, payload));
+}
+
+/**
+ * Emit a presence update event for a user/contact.
+ */
+export function emitPresenceUpdated(
+  workspaceId: number,
+  payload: {
+    userId?: number;
+    contactId?: number;
+    status: 'online' | 'offline' | 'away' | 'busy';
+    lastSeen?: string;
+    name?: string;
+  },
+): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}`)
+    .emit('presence.updated', envelope('presence.updated', workspaceId, payload));
+}
+
 export function getSocketServer(): SocketIOServer | null {
   return io;
 }

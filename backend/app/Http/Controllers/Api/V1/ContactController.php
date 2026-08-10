@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\ContactActivity;
+use App\Models\Label;
 use App\Support\AuditLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -231,6 +232,7 @@ class ContactController extends Controller
                     'data' => $rowData,
                     'errors' => $rowValidator->errors()->all(),
                 ];
+
                 continue;
             }
 
@@ -242,6 +244,7 @@ class ContactController extends Controller
                     'data' => $rowData,
                     'errors' => ['Row has no name, email, or phone number.'],
                 ];
+
                 continue;
             }
 
@@ -356,7 +359,7 @@ class ContactController extends Controller
     /**
      * POST /api/v1/contacts/{contact}/labels/{label}
      */
-    public function attachLabel(Request $request, Contact $contact, \App\Models\Label $label)
+    public function attachLabel(Request $request, Contact $contact, Label $label)
     {
         $this->authorize('update', $contact);
 
@@ -368,7 +371,7 @@ class ContactController extends Controller
     /**
      * DELETE /api/v1/contacts/{contact}/labels/{label}
      */
-    public function detachLabel(Request $request, Contact $contact, \App\Models\Label $label)
+    public function detachLabel(Request $request, Contact $contact, Label $label)
     {
         $this->authorize('update', $contact);
 

@@ -61,6 +61,6 @@ class Deal extends Model
 
     public function labels(): BelongsToMany
     {
-        return $this->belongsToMany(Label::class, 'deal_label')->withPivot("created_at");
+        return $this->belongsToMany(Label::class, 'deal_label')->withPivot('created_at');
     }
 }

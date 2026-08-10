@@ -3,12 +3,12 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToWorkspace;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Split-ownership table (see docs/DATA_OWNERSHIP.md §"Column-level split table").
@@ -25,7 +25,7 @@ class Conversation extends Model
     protected $fillable = [
         'workspace_id', 'whatsapp_contact_id', 'contact_id', 'status', 'priority', 'assigned_user_id',
         'assigned_team_id', 'last_message_at', 'last_message_preview', 'unread_count',
-        'closed_at', 'closed_by',
+        'closed_at', 'closed_by', 'archived_at', 'pinned_at', 'muted_until', 'starred_at',
     ];
 
     protected function casts(): array
@@ -33,8 +33,17 @@ class Conversation extends Model
         return [
             'last_message_at' => 'datetime',
             'closed_at' => 'datetime',
+            'archived_at' => 'datetime',
+            'pinned_at' => 'datetime',
+            'muted_until' => 'datetime',
+            'starred_at' => 'datetime',
             'unread_count' => 'integer',
         ];
+    }
+
+    public function scopeVisibleInbox(Builder $query): Builder
+    {
+        return $query->whereNull('archived_at');
     }
 
     public function whatsappContact(): BelongsTo
@@ -79,7 +88,7 @@ class Conversation extends Model
 
     public function labels(): BelongsToMany
     {
-        return $this->belongsToMany(Label::class, 'conversation_label')->withPivot("created_at");
+        return $this->belongsToMany(Label::class, 'conversation_label')->withPivot('created_at');
     }
 
     /**

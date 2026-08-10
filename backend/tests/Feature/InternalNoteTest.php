@@ -11,7 +11,7 @@ use Tests\TestCase;
 
 class InternalNoteTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_viewer_cannot_create_a_note(): void
     {

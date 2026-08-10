@@ -14,6 +14,7 @@ vi.mock('../whatsapp/manager-instance', () => ({
   connectionManager: {
     getSnapshot: vi.fn().mockReturnValue({ status: 'connected' }),
     start: vi.fn().mockResolvedValue(undefined),
+    startFreshPairing: vi.fn().mockResolvedValue(undefined),
   },
 }));
 

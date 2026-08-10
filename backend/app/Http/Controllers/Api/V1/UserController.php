@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Invitation;
 use App\Models\Role;
 use App\Models\User;
@@ -73,7 +74,7 @@ class UserController extends Controller
         $this->authorize('view', $user);
 
         $payload = $this->adminUserPayload($user);
-        $payload['recent_activity'] = \App\Models\AuditLog::where('user_id', $user->id)
+        $payload['recent_activity'] = AuditLog::where('user_id', $user->id)
             ->orderByDesc('created_at')
             ->limit(20)
             ->get(['action', 'subject_type', 'subject_id', 'created_at']);

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Contact;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\CreatesWorkspaceUsers;
@@ -16,7 +17,7 @@ use Tests\TestCase;
  */
 class RateLimiterTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_password_reset_request_is_throttled_after_five_attempts_per_minute(): void
     {
@@ -64,13 +65,13 @@ class RateLimiterTest extends TestCase
         for ($i = 0; $i < 10; $i++) {
             $this->asUser($admin)->postJson('/api/v1/auth/invitations', [
                 'email' => "invitee{$i}@example.com",
-                'role_id' => \App\Models\Role::query()->where('name', 'Agent')->firstOrFail()->id,
+                'role_id' => Role::query()->where('name', 'Agent')->firstOrFail()->id,
             ])->assertStatus(201);
         }
 
         $this->asUser($admin)->postJson('/api/v1/auth/invitations', [
             'email' => 'invitee-final@example.com',
-            'role_id' => \App\Models\Role::query()->where('name', 'Agent')->firstOrFail()->id,
+            'role_id' => Role::query()->where('name', 'Agent')->firstOrFail()->id,
         ])->assertStatus(429);
     }
 
