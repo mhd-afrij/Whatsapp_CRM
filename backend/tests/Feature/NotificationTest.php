@@ -9,10 +9,12 @@ use App\Models\Conversation;
 use App\Models\Notification;
 use App\Models\NotificationPreference;
 use App\Models\Task;
+use App\Models\User;
 use App\Models\Workspace;
 use App\Notifications\AppNotificationMail;
 use App\Services\NotificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification as NotificationFacade;
 use Tests\CreatesWorkspaceUsers;
@@ -20,7 +22,7 @@ use Tests\TestCase;
 
 class NotificationTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     protected function setUp(): void
     {
@@ -123,7 +125,7 @@ class NotificationTest extends TestCase
         $agent = $this->userWithRole('Agent');
 
         $otherWorkspace = Workspace::factory()->create();
-        $otherUser = \App\Models\User::factory()->create(['workspace_id' => $otherWorkspace->id]);
+        $otherUser = User::factory()->create(['workspace_id' => $otherWorkspace->id]);
         $foreignNotification = Notification::create([
             'workspace_id' => $otherWorkspace->id,
             'user_id' => $otherUser->id,
@@ -252,7 +254,7 @@ class NotificationTest extends TestCase
             'assigned_user_id' => $agent->id,
         ]);
 
-        \Illuminate\Support\Facades\DB::table('messages')->insert([
+        DB::table('messages')->insert([
             'workspace_id' => $conversation->workspace_id,
             'conversation_id' => $conversation->id,
             'whatsapp_message_id' => 'wamid.test123',
@@ -260,7 +262,7 @@ class NotificationTest extends TestCase
             'sender_type' => 'contact',
             'message_type' => 'text',
             'body' => 'Hello there',
-            'status' => 'received',
+            'status' => 'delivered',
             'sent_at' => now(),
             'created_at' => now(),
             'updated_at' => now(),
@@ -280,14 +282,14 @@ class NotificationTest extends TestCase
         $admin = $this->userWithRole('Administrator');
         $agent = $this->userWithRole('Agent');
 
-        $session = \Illuminate\Support\Facades\DB::table('whatsapp_sessions')->insertGetId([
+        $session = DB::table('whatsapp_sessions')->insertGetId([
             'workspace_id' => $admin->workspace_id,
             'status' => 'logged_out',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
-        \Illuminate\Support\Facades\DB::table('whatsapp_connection_events')->insert([
+        DB::table('whatsapp_connection_events')->insert([
             'workspace_id' => $admin->workspace_id,
             'whatsapp_session_id' => $session,
             'event_type' => 'logged_out',

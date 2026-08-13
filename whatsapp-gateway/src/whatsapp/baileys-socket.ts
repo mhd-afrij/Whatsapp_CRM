@@ -111,6 +111,8 @@ export function createBaileysSocket(
   options: BaileysSocketOptions = {},
 ): IBaileysSocket {
   const baileysLogger = createBaileysLogger({ onUnexpectedError: options.onUnexpectedError });
+export function createBaileysSocket(state: AuthenticationState): IBaileysSocket {
+  const baileysLogger = createBaileysLogger();
   const socket = makeWASocket({
     auth: state,
     logger: baileysLogger as unknown as Parameters<typeof makeWASocket>[0]['logger'],

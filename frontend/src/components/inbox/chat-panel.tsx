@@ -26,6 +26,8 @@ import {
   Sparkles,
   Trash2,
   Video,
+  Send,
+  Sparkles,
   Volume2,
   X,
   XCircle,
@@ -42,6 +44,7 @@ import {
   messagesKey,
 } from "@/hooks/use-conversations";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCreateNote } from "@/hooks/use-notes";
 import { useComposerDraft } from "@/hooks/use-composer-draft";
 import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
@@ -52,6 +55,10 @@ import { useAuth } from "@/context/auth-context";
 import { MediaPreview } from "./media-preview";
 import { MessageReactions } from "./message-reactions";
 import { EmojiPicker } from "./emoji-picker";
+import { uploadMessageMedia, addReaction, removeReaction, revokeMessage } from "@/lib/conversations-api";
+import { useAuth } from "@/context/auth-context";
+import { MediaPreview } from "./media-preview";
+import { MessageReactions } from "./message-reactions";
 import { TemplatePicker, parseSlashCommand } from "./template-picker";
 import { TypingIndicator } from "./typing-indicator";
 import { Avatar } from "@/components/ui/avatar";
@@ -470,6 +477,7 @@ function MessageBubble({
       id={`message-${message.id}`}
       className={cn("group relative flex min-w-0", isOutbound ? "justify-end" : "justify-start")}
     >
+    <div id={`message-${message.id}`} className={cn("group relative flex min-w-0", isOutbound ? "justify-end" : "justify-start")}>
       <div
         className={cn(
           "w-fit min-w-[72px] max-w-[84%] rounded-2xl px-3 py-2 text-sm shadow-sm md:max-w-[68%] lg:max-w-[560px]",
@@ -481,6 +489,7 @@ function MessageBubble({
               ? "ring-2 ring-primary-dark/70"
               : "ring-2 ring-primary/50"
             : undefined
+            : "rounded-tl-sm border border-border bg-surface text-text"
         )}
       >
         <MessageActionsMenu
@@ -687,6 +696,7 @@ function ActionMenu({
 
       {open && (
         <div className="absolute right-0 top-full z-30 mt-2 w-52 overflow-hidden rounded-2xl border border-border bg-surface py-1 shadow-lg">
+        <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-border bg-surface py-1 shadow-lg">
           {canChangePriority && (
             <>
               <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-muted">
@@ -874,6 +884,14 @@ function Composer({
   const createNote = useCreateNote({ conversation_id: conversationId });
   const { toast } = useToast();
 
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    const nextHeight = Math.min(Math.max(el.scrollHeight, COMPOSER_MIN_HEIGHT_PX), COMPOSER_MAX_HEIGHT_PX);
+    el.style.height = `${nextHeight}px`;
+  }, [body, mode]);
+
   const clearAttachment = useCallback(() => {
     setAttachment((current) => {
       if (current?.previewUrl) {
@@ -1050,6 +1068,13 @@ function Composer({
               <X className="h-4 w-4" />
             </button>
           </div>
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-2xl border border-border bg-bg px-3 py-2 text-xs text-text">
+          <span className="truncate">
+            <span className="font-medium">Replying to:</span> {replyTo.body ?? `[${replyTo.message_type}]`}
+          </span>
+          <button type="button" onClick={onClearReply} className="shrink-0 text-muted hover:text-text">
+            ×
+          </button>
         </div>
       )}
 
@@ -1092,6 +1117,9 @@ function Composer({
             ? "grid-cols-[auto_auto_auto_minmax(0,1fr)_42px]"
             : canReply
               ? "grid-cols-[auto_auto_minmax(0,1fr)_42px]"
+            ? "grid-cols-[auto_auto_minmax(0,1fr)_42px]"
+            : canReply
+              ? "grid-cols-[auto_minmax(0,1fr)_42px]"
               : "grid-cols-[minmax(0,1fr)_42px]"
         )}
       >
@@ -1135,6 +1163,18 @@ function Composer({
               <Smile className="h-5 w-5" />
             </button>
 </>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isNoteMode || isUploading}
+            aria-label="Attach media"
+            className={cn(
+              "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
+              attachment && "text-primary"
+            )}
+          >
+            <Paperclip className="h-5 w-5" />
+          </button>
         )}
 
         <div className="relative">
@@ -1151,6 +1191,7 @@ function Composer({
           />
         </div>
         <textarea
+          <textarea
             ref={textareaRef}
             value={body}
             onChange={handleTextareaChange}
@@ -1177,6 +1218,7 @@ function Composer({
         >
           <Send className="h-5 w-5" />
         </button>
+      </div>
 
       {sendMutation.isError && !isNoteMode && (
         <p className="mt-2 text-xs text-danger">Unable to send message. Please try again.</p>
@@ -1198,6 +1240,7 @@ export function ChatPanel({
   const { data: workspace } = useWorkspaceSettings();
   const loadOlder = useLoadOlderMessages(conversationId);
   const { close, reopen, markRead, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar, clearMessages, deleteConv, block, unblock, report } =
+  const { close, reopen, markRead, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar } =
     useConversationActions(conversationId);
   const { isContactTyping, typingName } = useTypingIndicator(conversationId);
   const queryClient = useQueryClient();
@@ -1329,6 +1372,9 @@ export function ChatPanel({
         <div className="message-list-bg space-y-3 overflow-hidden p-4">
           {Array.from({ length: 8 }).map((_, index) => (
             <div key={index} className="h-10 w-2/3 animate-pulse rounded-2xl bg-border/60" />
+        <div className="space-y-3 overflow-hidden p-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div key={index} className="h-10 w-2/3 animate-pulse rounded-2xl bg-bg" />
           ))}
         </div>
         <div className="border-t border-border bg-surface px-3 py-3">
@@ -1473,6 +1519,7 @@ export function ChatPanel({
           ref={scrollRef}
           onScroll={handleScroll}
           className="message-list-bg h-full min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4"
+          className="h-full min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4"
         >
           {isAtTop && hasOlderMessages && (
             <div className="sticky top-0 z-10 mb-4 flex justify-center">

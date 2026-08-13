@@ -216,8 +216,9 @@ function SearchResultsPage() {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+    <Suspense fallback={<p className="text-sm text-muted">Loading...</p>}>
       <SearchResultsPage />
     </Suspense>
   );
 }
+

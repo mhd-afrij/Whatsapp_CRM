@@ -10,7 +10,6 @@ use App\Models\ConversationParticipant;
 use App\Models\Label;
 use App\Models\Message;
 use App\Models\MessageDispatchQueue;
-use App\Models\MessageStatusEvent;
 use App\Models\User;
 use App\Models\UserPresence;
 use App\Services\GatewayClient;
@@ -270,7 +269,7 @@ class ConversationController extends Controller
             'mediaFileName' => $data['media']['file_name'] ?? null,
             'mediaSizeBytes' => $data['media']['size_bytes'] ?? null,
             'mediaChecksumSha256' => $data['media']['checksum_sha256'] ?? null,
-            'replyToWhatsappMessageId' => $replyToWhatsappMessageId,
+            'replyToWhatsappMessageId' => $data['replied_to_message_id'] ?? null,
             'requestedByUserId' => $request->user()->id,
             'idempotencyKey' => $idempotencyKey,
         ];

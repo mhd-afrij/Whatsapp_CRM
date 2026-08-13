@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/providers/query-provider";
 import { AuthProvider } from "@/context/auth-context";
 import { SocketProvider } from "@/providers/socket-provider";
 import { ToastProvider } from "@/providers/toast-provider";
+import { ThemeProvider } from "@/context/theme-context";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,15 +33,29 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       {/* Browser extensions such as Grammarly add attributes to <body> before
           React hydrates. Suppress only this known root-level mismatch. */}
       <body suppressHydrationWarning className="min-h-full flex flex-col">
+        {/* Set the theme class before first paint so there is no flash of the
+            wrong scheme; mirrors the logic in context/theme-context.tsx. */}
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("theme");var d=t?t==="dark":window.matchMedia("(prefers-color-scheme: dark)").matches;var r=document.documentElement;r.classList.toggle("dark",d);r.classList.toggle("light",!d);}catch(e){}})();`,
+          }}
+        />
         <QueryProvider>
           <ToastProvider>
-            <AuthProvider>
-              <SocketProvider>{children}</SocketProvider>
-            </AuthProvider>
+            <ThemeProvider>
+              <AuthProvider>
+                <SocketProvider>
+                  <ErrorBoundary>{children}</ErrorBoundary>
+                </SocketProvider>
+              </AuthProvider>
+            </ThemeProvider>
           </ToastProvider>
         </QueryProvider>
       </body>

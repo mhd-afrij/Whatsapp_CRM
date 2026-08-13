@@ -208,6 +208,8 @@ export class MessageRepository {
           status,
           repliedToId,
         ],
+        VALUES (?, ?, ?, 'outbound', 'user', ?, ?, 'sent', ?, NOW(), NOW(), NOW())`,
+        [workspaceId, conversationId, params.whatsappMessageId, messageType, params.body, repliedToId],
       );
 
       const preview = (params.body ?? '').slice(0, 255);
@@ -283,6 +285,11 @@ export class MessageRepository {
         messageId,
       ],
     );
+  async updateMessageStatus(messageId: number, status: MessageStatus): Promise<void> {
+    await execute('UPDATE messages SET status = ?, updated_at = NOW() WHERE id = ?', [
+      status,
+      messageId,
+    ]);
   }
 
   async findMessageByWhatsappId(

@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Conversation;
-use App\Models\Team;
+use App\Models\User;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +13,7 @@ use Tests\TestCase;
 
 class ConversationTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     /**
      * messages is gateway-owned/read-only from Eloquent, so fixture rows are inserted
@@ -41,7 +41,7 @@ class ConversationTest extends TestCase
         // Viewer has conversations.view, so use a role truly lacking it: none of the seeded
         // roles lack conversations.view except we simulate via a user with no roles at all.
         $workspace = Workspace::query()->firstOrFail();
-        $user = \App\Models\User::factory()->create(['workspace_id' => $workspace->id]);
+        $user = User::factory()->create(['workspace_id' => $workspace->id]);
 
         $this->asUser($user)->getJson('/api/v1/conversations')
             ->assertStatus(403)
@@ -190,6 +190,62 @@ class ConversationTest extends TestCase
             'message_type' => 'text',
             'body' => 'Hi',
         ])->assertStatus(403);
+    }
+
+    public function test_message_media_metadata_is_forwarded_to_the_gateway(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'assigned_user_id' => $agent->id,
+        ]);
+
+        $messageId = $this->insertMessage($conversation, ['direction' => 'outbound', 'sender_type' => 'user', 'status' => 'queued']);
+        $dispatchId = DB::table('message_dispatch_queue')->insertGetId([
+            'workspace_id' => $conversation->workspace_id,
+            'conversation_id' => $conversation->id,
+            'requested_by_user_id' => $agent->id,
+            'payload' => json_encode(['mediaRef' => '1/outbound/abc-123.png']),
+            'status' => 'sent',
+            'attempts' => 1,
+            'message_id' => $messageId,
+            'bullmq_job_id' => 'job-2',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Http::fake([
+            '*/internal/whatsapp/messages/send' => Http::response([
+                'success' => true,
+                'message' => 'Message enqueued for delivery',
+                'data' => [
+                    'dispatchId' => $dispatchId,
+                    'status' => 'pending',
+                    'bullmqJobId' => 'job-2',
+                ],
+            ], 202),
+        ]);
+
+        $this->asUser($agent)->postJson("/api/v1/conversations/{$conversation->id}/messages", [
+            'message_type' => 'image',
+            'media' => [
+                'storage_path' => '1/outbound/abc-123.png',
+                'mime_type' => 'image/png',
+                'file_name' => 'photo.png',
+                'size_bytes' => 1024,
+                'checksum_sha256' => str_repeat('a', 64),
+            ],
+        ])->assertCreated()->assertJsonPath('data.id', $messageId);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), '/internal/whatsapp/messages/send')
+                && $request['mediaRef'] === '1/outbound/abc-123.png'
+                && $request['mediaMimeType'] === 'image/png'
+                && $request['mediaFileName'] === 'photo.png'
+                && $request['mediaSizeBytes'] === 1024
+                && $request['mediaChecksumSha256'] === str_repeat('a', 64);
+        });
     }
 
     public function test_manager_can_assign_a_conversation_and_history_is_recorded(): void

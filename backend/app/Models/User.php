@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Models\Concerns\BelongsToWorkspace;
+use App\Notifications\ResetPasswordNotification;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Collection;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
@@ -61,12 +63,12 @@ class User extends Authenticatable
 
     public function roles(): BelongsToMany
     {
-        return $this->belongsToMany(Role::class, 'role_user')->withPivot("created_at");
+        return $this->belongsToMany(Role::class, 'role_user')->withPivot('created_at');
     }
 
     public function teams(): BelongsToMany
     {
-        return $this->belongsToMany(Team::class, 'team_user')->withPivot('is_lead')->withPivot("created_at");
+        return $this->belongsToMany(Team::class, 'team_user')->withPivot('is_lead')->withPivot('created_at');
     }
 
     public function assignedConversations(): HasMany
@@ -93,7 +95,7 @@ class User extends Authenticatable
      * All distinct permission names granted to this user via their roles. Cached per-request
      * instance to avoid repeated queries during a single permission-heavy request.
      */
-    public function permissionNames(): \Illuminate\Support\Collection
+    public function permissionNames(): Collection
     {
         if (! isset($this->cachedPermissionNames)) {
             $this->cachedPermissionNames = $this->roles()
@@ -107,7 +109,7 @@ class User extends Authenticatable
         return $this->cachedPermissionNames;
     }
 
-    protected ?\Illuminate\Support\Collection $cachedPermissionNames = null;
+    protected ?Collection $cachedPermissionNames = null;
 
     public function isSuperAdmin(): bool
     {
@@ -116,6 +118,6 @@ class User extends Authenticatable
 
     public function sendPasswordResetNotification($token): void
     {
-        $this->notify(new \App\Notifications\ResetPasswordNotification($token));
+        $this->notify(new ResetPasswordNotification($token));
     }
 }

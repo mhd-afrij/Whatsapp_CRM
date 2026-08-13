@@ -25,8 +25,6 @@ class Message extends Model
         return [
             'is_deleted_for_everyone' => 'boolean',
             'sent_at' => 'datetime',
-            'delivered_at' => 'datetime',
-            'read_at' => 'datetime',
             'starred_at' => 'datetime',
         ];
     }

@@ -23,11 +23,11 @@ class Role extends Model
 
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'role_user')->withPivot("created_at");
+        return $this->belongsToMany(User::class, 'role_user')->withPivot('created_at');
     }
 
     public function permissions(): BelongsToMany
     {
-        return $this->belongsToMany(Permission::class, 'permission_role')->withPivot("created_at");
+        return $this->belongsToMany(Permission::class, 'permission_role')->withPivot('created_at');
     }
 }

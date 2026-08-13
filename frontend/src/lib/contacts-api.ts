@@ -83,6 +83,7 @@ export interface ContactFormValues {
   job_title?: string | null;
   phone_number?: string | null;
   owner_user_id?: number | null;
+  custom_fields?: Record<string, unknown> | null;
 }
 
 interface PaginatedApiResponse<T> {

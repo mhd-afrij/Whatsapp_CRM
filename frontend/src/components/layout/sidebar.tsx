@@ -19,6 +19,10 @@ import {
   KeyRound,
   Building2,
   ScrollText,
+  Zap,
+  Clock,
+  AlertTriangle,
+  Wifi,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
@@ -106,6 +110,30 @@ const permissionGatedNavItems = [
     permission: "labels.manage",
   },
   {
+    href: "/settings/templates",
+    label: "Saved Replies",
+    icon: Zap,
+    permission: "templates.use",
+  },
+  {
+    href: "/settings/sla",
+    label: "SLA Configuration",
+    icon: Clock,
+    permission: "workspace.settings.manage",
+  },
+  {
+    href: "/settings/business-hours",
+    label: "Business Hours",
+    icon: Clock,
+    permission: "workspace.settings.manage",
+  },
+  {
+    href: "/settings/away-message",
+    label: "Away Message",
+    icon: MessageSquare,
+    permission: "workspace.settings.manage",
+  },
+  {
     href: "/settings/workspace",
     label: "Workspace Settings",
     icon: Building2,
@@ -116,6 +144,24 @@ const permissionGatedNavItems = [
     label: "Audit Log",
     icon: ScrollText,
     permission: "audit_logs.view",
+  },
+  {
+    href: "/settings/failed-jobs",
+    label: "Failed Jobs",
+    icon: AlertTriangle,
+    permission: "dlq.manage",
+  },
+  {
+    href: "/settings/whatsapp-health",
+    label: "WhatsApp Health",
+    icon: Wifi,
+    permission: "whatsapp.connection.manage",
+  },
+  {
+    href: "/settings/custom-fields",
+    label: "Custom Fields",
+    icon: Settings,
+    permission: "workspace.settings.manage",
   },
 ];
 
@@ -129,10 +175,12 @@ export function Sidebar() {
   const canManagePipelines = usePermission("pipelines.manage");
   const canManageTasks = usePermission("tasks.manage");
   const canManageLabels = usePermission("labels.manage");
+  const canUseTemplates = usePermission("templates.use");
+  const canManageWorkspace = usePermission("workspace.settings.manage");
   const canViewTeams = usePermission("teams.view");
   const canViewRoles = usePermission("roles.view");
-  const canManageWorkspace = usePermission("workspace.settings.manage");
   const canViewAuditLog = usePermission("audit_logs.view");
+  const canManageDlq = usePermission("dlq.manage");
   const permissionByHref: Record<string, boolean> = {
     "/contacts": canViewContacts,
     "/leads": canManageLeads,
@@ -145,8 +193,13 @@ export function Sidebar() {
     "/settings/whatsapp": canManageWhatsapp,
     "/settings/pipelines": canManagePipelines,
     "/settings/labels": canManageLabels,
+    "/settings/templates": canUseTemplates,
+    "/settings/sla": canManageWorkspace,
     "/settings/workspace": canManageWorkspace,
     "/settings/audit-log": canViewAuditLog,
+    "/settings/failed-jobs": canManageDlq,
+    "/settings/whatsapp-health": canManageWhatsapp,
+    "/settings/custom-fields": canManageWorkspace,
   };
 
   const leadingHrefs = ["/contacts", "/leads", "/pipeline", "/tasks", "/calendar"];

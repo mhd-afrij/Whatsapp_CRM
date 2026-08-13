@@ -12,7 +12,7 @@ use Tests\TestCase;
 
 class LabelTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_agent_cannot_create_label(): void
     {

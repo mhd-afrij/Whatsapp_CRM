@@ -26,6 +26,7 @@ class SendTaskReminders extends Command
             $task = $reminder->task;
             if (! $task || ! $task->assignee) {
                 $reminder->update(['sent_at' => now()]);
+
                 continue;
             }
 

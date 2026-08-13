@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\Pipeline;
-use App\Models\Role;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Support\AuditLogger;
@@ -15,7 +15,7 @@ use Tests\TestCase;
 
 class WorkspaceSettingsAndAuditLogTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     // --- Workspace settings ---
 
@@ -189,7 +189,7 @@ class WorkspaceSettingsAndAuditLogTest extends TestCase
 
         $this->asUser($admin)->patchJson('/api/v1/workspace', ['name' => 'Renamed Co'])->assertOk();
 
-        $log = \App\Models\AuditLog::query()
+        $log = AuditLog::query()
             ->where('workspace_id', $admin->workspace_id)
             ->where('action', 'workspace.settings.updated')
             ->latest('id')
@@ -212,7 +212,7 @@ class WorkspaceSettingsAndAuditLogTest extends TestCase
 
         $this->asUser($admin)->patchJson("/api/v1/roles/{$roleId}", ['name' => 'Renamed Role'])->assertOk();
 
-        $log = \App\Models\AuditLog::query()
+        $log = AuditLog::query()
             ->where('workspace_id', $admin->workspace_id)
             ->where('action', 'role.updated')
             ->where('subject_id', $roleId)

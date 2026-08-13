@@ -40,6 +40,6 @@ class Lead extends Model
 
     public function labels(): BelongsToMany
     {
-        return $this->belongsToMany(Label::class, 'lead_label')->withPivot("created_at");
+        return $this->belongsToMany(Label::class, 'lead_label')->withPivot('created_at');
     }
 }

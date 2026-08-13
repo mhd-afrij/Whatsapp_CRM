@@ -56,6 +56,6 @@ class Contact extends Model
 
     public function labels(): BelongsToMany
     {
-        return $this->belongsToMany(Label::class, 'contact_label')->withPivot("created_at");
+        return $this->belongsToMany(Label::class, 'contact_label')->withPivot('created_at');
     }
 }

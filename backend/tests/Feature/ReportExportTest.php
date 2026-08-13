@@ -16,7 +16,7 @@ use Tests\TestCase;
  */
 class ReportExportTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_agent_without_analytics_export_permission_is_forbidden(): void
     {

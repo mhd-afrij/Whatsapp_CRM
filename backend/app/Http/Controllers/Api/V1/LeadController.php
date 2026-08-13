@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\Conversation;
+use App\Models\Label;
 use App\Models\Lead;
 use App\Support\AuditLogger;
 use Illuminate\Http\Request;
@@ -190,7 +191,7 @@ class LeadController extends Controller
     /**
      * POST /api/v1/leads/{lead}/labels/{label}
      */
-    public function attachLabel(Request $request, Lead $lead, \App\Models\Label $label)
+    public function attachLabel(Request $request, Lead $lead, Label $label)
     {
         $this->authorize('update', $lead);
 
@@ -202,7 +203,7 @@ class LeadController extends Controller
     /**
      * DELETE /api/v1/leads/{lead}/labels/{label}
      */
-    public function detachLabel(Request $request, Lead $lead, \App\Models\Label $label)
+    public function detachLabel(Request $request, Lead $lead, Label $label)
     {
         $this->authorize('update', $lead);
 

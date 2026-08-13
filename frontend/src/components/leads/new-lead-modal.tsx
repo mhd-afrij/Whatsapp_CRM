@@ -3,25 +3,15 @@
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
-import { z } from "zod";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { useCreateLead } from "@/hooks/use-leads";
 import { ContactPicker } from "@/components/contacts/contact-picker";
 import { ApiError } from "@/lib/api-client";
-import type { LeadSource, LeadStatus } from "@/lib/leads-api";
+import { leadSchema, type LeadSchemaValues } from "@/lib/schemas";
 
-const SOURCE_OPTIONS: LeadSource[] = ["whatsapp", "manual", "import", "other"];
-const STATUS_OPTIONS: LeadStatus[] = ["new", "contacted", "qualified", "disqualified", "converted"];
-
-const leadSchema = z.object({
-  contact_id: z.number({ message: "Select a contact" }).int().positive("Select a contact"),
-  source: z.enum(["whatsapp", "manual", "import", "other"]),
-  status: z.enum(["new", "contacted", "qualified", "disqualified", "converted"]),
-  notes: z.string().max(2000).optional().or(z.literal("")),
-});
-
-type LeadSchemaValues = z.infer<typeof leadSchema>;
+const SOURCE_OPTIONS = ["whatsapp", "manual", "import", "other"] as const;
+const STATUS_OPTIONS = ["new", "contacted", "qualified", "disqualified", "converted"] as const;
 
 export function NewLeadModal({ onClose }: { onClose: () => void }) {
   const router = useRouter();

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
+import { X } from "lucide-react";
 import { ChatPanel } from "@/components/inbox/chat-panel";
 import { ContactContextPanel } from "@/components/inbox/contact-context-panel";
 import { ContactContextDrawer } from "@/components/inbox/contact-context-drawer";
@@ -32,6 +33,33 @@ export default function ConversationPage() {
         open={panelOpen}
         onOpenChange={setPanelOpen}
       />
+      {panelOpen && (
+        <div
+          key="overlay"
+          onClick={() => setPanelOpen(false)}
+          className="fixed inset-0 z-50 bg-black/40 xl:hidden"
+          aria-hidden="true"
+        />
+      )}
+
+      {panelOpen && (
+        <div
+          className="fixed inset-y-0 right-0 z-50 flex w-[min(90vw,330px)] max-w-full xl:hidden"
+          aria-hidden={!panelOpen}
+        >
+          <button
+            type="button"
+            onClick={() => setPanelOpen(false)}
+            className="absolute right-2 top-2 z-50 rounded-full p-2 text-muted hover:bg-primary-soft/60"
+            aria-label="Close contact panel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <div className="h-full min-w-0 w-full">
+            <ContactContextPanel conversationId={conversationId} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,10 +2,16 @@
 
 namespace Tests\Feature;
 
+use App\Models\DealStageHistory;
 use App\Models\Pipeline;
 use App\Models\PipelineStage;
+use App\Models\Role;
+use App\Models\User;
 use App\Models\Workspace;
+use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Tests\CreatesWorkspaceUsers;
 use Tests\TestCase;
 
@@ -19,7 +25,7 @@ use Tests\TestCase;
  */
 class CrossModuleIntegrationFlowTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_full_contact_to_won_deal_flow_reflects_in_dashboard_summary(): void
     {
@@ -82,7 +88,7 @@ class CrossModuleIntegrationFlowTest extends TestCase
         $this->assertDatabaseHas('deals', ['id' => $dealId, 'status' => 'won', 'probability_percent' => 100]);
 
         // Full stage history recorded across every transition (null -> New -> Negotiation -> Won).
-        $this->assertSame(3, \App\Models\DealStageHistory::query()->where('deal_id', $dealId)->count());
+        $this->assertSame(3, DealStageHistory::query()->where('deal_id', $dealId)->count());
 
         // 7. Dashboard summary (a different controller/module entirely) reflects the won deal.
         $summary = $this->asUser($manager)->getJson('/api/v1/dashboard/summary')->assertOk();
@@ -111,14 +117,14 @@ class CrossModuleIntegrationFlowTest extends TestCase
         // authenticated user, so the seeder below must run with no authenticated user in
         // scope - otherwise it would silently (re)write these new roles onto $agent's
         // workspace instead of $otherWorkspace's.
-        \Illuminate\Support\Facades\Auth::forgetGuards();
+        Auth::forgetGuards();
         $otherWorkspace = Workspace::factory()->create();
-        $this->seed(\Database\Seeders\RolePermissionSeeder::class);
-        $otherRole = \App\Models\Role::withoutGlobalScopes()
+        $this->seed(RolePermissionSeeder::class);
+        $otherRole = Role::withoutGlobalScopes()
             ->where('workspace_id', $otherWorkspace->id)->where('name', 'Agent')->firstOrFail();
-        $otherAgent = \App\Models\User::factory()->create([
+        $otherAgent = User::factory()->create([
             'workspace_id' => $otherWorkspace->id,
-            'password' => \Illuminate\Support\Facades\Hash::make('Password123!'),
+            'password' => Hash::make('Password123!'),
             'is_active' => true,
         ]);
         $otherAgent->roles()->attach($otherRole->id);

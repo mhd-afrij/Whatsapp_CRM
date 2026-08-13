@@ -449,6 +449,7 @@ export function useConversationActions(conversationId: number | null) {
   });
 
   return { assign, close, reopen, markRead, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar, clearMessages, deleteConv, block, unblock, report };
+  return { assign, close, reopen, markRead, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar };
 }
 
 export type { Conversation, Message };

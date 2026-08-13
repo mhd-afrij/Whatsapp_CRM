@@ -25,6 +25,15 @@ import { ConversationFilterPopover } from "./conversation-filter-popover";
 
 type FilterOption = {
   key: TabFilter;
+import type { ConversationFilters } from "@/lib/conversations-api";
+import { ErrorState } from "@/components/ui/error-state";
+import { formatWhatsAppTime } from "@/lib/time-format";
+import { ConversationItem } from "./conversation-item";
+
+type FilterKey = "all" | "unread" | "assigned" | "unassigned" | "groups" | "archived" | "starred";
+
+type FilterOption = {
+  key: FilterKey;
   label: string;
 };
 
@@ -37,12 +46,20 @@ const FILTERS: FilterOption[] = [
   { key: "sla_risk", label: "SLA Risk" },
   { key: "sla_breach", label: "SLA Breached" },
   { key: "archived", label: "Archived" },
+  { key: "all", label: "All", filters: {} },
+  { key: "unread", label: "Unread", filters: { unread: true } },
+  { key: "assigned", label: "Assigned", filters: { assigned_to: "me" } },
+  { key: "unassigned", label: "Unassigned", filters: { assigned_to: "unassigned" } },
+  { key: "groups", label: "Groups", filters: { groups: true } },
+  { key: "archived", label: "Archived", filters: { archived: true } },
+  { key: "starred", label: "Starred", filters: { starred: true } },
 ];
 
 export function ConversationListPanel() {
   const params = useParams<{ conversationId?: string }>();
   const router = useRouter();
   const { tabFilter, advancedFilters, apiFilters, setTab, setAdvanced, clearAdvanced } = useConversationFilters();
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const { data: workspace } = useWorkspaceSettings();
@@ -55,6 +72,7 @@ export function ConversationListPanel() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
+  const filters = FILTERS.find((item) => item.key === activeFilter)?.filters ?? {};
   const {
     data,
     isLoading,
@@ -65,6 +83,7 @@ export function ConversationListPanel() {
     isFetchingNextPage,
   } = useConversationList({
     ...apiFilters,
+    ...filters,
     per_page: 30,
     search: debouncedSearch || undefined,
   });
@@ -162,6 +181,7 @@ export function ConversationListPanel() {
         </div>
 
         <div className="mt-2.5 flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mt-2.5 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {FILTERS.map((filter) => (
             <button
               key={filter.key}
@@ -170,6 +190,10 @@ export function ConversationListPanel() {
               className={cn(
                 "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
                 tabFilter === filter.key
+              onClick={() => setActiveFilter(filter.key)}
+              className={cn(
+                "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                activeFilter === filter.key
                   ? "border-primary bg-primary text-white"
                   : "border-border bg-bg text-muted hover:text-text"
               )}
