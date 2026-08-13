@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, CheckCheck, Check, Clock, Send } from "lucide-react";
+import { AlertCircle, CheckCheck, Check, Clock } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -12,43 +12,54 @@ interface MessageStatusTickProps {
   status: MessageStatus;
   onRetry?: () => void;
   isFailed?: boolean;
+  /** When the recipient's device acknowledged delivery (tooltip: "Delivered at ..."). */
+  deliveredAt?: string | null;
+  /** When the recipient reported reading the message (tooltip: "Read at ..."). */
+  readAt?: string | null;
 }
 
 const STATUS_CONFIG: Record<MessageStatus, { icon: React.ReactNode; label: string; color: string }> = {
   queued: {
-    icon: <Clock className="h-4 w-4" />,
+    icon: <Clock className="h-3.5 w-3.5" />,
     label: "Queued",
     color: "text-muted",
   },
-  sending: {
-    icon: <Send className="h-4 w-4" />,
-    label: "Sending",
-    color: "text-muted",
-  },
   sent: {
-    icon: <Check className="h-4 w-4" />,
+    icon: <Check className="h-3.5 w-3.5" />,
     label: "Sent",
     color: "text-muted",
   },
   delivered: {
-    icon: <CheckCheck className="h-4 w-4" />,
+    icon: <CheckCheck className="h-3.5 w-3.5" />,
     label: "Delivered",
     color: "text-muted",
   },
   read: {
-    icon: <CheckCheck className="h-4 w-4" />,
+    icon: <CheckCheck className="h-3.5 w-3.5" />,
     label: "Read",
-    color: "text-primary",
+    color: "text-info",
   },
   failed: {
-    icon: <AlertCircle className="h-4 w-4" />,
+    icon: <AlertCircle className="h-3.5 w-3.5" />,
     label: "Failed",
     color: "text-danger",
   },
 };
 
-export function MessageStatusTick({ status, onRetry, isFailed }: MessageStatusTickProps) {
+function formatClockTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+export function MessageStatusTick({ status, onRetry, isFailed, deliveredAt, readAt }: MessageStatusTickProps) {
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.queued;
+
+  // Mirror WhatsApp: 1 grey tick = sent, 2 grey ticks = delivered, 2 blue = read.
+  const label =
+    status === "read" && readAt
+      ? `Read at ${formatClockTime(readAt)}`
+      : status === "delivered" && deliveredAt
+        ? `Delivered at ${formatClockTime(deliveredAt)}`
+        : config.label;
 
   const tickElement = (
     <div className={`flex items-center ${config.color}`}>
@@ -59,15 +70,12 @@ export function MessageStatusTick({ status, onRetry, isFailed }: MessageStatusTi
   if (isFailed && onRetry) {
     return (
       <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="text-danger hover:text-danger/80 transition-colors"
-            aria-label="Retry sending message"
-          >
-            {tickElement}
-          </button>
+        <TooltipTrigger
+          onClick={onRetry}
+          className="text-danger hover:text-danger/80 transition-colors"
+          aria-label="Retry sending message"
+        >
+          {tickElement}
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
           {config.label} - Click to retry
@@ -78,11 +86,9 @@ export function MessageStatusTick({ status, onRetry, isFailed }: MessageStatusTi
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="cursor-default">{tickElement}</div>
-      </TooltipTrigger>
+      <TooltipTrigger render={<div className="cursor-default">{tickElement}</div>} />
       <TooltipContent side="top" className="text-xs">
-        {config.label}
+        {label}
       </TooltipContent>
     </Tooltip>
   );

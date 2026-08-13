@@ -7,6 +7,8 @@ export interface WhatsappContactSummary {
   id: number;
   wa_jid: string;
   push_name: string | null;
+  /** Saved (address-book) name for this number - preferred over push_name when present. */
+  contact_name?: string | null;
   phone_number: string | null;
   profile_picture_url: string | null;
   is_online?: boolean;
@@ -95,6 +97,10 @@ export interface Message {
   status: MessageStatus;
   replied_to_message_id: number | null;
   sent_at: string | null;
+  /** When the recipient's device acknowledged delivery (WhatsApp receipts). */
+  delivered_at: string | null;
+  /** When the recipient reported reading the message (WhatsApp receipts). */
+  read_at: string | null;
   starred_at?: string | null;
   created_at: string;
   // The API exposes the Message model's hasOne `media` relationship, so text
