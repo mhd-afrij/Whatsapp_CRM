@@ -17,7 +17,7 @@ class Message extends Model
     protected $fillable = [
         'workspace_id', 'conversation_id', 'whatsapp_message_id', 'direction', 'sender_type',
         'sender_user_id', 'message_type', 'body', 'status', 'replied_to_message_id',
-        'is_deleted_for_everyone', 'sent_at',
+        'is_deleted_for_everyone', 'sent_at', 'starred_at',
     ];
 
     protected function casts(): array
@@ -25,6 +25,7 @@ class Message extends Model
         return [
             'is_deleted_for_everyone' => 'boolean',
             'sent_at' => 'datetime',
+            'starred_at' => 'datetime',
         ];
     }
 
