@@ -13,6 +13,8 @@ export interface InternalNote {
   conversation_id: number | null;
   contact_id: number | null;
   deal_id: number | null;
+  /** Calendar day the note is pinned to (YYYY-MM-DD), when not tied to an entity. */
+  calendar_date: string | null;
   author_id: number;
   body: string;
   is_private: boolean;
@@ -26,12 +28,14 @@ export interface NoteFilters {
   conversation_id?: number;
   contact_id?: number;
   deal_id?: number;
+  calendar_date?: string;
 }
 
 export interface NoteFormValues {
   conversation_id?: number | null;
   contact_id?: number | null;
   deal_id?: number | null;
+  calendar_date?: string | null;
   body: string;
   is_private?: boolean;
 }

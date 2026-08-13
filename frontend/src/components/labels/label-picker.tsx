@@ -15,12 +15,12 @@ import { LabelBadge } from "@/components/labels/label-badge";
 export function LabelPicker({
   entity,
   entityId,
-  currentLabels,
+  currentLabels = [],
   canEdit,
 }: {
   entity: LabelEntityType;
   entityId: number;
-  currentLabels: LabelSummary[];
+  currentLabels?: LabelSummary[];
   canEdit: boolean;
 }) {
   const { data: allLabels } = useLabelList();

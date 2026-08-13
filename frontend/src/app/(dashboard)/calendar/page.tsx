@@ -1,11 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { endOfDay } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { usePermission } from "@/hooks/use-permission";
 import { useTaskList } from "@/hooks/use-tasks";
+import { useCalendarEvents } from "@/hooks/use-calendar-events";
+import type { CalendarEvent } from "@/lib/calendar-events-api";
 import type { Task, TaskPriority } from "@/lib/tasks-api";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -40,11 +44,39 @@ function dateKey(date: Date): string {
 }
 
 function CalendarView() {
+  const searchParams = useSearchParams();
   const today = new Date();
-  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const dateParam = searchParams?.get("date") ?? null;
+
+  // Keep the visible month in sync with the ?date= param even when the page is
+  // already mounted (e.g. jumping between days from the inbox overview). This
+  // adjusts state during render — React's recommended no-effect pattern.
+  const [cursor, setCursor] = useState(() => {
+    if (dateParam) {
+      const parsed = new Date(`${dateParam}T00:00:00`);
+      if (!Number.isNaN(parsed.getTime())) {
+        return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+      }
+    }
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const [prevDateParam, setPrevDateParam] = useState(dateParam);
+  if (prevDateParam !== dateParam) {
+    setPrevDateParam(dateParam);
+    if (dateParam) {
+      const parsed = new Date(`${dateParam}T00:00:00`);
+      if (!Number.isNaN(parsed.getTime())) {
+        setCursor(new Date(parsed.getFullYear(), parsed.getMonth(), 1));
+      }
+    }
+  }
 
   const canViewTeam = usePermission("tasks.view_team");
   const { data } = useTaskList({ team: canViewTeam || undefined, per_page: 100 });
+  const eventsQuery = useCalendarEvents({
+    start: new Date(cursor.getFullYear(), cursor.getMonth(), 1).toISOString(),
+    end: endOfDay(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0)).toISOString(),
+  });
 
   const tasksByDay = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -57,6 +89,17 @@ function CalendarView() {
     }
     return map;
   }, [data]);
+
+  const eventsByDay = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    for (const event of eventsQuery.data ?? []) {
+      const key = dateKey(new Date(event.starts_at));
+      const list = map.get(key) ?? [];
+      list.push(event);
+      map.set(key, list);
+    }
+    return map;
+  }, [eventsQuery.data]);
 
   const days = buildMonthGrid(cursor.getFullYear(), cursor.getMonth());
   const monthLabel = cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
@@ -96,7 +139,9 @@ function CalendarView() {
           {days.map((day) => {
             const isCurrentMonth = day.getMonth() === cursor.getMonth();
             const isToday = dateKey(day) === dateKey(today);
-            const dayTasks = tasksByDay.get(dateKey(day)) ?? [];
+            const dayKey = dateKey(day);
+            const dayTasks = tasksByDay.get(dayKey) ?? [];
+            const dayEvents = eventsByDay.get(dayKey) ?? [];
 
             return (
               <div
@@ -127,6 +172,19 @@ function CalendarView() {
                   {dayTasks.length > 3 && (
                     <p className="px-1.5 text-[10px] text-muted">+{dayTasks.length - 3} more</p>
                   )}
+                  {dayEvents.slice(0, 2).map((event) => (
+                    <div
+                      key={event.id}
+                      className="flex items-center gap-1 truncate rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] text-amber-700 dark:text-amber-300"
+                      title={`${event.title} · ${new Date(event.starts_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}
+                    >
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                      <span className="truncate">{event.title}</span>
+                    </div>
+                  ))}
+                  {dayEvents.length > 2 && (
+                    <p className="px-1.5 text-[10px] text-muted">+{dayEvents.length - 2} more</p>
+                  )}
                 </div>
               </div>
             );
@@ -140,7 +198,9 @@ function CalendarView() {
 export default function CalendarPage() {
   return (
     <RequirePermission permission="tasks.manage">
-      <CalendarView />
+      <Suspense fallback={null}>
+        <CalendarView />
+      </Suspense>
     </RequirePermission>
   );
 }

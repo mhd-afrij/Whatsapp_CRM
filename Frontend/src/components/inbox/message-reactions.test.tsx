@@ -11,8 +11,8 @@ describe("summarizeReactions", () => {
     ]);
 
     expect(summary).toEqual([
-      { emoji: "👍", count: 2 },
-      { emoji: "😂", count: 1 },
+      { emoji: "👍", count: 2, hasMyReaction: false },
+      { emoji: "😂", count: 1, hasMyReaction: false },
     ]);
   });
 });

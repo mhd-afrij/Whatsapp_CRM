@@ -58,6 +58,7 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
     () =>
       contact?.full_name ||
       conversation?.contact?.full_name ||
+      conversation?.whatsapp_contact?.contact_name ||
       conversation?.whatsapp_contact?.push_name ||
       conversation?.whatsapp_contact?.phone_number ||
       "Unknown contact",
@@ -79,7 +80,10 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
   const name = contactDisplay;
   const phoneNumber =
     contact?.phone_number ?? conversation.whatsapp_contact?.phone_number ?? conversation.whatsapp_contact?.wa_jid ?? null;
-  const statusLabel = conversation.whatsapp_contact?.push_name ? "WhatsApp contact" : "CRM contact";
+  const statusLabel =
+    conversation.whatsapp_contact?.contact_name || conversation.whatsapp_contact?.push_name
+      ? "WhatsApp contact"
+      : "CRM contact";
 
   return (
     <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-border bg-surface">
@@ -118,8 +122,11 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
           <SectionCard title="Contact information">
             <dl className="space-y-2">
               {phoneNumber && <DetailRow label="Phone" value={phoneNumber} />}
-              {conversation.whatsapp_contact?.push_name && (
-                <DetailRow label="WhatsApp name" value={conversation.whatsapp_contact.push_name} />
+              {(conversation.whatsapp_contact?.contact_name || conversation.whatsapp_contact?.push_name) && (
+                <DetailRow
+                  label="WhatsApp name"
+                  value={conversation.whatsapp_contact.contact_name || conversation.whatsapp_contact.push_name}
+                />
               )}
               {contact?.email && <DetailRow label="Email" value={contact.email} />}
               {contact?.company && <DetailRow label="Company" value={contact.company} />}
@@ -127,9 +134,11 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
               {conversation.contact?.full_name && conversation.contact.full_name !== name && (
                 <DetailRow label="CRM name" value={conversation.contact.full_name} />
               )}
-              {!conversation.contact?.email && !conversation.whatsapp_contact?.push_name && (
-                <p className="text-sm text-muted">No additional details on file.</p>
-              )}
+              {!conversation.contact?.email &&
+                !conversation.whatsapp_contact?.contact_name &&
+                !conversation.whatsapp_contact?.push_name && (
+                  <p className="text-sm text-muted">No additional details on file.</p>
+                )}
             </dl>
           </SectionCard>
 

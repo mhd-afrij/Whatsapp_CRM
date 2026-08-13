@@ -70,7 +70,18 @@ export function ConversationListPanel() {
   });
 
   const activeConversationId = params?.conversationId ? Number(params.conversationId) : null;
-  const conversations = useMemo(() => data?.pages.flatMap((page) => page.data) ?? [], [data]);
+  // Pagination + socket upserts can transiently duplicate (or, if a partial row
+  // ever sneaks in, de-key) entries - dedupe by id so every rendered item has a
+  // stable unique key.
+  const conversations = useMemo(() => {
+    const all = data?.pages.flatMap((page) => page.data) ?? [];
+    const seen = new Set<number>();
+    return all.filter((conversation) => {
+      if (typeof conversation.id !== "number" || seen.has(conversation.id)) return false;
+      seen.add(conversation.id);
+      return true;
+    });
+  }, [data]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;

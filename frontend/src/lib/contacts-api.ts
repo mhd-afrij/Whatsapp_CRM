@@ -5,6 +5,8 @@ export interface WhatsappContactDetail {
   id: number;
   wa_jid: string;
   push_name: string | null;
+  /** Saved (address-book) name for this number - preferred over push_name when present. */
+  contact_name?: string | null;
   phone_number: string | null;
   profile_picture_url: string | null;
   is_business: boolean;
@@ -83,6 +85,7 @@ export interface ContactFormValues {
   job_title?: string | null;
   phone_number?: string | null;
   owner_user_id?: number | null;
+  custom_fields?: Record<string, unknown> | null;
 }
 
 interface PaginatedApiResponse<T> {

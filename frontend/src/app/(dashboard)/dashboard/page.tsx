@@ -293,29 +293,28 @@ function DashboardContent() {
           emptyLabel="open deals"
         >
           <ResponsiveContainer width="100%" height={256}>
-            <PieChart>
-              <Tooltip
-                contentStyle={tooltipStyle}
-                formatter={(value, _name, item) => [
-                  `${value} deals ($${Number(item.payload.value).toLocaleString()})`,
-                  item.payload.stage_name,
-                ]}
-              />
-              <Legend wrapperStyle={{ fontSize: 11, color: "var(--color-muted)" }} />
-              <Pie
-                data={stageDistribution.data ?? []}
-                dataKey="count"
-                nameKey="stage_name"
-                cx="50%"
-                cy="50%"
-                outerRadius={90}
-                label={(entry) => (entry as unknown as { stage_name: string }).stage_name}
-              >
-                {(stageDistribution.data ?? []).map((entry, i) => (
-                  <Cell key={entry.stage_id ?? i} fill={SERIES[i % SERIES.length]} />
-                ))}
-              </Pie>
-            </PieChart>
+              <PieChart>
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  formatter={(value, _name, item) => [
+                    `${value} deals ($${Number(item.payload.value).toLocaleString()})`,
+                    item.payload.stage_name,
+                  ]}
+                />
+                <Legend wrapperStyle={{ fontSize: 11, color: "var(--color-muted)", paddingTop: 4 }} />
+                <Pie
+                  data={stageDistribution.data ?? []}
+                  dataKey="count"
+                  nameKey="stage_name"
+                  cx="50%"
+                  cy="46%"
+                  outerRadius={84}
+                >
+                  {(stageDistribution.data ?? []).map((entry, i) => (
+                    <Cell key={entry.stage_id ?? i} fill={SERIES[i % SERIES.length]} />
+                  ))}
+                </Pie>
+              </PieChart>
           </ResponsiveContainer>
         </ChartCard>
 

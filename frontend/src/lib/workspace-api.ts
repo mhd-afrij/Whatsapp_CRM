@@ -27,6 +27,9 @@ export interface WorkspaceSettings {
   branding: Record<string, unknown> | null;
   storage: WorkspaceStorageInfo;
   security: WorkspaceSecurityInfo;
+  away_message_enabled: boolean;
+  away_message: string | null;
+  away_message_trigger: "outside_hours" | "once_per_conversation";
 }
 
 export async function fetchWorkspaceSettings(): Promise<WorkspaceSettings> {

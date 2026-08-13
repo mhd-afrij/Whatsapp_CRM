@@ -15,8 +15,8 @@ function resultLabel(category: SearchCategory, item: Record<string, unknown>): s
       return (item.full_name as string) || (item.email as string) || (item.phone_number as string) || `Contact #${item.id}`;
     case "conversations": {
       const contact = item.contact as { full_name?: string } | null;
-      const wa = item.whatsapp_contact as { push_name?: string; phone_number?: string } | null;
-      return contact?.full_name || wa?.push_name || wa?.phone_number || `Conversation #${item.id}`;
+      const wa = item.whatsapp_contact as { contact_name?: string; push_name?: string; phone_number?: string } | null;
+      return contact?.full_name || wa?.contact_name || wa?.push_name || wa?.phone_number || `Conversation #${item.id}`;
     }
     case "leads": {
       const contact = item.contact as { full_name?: string } | null;

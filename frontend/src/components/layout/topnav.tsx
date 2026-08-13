@@ -1,17 +1,25 @@
 "use client";
 
-import { LogOut, Menu, Wifi, WifiOff } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, Wifi, WifiOff, Sun, Moon } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { useSocket } from "@/providers/socket-provider";
+import { useTheme } from "@/context/theme-context";
 import { WhatsappStatusIndicator } from "@/components/layout/whatsapp-status-indicator";
 import { GlobalSearchBar } from "@/components/search/global-search-bar";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { useMobileSidebar } from "@/components/layout/mobile-sidebar-context";
 
 export function Topnav() {
+  const pathname = usePathname();
   const { user, logout } = useAuth();
   const { isConnected } = useSocket();
-  const { open } = useMobileSidebar();
+  const { theme, toggleTheme } = useTheme();
+  const { open, collapsed, toggleCollapsed } = useMobileSidebar();
+
+  if (pathname?.startsWith("/inbox")) {
+    return null;
+  }
 
   return (
     <header className="flex h-16 items-center justify-between gap-2 border-b border-border bg-surface px-3 sm:gap-3 sm:px-4 lg:gap-4 lg:px-6">
@@ -22,6 +30,16 @@ export function Topnav() {
         className="shrink-0 rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary md:hidden"
       >
         <Menu className="h-5 w-5" />
+      </button>
+
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        className="hidden shrink-0 rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary md:inline-flex"
+      >
+        {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
       </button>
 
       <div className="hidden shrink-0 items-center gap-2 text-sm text-muted lg:flex">
@@ -39,6 +57,15 @@ export function Topnav() {
         <WhatsappStatusIndicator />
 
         <NotificationBell />
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+          className="flex items-center justify-center rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+        >
+          {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+        </button>
 
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white">

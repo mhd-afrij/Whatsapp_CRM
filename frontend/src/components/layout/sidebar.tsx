@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -19,10 +20,15 @@ import {
   KeyRound,
   Building2,
   ScrollText,
+  Zap,
+  Clock,
+  AlertTriangle,
+  Wifi,
+  ChevronDown,
+  PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
-import { useInboxUnreadCount } from "@/hooks/use-inbox-unread-count";
 import { useMobileSidebar } from "@/components/layout/mobile-sidebar-context";
 import { X } from "lucide-react";
 
@@ -106,6 +112,30 @@ const permissionGatedNavItems = [
     permission: "labels.manage",
   },
   {
+    href: "/settings/templates",
+    label: "Saved Replies",
+    icon: Zap,
+    permission: "templates.use",
+  },
+  {
+    href: "/settings/sla",
+    label: "SLA Configuration",
+    icon: Clock,
+    permission: "workspace.settings.manage",
+  },
+  {
+    href: "/settings/business-hours",
+    label: "Business Hours",
+    icon: Clock,
+    permission: "workspace.settings.manage",
+  },
+  {
+    href: "/settings/away-message",
+    label: "Away Message",
+    icon: MessageSquare,
+    permission: "workspace.settings.manage",
+  },
+  {
     href: "/settings/workspace",
     label: "Workspace Settings",
     icon: Building2,
@@ -117,7 +147,55 @@ const permissionGatedNavItems = [
     icon: ScrollText,
     permission: "audit_logs.view",
   },
+  {
+    href: "/settings/failed-jobs",
+    label: "Failed Jobs",
+    icon: AlertTriangle,
+    permission: "dlq.manage",
+  },
+  {
+    href: "/settings/whatsapp-health",
+    label: "WhatsApp Health",
+    icon: Wifi,
+    permission: "whatsapp.connection.manage",
+  },
+  {
+    href: "/settings/custom-fields",
+    label: "Custom Fields",
+    icon: Settings,
+    permission: "workspace.settings.manage",
+  },
 ];
+
+// Category membership for grouping visible modules under section headers.
+const categoryHrefs: Record<string, string[]> = {
+  workspace: [
+    "/dashboard",
+    "/inbox",
+    "/contacts",
+    "/leads",
+    "/pipeline",
+    "/tasks",
+    "/calendar",
+    "/settings/notifications",
+  ],
+  management: ["/settings/users", "/settings/teams", "/settings/roles"],
+  administration: [
+    "/settings",
+    "/settings/whatsapp",
+    "/settings/pipelines",
+    "/settings/labels",
+    "/settings/templates",
+    "/settings/sla",
+    "/settings/business-hours",
+    "/settings/away-message",
+    "/settings/workspace",
+    "/settings/audit-log",
+    "/settings/failed-jobs",
+    "/settings/whatsapp-health",
+    "/settings/custom-fields",
+  ],
+};
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -129,10 +207,12 @@ export function Sidebar() {
   const canManagePipelines = usePermission("pipelines.manage");
   const canManageTasks = usePermission("tasks.manage");
   const canManageLabels = usePermission("labels.manage");
+  const canUseTemplates = usePermission("templates.use");
+  const canManageWorkspace = usePermission("workspace.settings.manage");
   const canViewTeams = usePermission("teams.view");
   const canViewRoles = usePermission("roles.view");
-  const canManageWorkspace = usePermission("workspace.settings.manage");
   const canViewAuditLog = usePermission("audit_logs.view");
+  const canManageDlq = usePermission("dlq.manage");
   const permissionByHref: Record<string, boolean> = {
     "/contacts": canViewContacts,
     "/leads": canManageLeads,
@@ -145,8 +225,13 @@ export function Sidebar() {
     "/settings/whatsapp": canManageWhatsapp,
     "/settings/pipelines": canManagePipelines,
     "/settings/labels": canManageLabels,
+    "/settings/templates": canUseTemplates,
+    "/settings/sla": canManageWorkspace,
     "/settings/workspace": canManageWorkspace,
     "/settings/audit-log": canViewAuditLog,
+    "/settings/failed-jobs": canManageDlq,
+    "/settings/whatsapp-health": canManageWhatsapp,
+    "/settings/custom-fields": canManageWorkspace,
   };
 
   const leadingHrefs = ["/contacts", "/leads", "/pipeline", "/tasks", "/calendar"];
@@ -156,52 +241,179 @@ export function Sidebar() {
   const leadingItems = visibleGatedItems.filter((item) => leadingHrefs.includes(item.href));
   const otherGatedItems = visibleGatedItems.filter((item) => !leadingHrefs.includes(item.href));
 
-  const canViewInbox = usePermission("conversations.view");
-  const unreadCount = useInboxUnreadCount(canViewInbox);
-
   const [dashboardItem, inboxItem, ...restNavItems] = navItems;
   const orderedItems = [dashboardItem, inboxItem, ...leadingItems, ...restNavItems, ...otherGatedItems];
 
-  const { isOpen, close } = useMobileSidebar();
+  const { isOpen, close, collapsed, toggleCollapsed } = useMobileSidebar();
 
-  const renderNav = (onNavigate?: () => void) => (
-    <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-      {orderedItems.map(({ href, label, icon: Icon }) => {
-        const isActive = pathname === href || pathname?.startsWith(`${href}/`);
-        return (
-          <Link
-            key={href}
-            href={href}
-            onClick={onNavigate}
+  // Sidebar structure: independently collapsible categories grouping modules
+  // by area.
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
+    workspace: true,
+    management: false,
+    administration: false,
+  });
+  const toggleCategory = (key: string) =>
+    setOpenCategories((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // Auto-expand the category containing the active route when navigating
+  // (covers deep links). Adjusted during render, per React's recommended
+  // "adjusting state when a prop changes" pattern — no effect needed.
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname);
+    setOpenCategories((prev) => {
+      const next = { ...prev };
+      for (const [key, hrefs] of Object.entries(categoryHrefs)) {
+        if (hrefs.some((href) => pathname === href || pathname?.startsWith(`${href}/`))) {
+          next[key] = true;
+        }
+      }
+      return next;
+    });
+  }
+
+  const renderNav = (onNavigate?: () => void) => {
+    const renderItem = (item: (typeof orderedItems)[number]) => {
+      const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
+      const Icon = item.icon;
+      return (
+        <Link
+          key={item.href}
+          href={item.href}
+          onClick={onNavigate}
+          aria-current={isActive ? "page" : undefined}
+          className={cn(
+            "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+            isActive
+              ? "bg-primary-soft text-primary-dark"
+              : "text-muted hover:bg-primary-soft/50 hover:text-text"
+          )}
+        >
+          <Icon className="h-4 w-4" />
+          <span className="flex-1 whitespace-nowrap">{item.label}</span>
+        </Link>
+      );
+    };
+
+    const renderCategory = (
+      key: string,
+      label: string,
+      items: (typeof orderedItems)[number][]
+    ) => {
+      const open = openCategories[key];
+      return (
+        <div className="space-y-1">
+          <button
+            type="button"
+            onClick={() => toggleCategory(key)}
+            aria-expanded={open}
+            aria-controls={`sidebar-category-${key}`}
+            className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:bg-primary-soft/50 hover:text-text"
+          >
+            <span className="flex items-center gap-2">
+              {label}
+              <span className="rounded-full bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-dark">
+                {items.length}
+              </span>
+            </span>
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 transition-transform duration-200",
+                open && "rotate-180"
+              )}
+            />
+          </button>
+          <div
+            id={`sidebar-category-${key}`}
+            inert={!open}
             className={cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              isActive
-                ? "bg-primary-soft text-primary-dark"
-                : "text-muted hover:bg-primary-soft/50 hover:text-text"
+              "grid transition-all duration-300 ease-in-out motion-reduce:transition-none",
+              open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
             )}
           >
-            <Icon className="h-4 w-4" />
-            <span className="flex-1">{label}</span>
-            {href === "/inbox" && unreadCount > 0 && (
-              <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-white">
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </span>
-            )}
-          </Link>
-        );
-      })}
-    </nav>
-  );
+            <div className="overflow-hidden">
+              <div className="space-y-1 pl-2">{items.map(renderItem)}</div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const itemByHref = new Map(orderedItems.map((item) => [item.href, item]));
+    const pick = (hrefs: string[]) =>
+      hrefs
+        .map((href) => itemByHref.get(href))
+        .filter((item): item is (typeof orderedItems)[number] => Boolean(item));
+
+    const workspaceItems = pick(categoryHrefs.workspace);
+    const managementItems = pick(categoryHrefs.management);
+    const administrationItems = pick(categoryHrefs.administration);
+
+    return (
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        {workspaceItems.length > 0 && renderCategory("workspace", "Workspace", workspaceItems)}
+        {managementItems.length > 0 && renderCategory("management", "Management", managementItems)}
+        {administrationItems.length > 0 &&
+          renderCategory("administration", "Administration", administrationItems)}
+      </nav>
+    );
+  };
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside className="hidden w-60 shrink-0 border-r border-border bg-surface md:flex md:flex-col">
-        <div className="flex h-16 items-center gap-2 border-b border-border px-6">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-primary" />
-          <span className="text-base font-semibold text-text">CRM WhatsApp</span>
+      {/* Desktop sidebar — collapses to an icon rail with a width transition */}
+      <aside
+        className={cn(
+          "hidden shrink-0 flex-col overflow-hidden border-r border-border bg-surface md:flex transition-[width] duration-300 ease-in-out",
+          collapsed ? "w-16" : "w-60"
+        )}
+      >
+        <div
+          className={cn(
+            "flex h-16 items-center border-b border-border",
+            collapsed ? "justify-center" : "gap-2 px-6"
+          )}
+        >
+          <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-primary" />
+          {!collapsed && <span className="text-base font-semibold text-text">CRM WhatsApp</span>}
         </div>
-        {renderNav()}
+        {collapsed ? (
+          <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+              className="flex w-full items-center justify-center rounded-md p-2 text-muted transition-colors hover:bg-primary-soft/50 hover:text-text"
+            >
+              <PanelLeftOpen className="h-4 w-4" />
+            </button>
+            {orderedItems.map((item) => {
+              const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  title={item.label}
+                  aria-label={item.label}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "flex items-center justify-center gap-1 rounded-md px-2 py-2 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-primary-soft text-primary-dark"
+                      : "text-muted hover:bg-primary-soft/50 hover:text-text"
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                </Link>
+              );
+            })}
+          </nav>
+        ) : (
+          renderNav()
+        )}
       </aside>
 
       {/* Mobile drawer */}
