@@ -1,15 +1,28 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { timingSafeEqual } from 'node:crypto';
+import crypto from 'node:crypto';
+import multer from 'multer';
 import { z } from 'zod';
+import type { ResultSetHeader } from 'mysql2/promise';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
+import { getStorageClient } from '../lib/storage';
+import { execute, transaction } from '../lib/mysql';
 import { connectionManager } from '../whatsapp/manager-instance';
 import { SessionRepository } from '../whatsapp/session-repository';
 import { DispatchRepository } from '../whatsapp/dispatch-repository';
 import { MessageRepository } from '../whatsapp/message-repository';
 import { sendMessageQueue } from '../queues/send-message.queue';
+import { validateMedia } from '../queues/media-download.queue';
 import { resolveMediaAccess } from '../lib/media-access';
-import { emitConversationEvent, emitNotificationCreated } from '../lib/socket-server';
+import {
+  emitConversationEvent,
+  emitConversationsReset,
+  emitNotificationCreated,
+  emitTypingUpdated,
+  emitMessageRevoked,
+  getSocketServer,
+} from '../lib/socket-server';
 
 const repository = new SessionRepository();
 const dispatchRepository = new DispatchRepository();
@@ -18,8 +31,12 @@ const messageRepository = new MessageRepository();
 const sendMessageBodySchema = z.object({
   conversationId: z.coerce.number().int().positive(),
   workspaceId: z.coerce.number().int().positive(),
-  content: z.string().min(1),
+  content: z.string().nullish(),
   mediaRef: z.string().nullish(),
+  mediaMimeType: z.string().nullish(),
+  mediaFileName: z.string().nullish(),
+  mediaSizeBytes: z.coerce.number().int().nonnegative().nullish(),
+  mediaChecksumSha256: z.string().nullish(),
   replyToWhatsappMessageId: z.string().nullish(),
   idempotencyKey: z.string().min(1),
   requestedByUserId: z.coerce.number().int().positive().nullish(),
@@ -47,6 +64,33 @@ function requireInternalToken(req: Request, res: Response, next: NextFunction): 
   next();
 }
 
+const mediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: env.MEDIA_MAX_SIZE_BYTES, files: 1 },
+});
+
+/** multer wrapper that converts upload errors into clean JSON responses instead of the default HTML 500. */
+function uploadSingleFile(field: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    mediaUpload.single(field)(req, res, (err: unknown) => {
+      if (!err) {
+        next();
+        return;
+      }
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        res.status(413).json({
+          success: false,
+          message: `File exceeds the ${env.MEDIA_MAX_SIZE_BYTES}-byte upload limit`,
+          data: null,
+        });
+        return;
+      }
+      logger.warn({ err }, 'Rejected multipart media upload');
+      res.status(400).json({ success: false, message: 'Invalid multipart upload', data: null });
+    });
+  };
+}
+
 export function createInternalWhatsappRouter(): Router {
   const router = Router();
   router.use(requireInternalToken);
@@ -57,8 +101,8 @@ export function createInternalWhatsappRouter(): Router {
 
   router.post('/connect', async (_req: Request, res: Response) => {
     try {
-      await connectionManager.start();
-      res.status(200).json({ success: true, message: 'Connection initiated', data: connectionManager.getSnapshot() });
+      await connectionManager.startFreshPairing();
+      res.status(200).json({ success: true, message: 'QR pairing initiated', data: connectionManager.getSnapshot() });
     } catch (err) {
       logger.error({ err }, 'Failed to start WhatsApp connection');
       res.status(500).json({ success: false, message: 'Failed to start connection', data: null });
@@ -95,6 +139,81 @@ export function createInternalWhatsappRouter(): Router {
     }
   });
 
+  /**
+   * POST /internal/whatsapp/reset-data
+   * Destructive admin action: logs the WhatsApp session out (forcing a fresh
+   * QR re-pair on next connect) and purges every gateway-owned row for the
+   * workspace - whatsapp_contacts (which cascades conversations, messages,
+   * media, reactions, status events, SLA events, assignments, participants
+   * and label links), the outbound dispatch queue and processing failures,
+   * and the sync checkpoints so the next pairing re-imports from scratch.
+   * Backend-owned references (tasks, leads, CRM contacts) are not touched
+   * here; the Laravel caller is responsible for any backend-side cleanup.
+   */
+  const resetDataBodySchema = z.object({
+    workspaceId: z.coerce.number().int().positive(),
+  });
+
+  router.post('/reset-data', async (req: Request, res: Response) => {
+    const parsed = resetDataBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid request body', data: parsed.error.issues });
+      return;
+    }
+
+    const { workspaceId } = parsed.data;
+
+    try {
+      await connectionManager.logout();
+
+      const deleted = await transaction(async (conn) => {
+        const [counts] = (await conn.query(
+          `SELECT
+             (SELECT COUNT(*) FROM conversations WHERE workspace_id = ?) AS conversations,
+             (SELECT COUNT(*) FROM messages WHERE workspace_id = ?) AS messages`,
+          [workspaceId, workspaceId],
+        )) as unknown as [Array<{ conversations: number; messages: number }>, unknown];
+
+        const [dispatch] = await conn.execute<ResultSetHeader>(
+          'DELETE FROM message_dispatch_queue WHERE workspace_id = ?',
+          [workspaceId],
+        );
+        const [failures] = await conn.execute<ResultSetHeader>(
+          'DELETE FROM message_processing_failures WHERE workspace_id = ?',
+          [workspaceId],
+        );
+        const [contacts] = await conn.execute<ResultSetHeader>(
+          'DELETE FROM whatsapp_contacts WHERE workspace_id = ?',
+          [workspaceId],
+        );
+        const [checkpoints] = await conn.execute<ResultSetHeader>(
+          'DELETE FROM whatsapp_sync_checkpoints WHERE workspace_id = ?',
+          [workspaceId],
+        );
+
+        return {
+          conversations: counts[0].conversations,
+          messages: counts[0].messages,
+          whatsappContacts: contacts.affectedRows,
+          dispatches: dispatch.affectedRows,
+          processingFailures: failures.affectedRows,
+          checkpoints: checkpoints.affectedRows,
+        };
+      });
+
+      emitConversationsReset(workspaceId, { ...deleted });
+
+      res.status(200).json({
+        success: true,
+        message: 'WhatsApp data cleared and session logged out',
+        data: { ...deleted, session: connectionManager.getSnapshot() },
+      });
+    } catch (err) {
+      logger.error({ err, workspaceId }, 'Failed to reset WhatsApp data');
+      res.status(500).json({ success: false, message: 'Failed to reset WhatsApp data', data: null });
+    }
+  });
+
   router.get('/events', async (req: Request, res: Response) => {
     const limitQuery = z.coerce.number().int().positive().max(200).default(50).safeParse(req.query.limit);
     const limit = limitQuery.success ? limitQuery.data : 50;
@@ -116,8 +235,19 @@ export function createInternalWhatsappRouter(): Router {
       return;
     }
 
-    const { conversationId, workspaceId, content, replyToWhatsappMessageId, idempotencyKey, requestedByUserId } =
-      parsed.data;
+    const {
+      conversationId,
+      workspaceId,
+      content,
+      replyToWhatsappMessageId,
+      idempotencyKey,
+      requestedByUserId,
+      mediaRef,
+      mediaMimeType,
+      mediaFileName,
+      mediaSizeBytes,
+      mediaChecksumSha256,
+    } = parsed.data;
 
     try {
       const existing = await dispatchRepository.findByIdempotencyKey(workspaceId, idempotencyKey);
@@ -145,7 +275,12 @@ export function createInternalWhatsappRouter(): Router {
         workspaceId,
         conversationId,
         requestedByUserId ?? null,
-        { idempotencyKey, content, mediaRef: parsed.data.mediaRef ?? null, replyToWhatsappMessageId },
+        {
+          idempotencyKey,
+          content: content ?? null,
+          mediaRef: mediaRef ?? null,
+          replyToWhatsappMessageId,
+        },
       );
 
       const job = await sendMessageQueue.add('send', {
@@ -153,9 +288,14 @@ export function createInternalWhatsappRouter(): Router {
         workspaceId,
         conversationId,
         waJid,
-        content,
+        content: content ?? null,
         replyToWhatsappMessageId: replyToWhatsappMessageId ?? null,
         requestedByUserId: requestedByUserId ?? null,
+        mediaRef: mediaRef ?? null,
+        mediaMimeType: mediaMimeType ?? null,
+        mediaFileName: mediaFileName ?? null,
+        mediaSizeBytes: mediaSizeBytes ?? null,
+        mediaChecksumSha256: mediaChecksumSha256 ?? null,
       });
 
       if (job.id) {
@@ -172,6 +312,110 @@ export function createInternalWhatsappRouter(): Router {
       res.status(500).json({ success: false, message: 'Failed to enqueue message', data: null });
     }
   });
+
+  const startConversationBodySchema = z.object({
+    workspaceId: z.coerce.number().int().positive(),
+    phoneNumber: z.string().min(1),
+    contactId: z.coerce.number().int().positive().nullish(),
+  });
+
+  router.post('/conversations/start', async (req: Request, res: Response) => {
+    const parsed = startConversationBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid request body', data: parsed.error.issues });
+      return;
+    }
+
+    const { workspaceId, phoneNumber, contactId } = parsed.data;
+
+    try {
+      const digits = phoneNumber.replace(/[^0-9]/g, '');
+      const waJid = `${digits}@s.whatsapp.net`;
+
+      const whatsappContact = await messageRepository.findOrCreateWhatsappContact(workspaceId, waJid, null);
+      const conversation = await messageRepository.findOrCreateConversation(workspaceId, whatsappContact.id);
+
+      if (contactId && conversation.created) {
+        await execute(
+          'UPDATE whatsapp_contacts SET contact_id = ? WHERE id = ?',
+          [contactId, whatsappContact.id],
+        );
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Conversation ready',
+        data: { conversationId: conversation.id, created: conversation.created },
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to start conversation');
+      res.status(500).json({ success: false, message: 'Failed to start conversation', data: null });
+    }
+  });
+
+  /**
+   * POST /internal/whatsapp/media/upload
+   * Receives a multipart `file` (plus a `workspaceId` form field), validates
+   * it against the same allow-list/size cap as inbound media, stores it via
+   * the shared StorageClient, and returns only a storage key + metadata -
+   * never a raw bucket URL. The Laravel caller (MediaController) then passes
+   * the returned key as `mediaRef` when dispatching the outbound message, and
+   * the send worker reads the bytes back through StorageClient::getObject.
+   */
+  router.post(
+    '/media/upload',
+    uploadSingleFile('file'),
+    async (req: Request, res: Response) => {
+      const workspaceId = z.coerce.number().int().positive().safeParse(req.body?.workspaceId);
+      if (!workspaceId.success) {
+        res.status(400).json({ success: false, message: 'workspaceId is required', data: null });
+        return;
+      }
+
+      if (!req.file) {
+        res.status(400).json({ success: false, message: 'No file uploaded (expected a multipart field named "file")', data: null });
+        return;
+      }
+
+      try {
+        validateMedia(req.file.mimetype, req.file.size);
+      } catch (err) {
+        res.status(415).json({
+          success: false,
+          message: err instanceof Error ? err.message : 'Media validation failed',
+          data: null,
+        });
+        return;
+      }
+
+      try {
+        const checksumSha256 = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+        const extension = (req.file.mimetype.split('/')[1] ?? 'bin').replace(/[^a-z0-9]/gi, '');
+        const key = `${workspaceId.data}/outbound/${crypto.randomUUID()}.${extension}`;
+
+        const storagePath = await getStorageClient().putObject(
+          key,
+          req.file.buffer,
+          req.file.mimetype,
+        );
+
+        res.status(201).json({
+          success: true,
+          message: 'Media uploaded',
+          data: {
+            storagePath,
+            mimeType: req.file.mimetype,
+            fileName: req.file.originalname || null,
+            sizeBytes: req.file.size,
+            checksumSha256,
+          },
+        });
+      } catch (err) {
+        logger.error({ err }, 'Failed to store outbound media upload');
+        res.status(500).json({ success: false, message: 'Failed to store media', data: null });
+      }
+    },
+  );
 
   /**
    * GET /internal/whatsapp/media/:mediaId/url?workspaceId=
@@ -215,6 +459,192 @@ export function createInternalWhatsappRouter(): Router {
     }
   });
 
+  /**
+   * POST /internal/whatsapp/typing
+   * Send a typing indicator to a WhatsApp contact and broadcast the event to the frontend.
+   */
+  const typingBodySchema = z.object({
+    conversationId: z.coerce.number().int().positive(),
+    workspaceId: z.coerce.number().int().positive(),
+    waJid: z.string().min(1),
+    isTyping: z.boolean(),
+    userId: z.coerce.number().int().positive().nullish(),
+    name: z.string().nullish(),
+  });
+
+  router.post('/typing', async (req: Request, res: Response) => {
+    const parsed = typingBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid request body', data: parsed.error.issues });
+      return;
+    }
+
+    const { conversationId, workspaceId, waJid, isTyping, userId, name } = parsed.data;
+
+    try {
+      // Send presence update to WhatsApp
+      if (isTyping) {
+        await connectionManager.sendPresenceUpdate('composing', waJid);
+      } else {
+        await connectionManager.sendPresenceUpdate('available', waJid);
+      }
+
+      // Broadcast typing event to frontend
+      emitTypingUpdated(workspaceId, conversationId, {
+        conversationId,
+        userId: userId ?? undefined,
+        isTyping,
+        name: name ?? undefined,
+      });
+
+      res.status(200).json({ success: true, message: 'Typing indicator sent', data: null });
+    } catch (err) {
+      logger.error({ err }, 'Failed to send typing indicator');
+      res.status(500).json({ success: false, message: 'Failed to send typing indicator', data: null });
+    }
+  });
+
+  /**
+   * POST /internal/whatsapp/messages/revoke
+   * Revoke a message for everyone in a WhatsApp conversation.
+   */
+  const revokeBodySchema = z.object({
+    conversationId: z.coerce.number().int().positive(),
+    workspaceId: z.coerce.number().int().positive(),
+    waJid: z.string().min(1),
+    whatsappMessageId: z.string().min(1),
+    userId: z.coerce.number().int().positive().nullish(),
+  });
+
+  router.post('/messages/revoke', async (req: Request, res: Response) => {
+    const parsed = revokeBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid request body', data: parsed.error.issues });
+      return;
+    }
+
+    const { conversationId, workspaceId, waJid, whatsappMessageId, userId } = parsed.data;
+
+    try {
+      // Send revoke to WhatsApp via Baileys
+      const jid = waJid.includes('@') ? waJid : `${waJid}@s.whatsapp.net`;
+      await connectionManager.sendContent(jid, {
+        protocolMessage: {
+          type: 0, // REVOKE
+          key: {
+            remoteJid: jid,
+            id: whatsappMessageId,
+            fromMe: false,
+          },
+        },
+      });
+
+      // Mark message as deleted in database
+      await messageRepository.markMessageAsDeleted(workspaceId, whatsappMessageId, 'user');
+
+      // Broadcast revoke event to frontend
+      emitMessageRevoked(workspaceId, conversationId, {
+        messageId: 0, // Will be resolved by frontend
+        whatsappMessageId,
+      });
+
+      res.status(200).json({ success: true, message: 'Message revoked', data: null });
+    } catch (err) {
+      logger.error({ err }, 'Failed to revoke message');
+      res.status(500).json({ success: false, message: 'Failed to revoke message', data: null });
+    }
+  });
+
+  /**
+   * POST /internal/whatsapp/messages/reaction
+   * Send a reaction to a WhatsApp message and persist it.
+   */
+  const reactionBodySchema = z.object({
+    conversationId: z.coerce.number().int().positive(),
+    workspaceId: z.coerce.number().int().positive(),
+    waJid: z.string().min(1),
+    whatsappMessageId: z.string().min(1),
+    emoji: z.string().min(1).max(8),
+    remove: z.boolean().default(false),
+    userId: z.coerce.number().int().positive().nullish(),
+    name: z.string().nullish(),
+  });
+
+  router.post('/messages/reaction', async (req: Request, res: Response) => {
+    const parsed = reactionBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid request body', data: parsed.error.issues });
+      return;
+    }
+
+    const { conversationId, workspaceId, waJid, whatsappMessageId, emoji, remove, userId, name } = parsed.data;
+
+    try {
+      // Send reaction to WhatsApp via Baileys
+      const jid = waJid.includes('@') ? waJid : `${waJid}@s.whatsapp.net`;
+      
+      if (remove) {
+        // Remove reaction by sending empty emoji
+        await connectionManager.sendContent(jid, {
+          react: {
+            text: '',
+            key: {
+              remoteJid: jid,
+              id: whatsappMessageId,
+              fromMe: false,
+            },
+          },
+        });
+      } else {
+        // Add reaction
+        await connectionManager.sendContent(jid, {
+          react: {
+            text: emoji,
+            key: {
+              remoteJid: jid,
+              id: whatsappMessageId,
+              fromMe: false,
+            },
+          },
+        });
+      }
+
+      // Persist reaction in database
+      const message = await messageRepository.findMessageByWhatsappId(workspaceId, whatsappMessageId);
+      if (message) {
+        if (remove) {
+          await messageRepository.removeReaction(message.id, userId ?? null, emoji);
+        } else {
+          await messageRepository.addReaction(message.id, userId ?? null, emoji);
+        }
+      }
+
+      // Broadcast reaction event to frontend
+      const event = remove ? 'message.reaction.removed' : 'message.reaction.created';
+      getSocketServer()?.of('/gateway')
+        .to(`workspace:${workspaceId}:conversation:${conversationId}`)
+        .emit(event, {
+          event_id: crypto.randomUUID(),
+          event_type: event,
+          workspace_id: workspaceId,
+          occurred_at: new Date().toISOString(),
+          data: {
+            messageId: message?.id,
+            whatsappMessageId,
+            emoji,
+            userId,
+            name,
+            remove,
+          },
+        });
+
+      res.status(200).json({ success: true, message: 'Reaction sent', data: null });
+    } catch (err) {
+      logger.error({ err }, 'Failed to send reaction');
+      res.status(500).json({ success: false, message: 'Failed to send reaction', data: null });
+    }
+  });
+
   const emitEventBodySchema = z.object({
     event: z.enum([
       'conversation.created',
@@ -223,7 +653,10 @@ export function createInternalWhatsappRouter(): Router {
       'conversation.closed',
       'conversation.reopened',
       'conversation.priority_changed',
+      'conversation.cleared',
+      'conversation.deleted',
       'notification.created',
+      'typing.updated',
     ]),
     workspaceId: z.coerce.number().int().positive(),
     conversationId: z.coerce.number().int().positive().nullish(),
@@ -259,8 +692,116 @@ export function createInternalWhatsappRouter(): Router {
       return;
     }
 
+    if (event === 'typing.updated') {
+      if (!conversationId) {
+        res.status(400).json({ success: false, message: 'conversationId is required for typing.updated', data: null });
+        return;
+      }
+      emitTypingUpdated(workspaceId, conversationId, {
+        conversationId,
+        userId: userId ?? undefined,
+        isTyping: (payload.isTyping as boolean) ?? false,
+        name: (payload.name as string) ?? undefined,
+      });
+      res.status(200).json({ success: true, message: 'Event emitted', data: null });
+      return;
+    }
+
     emitConversationEvent(event, workspaceId, conversationId ?? null, payload);
     res.status(200).json({ success: true, message: 'Event emitted', data: null });
+  });
+
+  /**
+   * DELETE /internal/whatsapp/conversations/:conversationId/messages?workspaceId=
+   * Clears a conversation's message history (and every message-cascaded row:
+   * media, reactions, status events) and resets the gateway-owned conversation
+   * summary columns (last_message_at, last_message_preview, unread_count) so
+   * the thread restarts empty. The conversation row itself is preserved.
+   */
+  router.delete('/conversations/:conversationId/messages', async (req: Request, res: Response) => {
+    const conversationId = z.coerce.number().int().positive().safeParse(req.params.conversationId);
+    const workspaceId = z.coerce.number().int().positive().safeParse(req.query.workspaceId);
+
+    if (!conversationId.success || !workspaceId.success) {
+      res.status(400).json({ success: false, message: 'Invalid conversationId or workspaceId', data: null });
+      return;
+    }
+
+    try {
+      const [rows] = await execute<Array<{ id: number }>>(
+        'SELECT id FROM conversations WHERE id = ? AND workspace_id = ? LIMIT 1',
+        [conversationId.data, workspaceId.data],
+      );
+      if (rows.length === 0) {
+        res.status(404).json({ success: false, message: 'Conversation not found', data: null });
+        return;
+      }
+
+      const [deleted] = await execute<ResultSetHeader>(
+        'DELETE FROM messages WHERE conversation_id = ? AND workspace_id = ?',
+        [conversationId.data, workspaceId.data],
+      );
+
+      await execute(
+        'UPDATE conversations SET last_message_at = NULL, last_message_preview = NULL, unread_count = 0 WHERE id = ?',
+        [conversationId.data],
+      );
+
+      emitConversationEvent('conversation.cleared', workspaceId.data, conversationId.data, {
+        messagesDeleted: deleted.affectedRows,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Conversation cleared',
+        data: { conversationId: conversationId.data, messagesDeleted: deleted.affectedRows },
+      });
+    } catch (err) {
+      logger.error({ err, conversationId: conversationId.data }, 'Failed to clear conversation');
+      res.status(500).json({ success: false, message: 'Failed to clear conversation', data: null });
+    }
+  });
+
+  /**
+   * DELETE /internal/whatsapp/conversations/:conversationId?workspaceId=
+   * Permanently deletes a conversation and every row that cascades from it
+   * (messages, media, reactions, status events, participants, assignments,
+   * dispatch queue rows, label links). Backend-owned CRM records that merely
+   * reference the underlying contact are never touched here.
+   */
+  router.delete('/conversations/:conversationId', async (req: Request, res: Response) => {
+    const conversationId = z.coerce.number().int().positive().safeParse(req.params.conversationId);
+    const workspaceId = z.coerce.number().int().positive().safeParse(req.query.workspaceId);
+
+    if (!conversationId.success || !workspaceId.success) {
+      res.status(400).json({ success: false, message: 'Invalid conversationId or workspaceId', data: null });
+      return;
+    }
+
+    try {
+      const [deleted] = await execute<ResultSetHeader>(
+        'DELETE FROM conversations WHERE id = ? AND workspace_id = ?',
+        [conversationId.data, workspaceId.data],
+      );
+
+      if (deleted.affectedRows === 0) {
+        res.status(404).json({ success: false, message: 'Conversation not found', data: null });
+        return;
+      }
+
+      emitConversationEvent('conversation.deleted', workspaceId.data, conversationId.data, {
+        conversationId: conversationId.data,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Conversation deleted',
+        data: { conversationId: conversationId.data },
+      });
+    } catch (err) {
+      logger.error({ err, conversationId: conversationId.data }, 'Failed to delete conversation');
+      res.status(500).json({ success: false, message: 'Failed to delete conversation', data: null });
+    }
   });
 
   return router;

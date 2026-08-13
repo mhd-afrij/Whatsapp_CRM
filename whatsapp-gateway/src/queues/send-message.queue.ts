@@ -2,9 +2,15 @@ import { Queue, Worker, type Job } from 'bullmq';
 import { getQueueConnectionOptions } from './connection';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
+import { getStorageClient } from '../lib/storage';
 import { connectionManager } from '../whatsapp/manager-instance';
 import { DispatchRepository } from '../whatsapp/dispatch-repository';
 import { MessageRepository, isDuplicateEntryError } from '../whatsapp/message-repository';
+import {
+  resolveMessageType,
+  buildBaileysMediaContent,
+  type OutboundMediaInfo,
+} from '../whatsapp/outbound-media';
 import { emitMessageCreated, emitMessageFailed } from '../lib/socket-server';
 
 export const SEND_MESSAGE_QUEUE_NAME = 'send-message';
@@ -14,9 +20,14 @@ export interface SendMessageJobData {
   workspaceId: number;
   conversationId: number;
   waJid: string;
-  content: string;
+  content: string | null;
   replyToWhatsappMessageId?: string | null;
   requestedByUserId?: number | null;
+  mediaRef?: string | null;
+  mediaMimeType?: string | null;
+  mediaFileName?: string | null;
+  mediaSizeBytes?: number | null;
+  mediaChecksumSha256?: string | null;
 }
 
 export const sendMessageQueue = new Queue<SendMessageJobData>(SEND_MESSAGE_QUEUE_NAME, {
@@ -43,11 +54,43 @@ const messageRepository = new MessageRepository();
 export async function processSendMessage(
   job: Job<SendMessageJobData>,
 ): Promise<{ whatsappMessageId: string }> {
-  const { dispatchId, workspaceId, conversationId, waJid, content, replyToWhatsappMessageId } = job.data;
+  const {
+    dispatchId,
+    workspaceId,
+    conversationId,
+    waJid,
+    content,
+    replyToWhatsappMessageId,
+    mediaRef,
+    mediaMimeType,
+    mediaFileName,
+    mediaSizeBytes,
+    mediaChecksumSha256,
+  } = job.data;
 
   await dispatchRepository.markProcessing(dispatchId);
 
-  const result = await connectionManager.sendContent(waJid, { text: content }, replyToWhatsappMessageId ?? null);
+  let messageType: string = 'text';
+  let sendContent: { text: string } | Record<string, unknown> = { text: content ?? '' };
+
+  if (mediaRef) {
+    const mimeType = mediaMimeType ?? 'application/octet-stream';
+    const resolvedType = resolveMessageType(mimeType);
+    messageType = resolvedType;
+    const buffer = await getStorageClient().getObject(mediaRef);
+
+    const mediaInfo: OutboundMediaInfo = {
+      storagePath: mediaRef,
+      mimeType,
+      fileName: mediaFileName ?? null,
+      sizeBytes: mediaSizeBytes ?? null,
+      checksumSha256: mediaChecksumSha256 ?? null,
+    };
+
+    sendContent = buildBaileysMediaContent(resolvedType, buffer, mediaInfo, content || null);
+  }
+
+  const result = await connectionManager.sendContent(waJid, sendContent, replyToWhatsappMessageId ?? null);
   const whatsappMessageId = result.id;
   if (!whatsappMessageId) {
     throw new Error('Baileys did not return a message id for the send');
@@ -58,6 +101,7 @@ export async function processSendMessage(
     inserted = await messageRepository.insertOutboundMessage(workspaceId, conversationId, {
       whatsappMessageId,
       body: content,
+      messageType,
       repliedToWhatsappMessageId: replyToWhatsappMessageId ?? null,
     });
   } catch (err) {
@@ -70,19 +114,41 @@ export async function processSendMessage(
   }
 
   if (inserted) {
+    if (mediaRef) {
+      const mimeType = mediaMimeType ?? 'application/octet-stream';
+      await messageRepository.insertMessageMedia(inserted.messageId, {
+        mimeType,
+        fileSizeBytes: mediaSizeBytes ?? null,
+        storagePath: mediaRef,
+        checksumSha256: mediaChecksumSha256 ?? null,
+      });
+    }
+
     await messageRepository.updateMessageStatus(inserted.messageId, 'sent');
     await dispatchRepository.markSent(dispatchId, inserted.messageId);
+
+    const media = mediaRef
+      ? await messageRepository.findMessageMediaByMessageId(inserted.messageId)
+      : null;
 
     emitMessageCreated(workspaceId, conversationId, {
       message: {
         id: inserted.messageId,
         conversationId,
         direction: 'outbound',
-        messageType: 'text',
+        messageType,
         body: content,
         status: 'sent',
         senderType: 'user',
         sentAt: new Date().toISOString(),
+        media: media
+          ? {
+              id: media.id,
+              messageId: inserted.messageId,
+              mimeType: media.mime_type,
+              fileSizeBytes: media.file_size_bytes,
+            }
+          : null,
       },
       conversation: { id: conversationId },
     });

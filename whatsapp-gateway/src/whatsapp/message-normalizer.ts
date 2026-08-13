@@ -178,5 +178,11 @@ export function normalizeInboundMessage(
     return { ok: false, reason: 'protocol_message' };
   }
 
+  // Encrypted messages that Baileys couldn't decrypt (e.g. missing session,
+  // stale pre-key bundle). The only content tag is `enc` — no readable payload.
+  if (message.enc) {
+    return { ok: false, reason: 'encrypted_message_undecryptable' };
+  }
+
   return { ok: false, reason: `unsupported message kind: ${Object.keys(message).join(',') || 'empty'}` };
 }

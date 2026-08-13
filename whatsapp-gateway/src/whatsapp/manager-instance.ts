@@ -1,4 +1,6 @@
 import { ConnectionManager } from './connection-manager';
+import { SessionLockRepository } from './session-lock-repository';
+import { env } from '../config/env';
 import { emitConnectionUpdated } from '../lib/socket-server';
 import { logger } from '../lib/logger';
 import type { BaileysMessagesUpsert, BaileysMessageUpdate } from './baileys-socket';
@@ -7,8 +9,21 @@ import type { BaileysMessagesUpsert, BaileysMessageUpdate } from './baileys-sock
  * Process-wide singleton ConnectionManager. Emits every internal
  * connection.updated event onto the Socket.IO /gateway namespace, and
  * dispatches inbound message/status events into the Phase 5 sync pipeline.
+ *
+ * Session-lock coordination (workspace_sync_assignments) is wired in only
+ * when SESSION_LOCK_ENABLED=true - a single-instance deployment needs no
+ * coordination and gets zero extra DB work (see src/config/env.ts).
  */
-export const connectionManager = new ConnectionManager();
+export const connectionManager = new ConnectionManager(
+  env.SESSION_LOCK_ENABLED
+    ? {
+        lockRepository: new SessionLockRepository(),
+        gatewayInstanceId: env.GATEWAY_INSTANCE_ID,
+        sessionLockLeaseMs: env.SESSION_LEASE_MS,
+        sessionLockHeartbeatMs: env.SESSION_HEARTBEAT_INTERVAL_MS,
+      }
+    : {},
+);
 
 connectionManager.on('connection.updated', (payload) => {
   emitConnectionUpdated(payload.workspaceId, payload);
