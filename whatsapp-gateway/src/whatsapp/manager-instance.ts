@@ -3,7 +3,7 @@ import { SessionLockRepository } from './session-lock-repository';
 import { env } from '../config/env';
 import { emitConnectionUpdated } from '../lib/socket-server';
 import { logger } from '../lib/logger';
-import type { BaileysMessagesUpsert, BaileysMessageUpdate } from './baileys-socket';
+import type { BaileysContactsUpsert, BaileysMessagesUpsert, BaileysMessageUpdate } from './baileys-socket';
 
 /**
  * Process-wide singleton ConnectionManager. Emits every internal
@@ -21,8 +21,19 @@ export const connectionManager = new ConnectionManager(
         gatewayInstanceId: env.GATEWAY_INSTANCE_ID,
         sessionLockLeaseMs: env.SESSION_LEASE_MS,
         sessionLockHeartbeatMs: env.SESSION_HEARTBEAT_INTERVAL_MS,
+        socketConfig: {
+          ...(env.WHATSAPP_KEEPALIVE_INTERVAL_MS !== undefined
+            ? { keepAliveIntervalMs: env.WHATSAPP_KEEPALIVE_INTERVAL_MS }
+            : {}),
+        },
       }
-    : {},
+    : {
+        socketConfig: {
+          ...(env.WHATSAPP_KEEPALIVE_INTERVAL_MS !== undefined
+            ? { keepAliveIntervalMs: env.WHATSAPP_KEEPALIVE_INTERVAL_MS }
+            : {}),
+        },
+      },
 );
 
 connectionManager.on('connection.updated', (payload) => {
@@ -44,5 +55,14 @@ connectionManager.on(
     void import('./status-pipeline')
       .then(({ handleMessagesUpdate }) => handleMessagesUpdate(workspaceId, payload))
       .catch((err) => logger.error({ err }, 'Unhandled error in message status pipeline'));
+  },
+);
+
+connectionManager.on(
+  'contacts.upsert',
+  ({ workspaceId, payload }: { workspaceId: number; payload: BaileysContactsUpsert }) => {
+    void import('./contacts-pipeline')
+      .then(({ handleContactsUpsert }) => handleContactsUpsert(workspaceId, payload))
+      .catch((err) => logger.error({ err }, 'Unhandled error in contacts upsert pipeline'));
   },
 );

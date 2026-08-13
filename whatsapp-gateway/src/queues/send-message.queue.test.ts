@@ -18,6 +18,10 @@ const {
   insertOutboundMessage,
   updateMessageStatus,
   recordProcessingFailure,
+  findMessageByWhatsappId,
+  setOutboundWhatsappId,
+  findMessageMediaByMessageId,
+  insertMessageMedia,
 } = vi.hoisted(() => ({
   sendContent: vi.fn(),
   markProcessing: vi.fn().mockResolvedValue(undefined),
@@ -26,6 +30,10 @@ const {
   insertOutboundMessage: vi.fn(),
   updateMessageStatus: vi.fn().mockResolvedValue(undefined),
   recordProcessingFailure: vi.fn().mockResolvedValue(undefined),
+  findMessageByWhatsappId: vi.fn().mockResolvedValue(null),
+  setOutboundWhatsappId: vi.fn().mockResolvedValue(undefined),
+  findMessageMediaByMessageId: vi.fn().mockResolvedValue(null),
+  insertMessageMedia: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../whatsapp/manager-instance', () => ({
@@ -49,6 +57,10 @@ vi.mock('../whatsapp/message-repository', async () => {
         insertOutboundMessage: (...args: unknown[]) => insertOutboundMessage(...args),
         updateMessageStatus,
         recordProcessingFailure: (...args: unknown[]) => recordProcessingFailure(...args),
+        findMessageByWhatsappId,
+        setOutboundWhatsappId,
+        findMessageMediaByMessageId,
+        insertMessageMedia,
       };
     }),
   };
@@ -56,9 +68,11 @@ vi.mock('../whatsapp/message-repository', async () => {
 
 const emitMessageCreated = vi.fn();
 const emitMessageFailed = vi.fn();
+const emitMessageUpdated = vi.fn();
 vi.mock('../lib/socket-server', () => ({
   emitMessageCreated: (...args: unknown[]) => emitMessageCreated(...args),
   emitMessageFailed: (...args: unknown[]) => emitMessageFailed(...args),
+  emitMessageUpdated: (...args: unknown[]) => emitMessageUpdated(...args),
 }));
 
 import { processSendMessage, handleSendMessageFailure, type SendMessageJobData } from './send-message.queue';
@@ -80,7 +94,7 @@ describe('send-message queue processor', () => {
     content: 'hi',
   };
 
-  it('sends successfully and marks the dispatch row sent', async () => {
+  it('persists the queued row before the send, then flips it to sent', async () => {
     sendContent.mockResolvedValue({ id: 'WA-1' });
     insertOutboundMessage.mockResolvedValue({ messageId: 55 });
 
@@ -88,14 +102,31 @@ describe('send-message queue processor', () => {
 
     expect(result).toEqual({ whatsappMessageId: 'WA-1' });
     expect(markProcessing).toHaveBeenCalledWith(1);
+    expect(insertOutboundMessage).toHaveBeenCalledWith(
+      1,
+      10,
+      expect.objectContaining({ status: 'queued', whatsappMessageId: 'queued:1' }),
+    );
+    expect(setOutboundWhatsappId).toHaveBeenCalledWith(55, 'WA-1');
+    expect(updateMessageStatus).toHaveBeenCalledWith(55, 'sent');
     expect(markSent).toHaveBeenCalledWith(1, 55);
     expect(emitMessageCreated).toHaveBeenCalledTimes(1);
+    expect(emitMessageUpdated).toHaveBeenCalledWith(
+      1,
+      10,
+      expect.objectContaining({
+        messageId: 55,
+        changes: expect.objectContaining({ status: 'sent' }),
+      }),
+    );
   });
 
   it('retry-then-succeed: a transient send failure throws so BullMQ retries, and a later attempt succeeds', async () => {
     sendContent.mockRejectedValueOnce(new Error('transient network error'));
     await expect(processSendMessage(makeJob(baseData))).rejects.toThrow('transient network error');
     expect(markSent).not.toHaveBeenCalled();
+    expect(setOutboundWhatsappId).not.toHaveBeenCalled();
+    expect(insertOutboundMessage).toHaveBeenCalledTimes(1);
 
     sendContent.mockResolvedValueOnce({ id: 'WA-2' });
     insertOutboundMessage.mockResolvedValueOnce({ messageId: 56 });
@@ -103,6 +134,48 @@ describe('send-message queue processor', () => {
 
     expect(result).toEqual({ whatsappMessageId: 'WA-2' });
     expect(markSent).toHaveBeenCalledWith(1, 56);
+  });
+
+  it('a retry where the queued row already exists reuses it instead of inserting a duplicate', async () => {
+    insertOutboundMessage.mockRejectedValueOnce(Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' }));
+    findMessageByWhatsappId.mockResolvedValueOnce({
+      id: 55,
+      workspace_id: 1,
+      conversation_id: 10,
+      whatsapp_message_id: 'queued:1',
+      direction: 'outbound',
+      message_type: 'text',
+      body: 'hi',
+      status: 'queued',
+    });
+    sendContent.mockResolvedValue({ id: 'WA-3' });
+
+    const result = await processSendMessage(makeJob(baseData));
+
+    expect(result).toEqual({ whatsappMessageId: 'WA-3' });
+    expect(markSent).toHaveBeenCalledWith(1, 55);
+    expect(updateMessageStatus).toHaveBeenCalledWith(55, 'sent');
+  });
+
+  it('a retry where a prior attempt already sent finalizes the dispatch without sending again', async () => {
+    insertOutboundMessage.mockRejectedValueOnce(Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' }));
+    findMessageByWhatsappId.mockResolvedValueOnce({
+      id: 55,
+      workspace_id: 1,
+      conversation_id: 10,
+      whatsapp_message_id: 'WA-9',
+      direction: 'outbound',
+      message_type: 'text',
+      body: 'hi',
+      status: 'sent',
+    });
+
+    const result = await processSendMessage(makeJob(baseData));
+
+    expect(result).toEqual({ whatsappMessageId: 'WA-9' });
+    expect(markSent).toHaveBeenCalledWith(1, 55);
+    expect(sendContent).not.toHaveBeenCalled();
+    expect(setOutboundWhatsappId).not.toHaveBeenCalled();
   });
 
   it('retry-exhausted: marks the dispatch row permanently failed and emits message.failed', async () => {
@@ -130,6 +203,32 @@ describe('send-message queue processor', () => {
       'number not on WhatsApp',
       expect.objectContaining({ waJid: baseData.waJid, attemptsMade: 4, permanent: true }),
       { dispatchQueueId: 1, conversationId: 10 },
+    );
+  });
+
+  it('retry-exhausted: flips the persisted queued message row to failed', async () => {
+    findMessageByWhatsappId.mockResolvedValueOnce({
+      id: 55,
+      workspace_id: 1,
+      conversation_id: 10,
+      whatsapp_message_id: 'queued:1',
+      direction: 'outbound',
+      message_type: 'text',
+      body: 'hi',
+      status: 'queued',
+    });
+    const job = { data: baseData, attemptsMade: 4, opts: { attempts: 4 } };
+
+    await handleSendMessageFailure(job, new Error('number not on WhatsApp'));
+
+    expect(updateMessageStatus).toHaveBeenCalledWith(55, 'failed');
+    expect(emitMessageUpdated).toHaveBeenCalledWith(
+      1,
+      10,
+      expect.objectContaining({
+        messageId: 55,
+        changes: expect.objectContaining({ status: 'failed' }),
+      }),
     );
   });
 

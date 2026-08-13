@@ -11,7 +11,7 @@ import {
   buildBaileysMediaContent,
   type OutboundMediaInfo,
 } from '../whatsapp/outbound-media';
-import { emitMessageCreated, emitMessageFailed } from '../lib/socket-server';
+import { emitMessageCreated, emitMessageFailed, emitMessageUpdated } from '../lib/socket-server';
 
 export const SEND_MESSAGE_QUEUE_NAME = 'send-message';
 
@@ -42,6 +42,24 @@ export const sendMessageQueue = new Queue<SendMessageJobData>(SEND_MESSAGE_QUEUE
 
 const dispatchRepository = new DispatchRepository();
 const messageRepository = new MessageRepository();
+
+/**
+ * True when the failure indicates the WhatsApp connection itself is broken
+ * (query timed out / socket closed / replaced) rather than a per-message
+ * rejection. Baileys' query() throws Boom(408, 'Timed Out') against an
+ * unresponsive session - the exact zombie-connection case this recovers from.
+ */
+function isConnectionFailure(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const boom = err as { output?: { statusCode?: number }; message?: string };
+  const statusCode = boom.output?.statusCode;
+  return (
+    statusCode === 408 ||
+    statusCode === 428 ||
+    statusCode === 440 ||
+    (typeof boom.message === 'string' && /timed out|connection closed/i.test(boom.message))
+  );
+}
 
 /**
  * Claims a pending/failed-retry dispatch row, sends via the live Baileys
@@ -90,69 +108,118 @@ export async function processSendMessage(
     sendContent = buildBaileysMediaContent(resolvedType, buffer, mediaInfo, content || null);
   }
 
-  const result = await connectionManager.sendContent(waJid, sendContent, replyToWhatsappMessageId ?? null);
-  const whatsappMessageId = result.id;
-  if (!whatsappMessageId) {
-    throw new Error('Baileys did not return a message id for the send');
-  }
-
-  let inserted: { messageId: number } | null;
+  // Persist the outbound row as 'queued' BEFORE the Baileys send so the
+  // message survives send failures - the reported bug was that sends against
+  // an unstable session never saved anything. A deterministic placeholder
+  // whatsapp id keeps re-insertion on BullMQ retries idempotent via the
+  // (workspace_id, whatsapp_message_id) unique key.
+  const placeholderWhatsappId = `queued:${dispatchId}`;
+  let messageId: number;
+  let alreadyCompletedWhatsappId: string | null = null;
   try {
-    inserted = await messageRepository.insertOutboundMessage(workspaceId, conversationId, {
-      whatsappMessageId,
+    const inserted = await messageRepository.insertOutboundMessage(workspaceId, conversationId, {
+      whatsappMessageId: placeholderWhatsappId,
       body: content,
       messageType,
       repliedToWhatsappMessageId: replyToWhatsappMessageId ?? null,
+      status: 'queued',
     });
+    if (!inserted) {
+      throw new Error('Failed to persist queued outbound message row');
+    }
+    messageId = inserted.messageId;
   } catch (err) {
     if (isDuplicateEntryError(err)) {
-      // Already recorded on a prior attempt (crash after send, before persist retry): idempotent no-op.
-      await dispatchRepository.markSent(dispatchId, 0);
-      return { whatsappMessageId };
+      const existing = await messageRepository.findMessageByWhatsappId(workspaceId, placeholderWhatsappId);
+      if (!existing) {
+        throw err;
+      }
+      messageId = existing.id;
+      // A prior attempt already sent the message (crash between send and
+      // dispatch finalization): don't re-send, just finalize the dispatch row.
+      if (existing.status === 'sent' && existing.whatsapp_message_id !== placeholderWhatsappId) {
+        alreadyCompletedWhatsappId = existing.whatsapp_message_id;
+      }
+    } else {
+      throw err;
     }
-    throw err;
   }
 
-  if (inserted) {
-    if (mediaRef) {
-      const mimeType = mediaMimeType ?? 'application/octet-stream';
-      await messageRepository.insertMessageMedia(inserted.messageId, {
+  if (alreadyCompletedWhatsappId) {
+    await dispatchRepository.markSent(dispatchId, messageId);
+    return { whatsappMessageId: alreadyCompletedWhatsappId };
+  }
+
+  if (mediaRef) {
+    const mimeType = mediaMimeType ?? 'application/octet-stream';
+    // Guarded so a retry after a crash (media already inserted) doesn't add a duplicate row.
+    const existingMedia = await messageRepository.findMessageMediaByMessageId(messageId);
+    if (!existingMedia) {
+      await messageRepository.insertMessageMedia(messageId, {
         mimeType,
         fileSizeBytes: mediaSizeBytes ?? null,
         storagePath: mediaRef,
         checksumSha256: mediaChecksumSha256 ?? null,
       });
     }
-
-    await messageRepository.updateMessageStatus(inserted.messageId, 'sent');
-    await dispatchRepository.markSent(dispatchId, inserted.messageId);
-
-    const media = mediaRef
-      ? await messageRepository.findMessageMediaByMessageId(inserted.messageId)
-      : null;
-
-    emitMessageCreated(workspaceId, conversationId, {
-      message: {
-        id: inserted.messageId,
-        conversationId,
-        direction: 'outbound',
-        messageType,
-        body: content,
-        status: 'sent',
-        senderType: 'user',
-        sentAt: new Date().toISOString(),
-        media: media
-          ? {
-              id: media.id,
-              messageId: inserted.messageId,
-              mimeType: media.mime_type,
-              fileSizeBytes: media.file_size_bytes,
-            }
-          : null,
-      },
-      conversation: { id: conversationId },
-    });
   }
+
+  // Surface the queued bubble to the open chat immediately; later retries
+  // re-emit it, and the terminal-failure path flips it to `failed`.
+  emitMessageCreated(workspaceId, conversationId, {
+    message: {
+      id: messageId,
+      conversationId,
+      direction: 'outbound',
+      messageType,
+      body: content,
+      status: 'queued',
+      senderType: 'user',
+      sentAt: new Date().toISOString(),
+    },
+    conversation: { id: conversationId },
+  });
+
+  let result: { id: string | null | undefined };
+  try {
+    result = await connectionManager.sendContent(waJid, sendContent, replyToWhatsappMessageId ?? null);
+  } catch (err) {
+    // A session that reports 'connected' but times out queries is a zombie - refresh
+    // it now so the BullMQ retry (next attempt) runs against a live connection.
+    if (isConnectionFailure(err)) {
+      logger.warn({ err, waJid }, 'Send failed with a connection error; refreshing WhatsApp connection');
+      connectionManager.requestConnectionRefresh();
+    }
+    throw err;
+  }
+  const whatsappMessageId = result.id;
+  if (!whatsappMessageId) {
+    throw new Error('Baileys did not return a message id for the send');
+  }
+
+  await messageRepository.setOutboundWhatsappId(messageId, whatsappMessageId);
+  await messageRepository.updateMessageStatus(messageId, 'sent');
+  await dispatchRepository.markSent(dispatchId, messageId);
+
+  const media = mediaRef
+    ? await messageRepository.findMessageMediaByMessageId(messageId)
+    : null;
+
+  emitMessageUpdated(workspaceId, conversationId, {
+    messageId,
+    changes: {
+      status: 'sent',
+      whatsapp_message_id: whatsappMessageId,
+      media: media
+        ? {
+            id: media.id,
+            messageId,
+            mimeType: media.mime_type,
+            fileSizeBytes: media.file_size_bytes,
+          }
+        : null,
+    },
+  });
 
   return { whatsappMessageId };
 }
@@ -186,6 +253,28 @@ export async function handleSendMessageFailure(
       )
       .catch((persistErr) => {
         logger.error({ dispatchId: job.data.dispatchId, persistErr }, 'Failed to persist send dead-letter record');
+      });
+
+    // The queued row was persisted before the first send attempt - reflect the
+    // terminal failure on it so the chat surface shows a failed bubble (with a
+    // Retry action) instead of a permanently "sending" message.
+    await messageRepository
+      .findMessageByWhatsappId(job.data.workspaceId, `queued:${job.data.dispatchId}`)
+      .then(async (row) => {
+        if (!row || row.status === 'failed') {
+          return;
+        }
+        await messageRepository.updateMessageStatus(row.id, 'failed');
+        emitMessageUpdated(job.data.workspaceId, job.data.conversationId, {
+          messageId: row.id,
+          changes: { status: 'failed' },
+        });
+      })
+      .catch((updateErr) => {
+        logger.warn(
+          { dispatchId: job.data.dispatchId, updateErr },
+          'Failed to mark queued outbound message failed',
+        );
       });
 
     emitMessageFailed(job.data.workspaceId, job.data.conversationId, job.data.requestedByUserId ?? null, {

@@ -51,6 +51,17 @@ const envSchema = z.object({
   SESSION_LEASE_MS: z.coerce.number().int().positive().default(30_000),
   SESSION_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
 
+  // Baileys closes the WebSocket when a keep-alive pong is missed inside this
+  // window (default 30s). Optional; set to tune the reconnect loop once the
+  // enriched disconnect events identify whether it's network throttling or a
+  // server-side drop (docs: what killed the connection).
+  WHATSAPP_KEEPALIVE_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+
+  // Dialing country code (no leading +) applied to local-format phone numbers
+  // when building WhatsApp JIDs (see src/whatsapp/jid.ts). Matches the account
+  // number this session pairs with (e.g. "94788198996" -> "94").
+  WHATSAPP_COUNTRY_CODE: z.string().default('94'),
+
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),

@@ -8,6 +8,7 @@ import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { getStorageClient } from '../lib/storage';
 import { execute, transaction } from '../lib/mysql';
+import { normalizePhoneToJid } from '../whatsapp/jid';
 import { connectionManager } from '../whatsapp/manager-instance';
 import { SessionRepository } from '../whatsapp/session-repository';
 import { DispatchRepository } from '../whatsapp/dispatch-repository';
@@ -329,8 +330,7 @@ export function createInternalWhatsappRouter(): Router {
     const { workspaceId, phoneNumber, contactId } = parsed.data;
 
     try {
-      const digits = phoneNumber.replace(/[^0-9]/g, '');
-      const waJid = `${digits}@s.whatsapp.net`;
+      const waJid = normalizePhoneToJid(phoneNumber, env.WHATSAPP_COUNTRY_CODE);
 
       const whatsappContact = await messageRepository.findOrCreateWhatsappContact(workspaceId, waJid, null);
       const conversation = await messageRepository.findOrCreateConversation(workspaceId, whatsappContact.id);
