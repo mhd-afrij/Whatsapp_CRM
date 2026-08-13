@@ -13,7 +13,7 @@ use Tests\TestCase;
 
 class DealTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     protected function makePipeline(int $workspaceId): Pipeline
     {

@@ -21,6 +21,11 @@ class GatewayClient
         return $this->request('get', '/internal/whatsapp/status');
     }
 
+    public function health(): array
+    {
+        return $this->request('get', '/whatsapp/health');
+    }
+
     public function connect(): array
     {
         return $this->request('post', '/internal/whatsapp/connect');
@@ -31,9 +36,28 @@ class GatewayClient
         return $this->request('post', '/internal/whatsapp/disconnect');
     }
 
+    public function logout(): array
+    {
+        return $this->request('post', '/internal/whatsapp/logout');
+    }
+
     public function reconnect(): array
     {
         return $this->request('post', '/internal/whatsapp/reconnect');
+    }
+
+    /**
+     * Destructive reset: asks the gateway to log the WhatsApp session out
+     * (forcing a fresh QR re-pair) and purge every gateway-owned row for the
+     * workspace - chats, whatsapp_contacts, the dispatch queue / processing
+     * failures and the sync checkpoints. Backend-owned rows (leads, deals,
+     * tasks, CRM contacts) are never touched by the gateway; the caller is
+     * responsible for any backend-side cleanup. Returns the deleted-row
+     * counts plus the post-logout session snapshot.
+     */
+    public function resetData(int $workspaceId): array
+    {
+        return $this->request('post', '/internal/whatsapp/reset-data', ['workspaceId' => $workspaceId]);
     }
 
     public function events(int $limit = 50): array
@@ -55,6 +79,37 @@ class GatewayClient
     }
 
     /**
+     * Start (find or create) a WhatsApp conversation for a contact by phone number.
+     * Returns the conversation ID, ready to use for sending messages.
+     */
+    public function startConversation(array $payload): array
+    {
+        return $this->request('post', '/internal/whatsapp/conversations/start', $payload);
+    }
+
+    /**
+     * Ask the gateway to delete every message in a conversation and reset the
+     * gateway-owned conversation summary columns (last_message_at,
+     * last_message_preview, unread_count). The conversation row itself stays
+     * so the chat thread can continue.
+     */
+    public function clearConversation(int $conversationId, int $workspaceId): array
+    {
+        return $this->request('delete', "/internal/whatsapp/conversations/{$conversationId}/messages", ['workspaceId' => $workspaceId]);
+    }
+
+    /**
+     * Ask the gateway to delete a conversation and every gateway-owned row it
+     * cascades (messages, media, reactions, status events, dispatch queue,
+     * participants, assignments, label links). Backend-owned CRM rows that
+     * merely reference the contact are untouched.
+     */
+    public function deleteConversation(int $conversationId, int $workspaceId): array
+    {
+        return $this->request('delete', "/internal/whatsapp/conversations/{$conversationId}", ['workspaceId' => $workspaceId]);
+    }
+
+    /**
      * Resolves a message_media row to a short-lived signed URL (or, in
      * local-disk dev mode, a server-side file path) via the gateway's
      * `/internal/whatsapp/media/:mediaId/url` endpoint. Callers MUST verify
@@ -64,6 +119,42 @@ class GatewayClient
     public function mediaUrl(int $mediaId, int $workspaceId): array
     {
         return $this->request('get', "/internal/whatsapp/media/{$mediaId}/url", ['workspaceId' => $workspaceId]);
+    }
+
+    /**
+     * Uploads an agent-attached file to the gateway, which stores it via its
+     * own object-storage client and returns only a storage key + metadata.
+     * The caller then passes `storagePath` back as `mediaRef` when dispatching
+     * the outbound message (ConversationController::storeMessage), so the
+     * gateway never needs a second round trip to fetch the file.
+     *
+     * @return array{storagePath: string, mimeType: string, fileName: ?string, sizeBytes: int, checksumSha256: string}
+     */
+    public function uploadMedia(int $workspaceId, string $filePath, string $originalName, string $mimeType): array
+    {
+        $baseUrl = rtrim((string) config('services.whatsapp_gateway.base_url'), '/');
+        $token = (string) config('services.whatsapp_gateway.token');
+        $timeout = (int) config('services.whatsapp_gateway.timeout', 10);
+
+        try {
+            $response = Http::withHeaders(['X-Internal-Gateway-Token' => $token])
+                ->timeout($timeout)
+                ->attach('file', file_get_contents($filePath), $originalName, ['Content-Type' => $mimeType])
+                ->post($baseUrl.'/internal/whatsapp/media/upload', ['workspaceId' => $workspaceId]);
+        } catch (ConnectionException $e) {
+            throw new RuntimeException('Unable to reach the WhatsApp gateway service.', previous: $e);
+        }
+
+        try {
+            $response->throw();
+        } catch (RequestException $e) {
+            throw new RuntimeException(
+                'WhatsApp gateway rejected the media upload: '.($response->json('message') ?? $response->status()),
+                previous: $e,
+            );
+        }
+
+        return $response->json('data') ?? [];
     }
 
     /**
@@ -81,6 +172,56 @@ class GatewayClient
             'workspaceId' => $workspaceId,
             'conversationId' => $conversationId,
             'payload' => $payload,
+        ]);
+    }
+
+    /**
+     * Revoke a message for everyone in a WhatsApp conversation.
+     * The gateway will send the revoke to WhatsApp and mark the message as deleted.
+     */
+    public function revokeMessage(int $workspaceId, int $conversationId, string $waJid, string $whatsappMessageId, ?int $userId = null): void
+    {
+        $this->request('post', '/internal/whatsapp/messages/revoke', [
+            'workspaceId' => $workspaceId,
+            'conversationId' => $conversationId,
+            'waJid' => $waJid,
+            'whatsappMessageId' => $whatsappMessageId,
+            'userId' => $userId,
+        ]);
+    }
+
+    /**
+     * Send a reaction to a WhatsApp message via the gateway.
+     * The gateway will send the reaction to WhatsApp and persist it in the database.
+     */
+    public function sendReaction(int $workspaceId, int $conversationId, string $waJid, string $whatsappMessageId, string $emoji, bool $remove = false, ?int $userId = null, ?string $name = null): void
+    {
+        $this->request('post', '/internal/whatsapp/messages/reaction', [
+            'workspaceId' => $workspaceId,
+            'conversationId' => $conversationId,
+            'waJid' => $waJid,
+            'whatsappMessageId' => $whatsappMessageId,
+            'emoji' => $emoji,
+            'remove' => $remove,
+            'userId' => $userId,
+            'name' => $name,
+        ]);
+    }
+
+    /**
+     * Send a typing indicator to a WhatsApp contact via the gateway.
+     * The gateway will send the presence update to WhatsApp and broadcast
+     * the typing event to the frontend via Socket.IO.
+     */
+    public function sendTypingIndicator(int $workspaceId, int $conversationId, string $waJid, bool $isTyping, ?int $userId = null, ?string $name = null): void
+    {
+        $this->request('post', '/internal/whatsapp/typing', [
+            'workspaceId' => $workspaceId,
+            'conversationId' => $conversationId,
+            'waJid' => $waJid,
+            'isTyping' => $isTyping,
+            'userId' => $userId,
+            'name' => $name,
         ]);
     }
 

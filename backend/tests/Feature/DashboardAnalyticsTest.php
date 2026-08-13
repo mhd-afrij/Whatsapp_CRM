@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Jobs\GenerateReportExportJob;
+use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Deal;
 use App\Models\Lead;
+use App\Models\Notification;
 use App\Models\Pipeline;
 use App\Models\PipelineStage;
 use App\Models\Task;
@@ -13,12 +15,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\CreatesWorkspaceUsers;
 use Tests\TestCase;
 
 class DashboardAnalyticsTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     protected function setUp(): void
     {
@@ -207,7 +210,7 @@ class DashboardAnalyticsTest extends TestCase
     {
         $this->seedRbac();
         $manager = $this->userWithRole('Manager');
-        \App\Models\Contact::factory()->create(['workspace_id' => $manager->workspace_id]);
+        Contact::factory()->create(['workspace_id' => $manager->workspace_id]);
 
         $this->asUser($manager)->postJson('/api/v1/reports/export', ['type' => 'contacts'])
             ->assertStatus(202);
@@ -218,8 +221,8 @@ class DashboardAnalyticsTest extends TestCase
             'type' => 'report.export_ready',
         ]);
 
-        $notification = \App\Models\Notification::query()->where('type', 'report.export_ready')->firstOrFail();
-        $this->assertTrue(\Illuminate\Support\Facades\Storage::disk('local')->exists($notification->data['file']));
+        $notification = Notification::query()->where('type', 'report.export_ready')->firstOrFail();
+        $this->assertTrue(Storage::disk('local')->exists($notification->data['file']));
 
         $this->asUser($manager)
             ->get("/api/v1/reports/export/{$notification->id}/download")

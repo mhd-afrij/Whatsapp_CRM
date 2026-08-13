@@ -8,6 +8,7 @@ use App\Models\Role;
 use App\Support\AuditLogger;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class RoleController extends Controller
@@ -37,7 +38,7 @@ class RoleController extends Controller
         $role = Role::create([
             'workspace_id' => $request->user()->workspace_id,
             'name' => $data['name'],
-            'slug' => \Illuminate\Support\Str::slug($data['name']),
+            'slug' => Str::slug($data['name']),
             'is_system' => false,
             'description' => $data['description'] ?? null,
         ]);

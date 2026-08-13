@@ -14,7 +14,7 @@ class MigrationsTest extends TestCase
         'workspaces', 'workspace_settings', 'users', 'roles', 'permissions',
         'role_user', 'permission_role', 'teams', 'team_user', 'invitations',
         'whatsapp_sessions', 'whatsapp_session_credentials', 'whatsapp_connection_events',
-        'whatsapp_sync_checkpoints', 'whatsapp_contacts', 'contacts', 'conversations',
+        'whatsapp_sync_checkpoints', 'workspace_sync_assignments', 'whatsapp_contacts', 'contacts', 'conversations',
         'conversation_assignments', 'conversation_participants', 'messages', 'message_media',
         'message_status_events', 'message_reactions', 'message_dispatch_queue',
         'message_processing_failures', 'leads', 'pipelines', 'pipeline_stages', 'deals',
@@ -36,6 +36,7 @@ class MigrationsTest extends TestCase
         $tenantTables = [
             'workspace_settings', 'users', 'roles', 'teams', 'invitations',
             'whatsapp_sessions', 'whatsapp_connection_events', 'whatsapp_sync_checkpoints',
+            'workspace_sync_assignments',
             'whatsapp_contacts', 'contacts', 'conversations', 'messages', 'message_dispatch_queue',
             'message_processing_failures', 'leads', 'pipelines', 'deals', 'contact_activities',
             'internal_notes', 'tasks', 'labels', 'notifications', 'audit_logs', 'saved_filters',

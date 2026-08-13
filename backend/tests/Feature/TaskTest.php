@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Lead;
 use App\Models\Notification;
 use App\Models\Task;
 use App\Models\TaskReminder;
@@ -12,7 +13,7 @@ use Tests\TestCase;
 
 class TaskTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_viewer_without_permission_cannot_list_tasks(): void
     {
@@ -134,7 +135,7 @@ class TaskTest extends TestCase
     {
         $this->seedRbac();
         $agent = $this->userWithRole('Agent');
-        $lead = \App\Models\Lead::factory()->create(['workspace_id' => $agent->workspace_id]);
+        $lead = Lead::factory()->create(['workspace_id' => $agent->workspace_id]);
 
         $response = $this->asUser($agent)->postJson('/api/v1/tasks', [
             'title' => 'Follow up',

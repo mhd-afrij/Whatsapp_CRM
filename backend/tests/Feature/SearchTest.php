@@ -13,7 +13,7 @@ use Tests\TestCase;
 
 class SearchTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_search_returns_breakdown_across_categories(): void
     {

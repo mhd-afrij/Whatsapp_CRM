@@ -13,11 +13,11 @@ class AuditLogger
      * @param  array  $after  The new/changed field values (or, for create-only/delete-only
      *                        actions with no structured diff, whatever flat payload the call
      *                        site wants recorded).
-     * @param  array  $before Prior field values for the same keys as $after, captured via
-     *                        e.g. $model->only(array_keys($data)) *before* the model is saved,
-     *                        or $model->getOriginal() intersected with $model->getChanges()
-     *                        *after* saving. Left empty for create actions (nothing existed
-     *                        before) and delete/action-only events that don't diff fields.
+     * @param  array  $before  Prior field values for the same keys as $after, captured via
+     *                         e.g. $model->only(array_keys($data)) *before* the model is saved,
+     *                         or $model->getOriginal() intersected with $model->getChanges()
+     *                         *after* saving. Left empty for create actions (nothing existed
+     *                         before) and delete/action-only events that don't diff fields.
      */
     public static function log(string $action, ?User $actor = null, ?object $subject = null, array $after = [], ?Request $request = null, array $before = []): AuditLog
     {

@@ -8,6 +8,7 @@ use App\Models\Deal;
 use App\Models\Lead;
 use App\Models\Message;
 use App\Models\Task;
+use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
@@ -204,7 +205,7 @@ class AnalyticsController extends Controller
 
             $userIds = collect($conversationsHandled->keys())->merge($tasksCompleted->keys())->unique();
 
-            return \App\Models\User::query()->whereIn('id', $userIds)->get(['id', 'name'])->map(fn ($user) => [
+            return User::query()->whereIn('id', $userIds)->get(['id', 'name'])->map(fn ($user) => [
                 'user_id' => $user->id,
                 'name' => $user->name,
                 'conversations_handled' => (int) ($conversationsHandled[$user->id] ?? 0),

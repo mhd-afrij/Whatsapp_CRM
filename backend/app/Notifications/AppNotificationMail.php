@@ -23,9 +23,7 @@ class AppNotificationMail extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    public function __construct(public readonly string $type, public readonly array $data = [])
-    {
-    }
+    public function __construct(public readonly string $type, public readonly array $data = []) {}
 
     public function via(object $notifiable): array
     {

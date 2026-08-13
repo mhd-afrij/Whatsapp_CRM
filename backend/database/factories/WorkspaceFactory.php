@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<Workspace>
@@ -18,7 +19,7 @@ class WorkspaceFactory extends Factory
 
         return [
             'name' => $name,
-            'slug' => \Illuminate\Support\Str::slug($name).'-'.fake()->unique()->numberBetween(1000, 999999),
+            'slug' => Str::slug($name).'-'.fake()->unique()->numberBetween(1000, 999999),
             'timezone' => 'UTC',
             'is_active' => true,
         ];

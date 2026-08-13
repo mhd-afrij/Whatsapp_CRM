@@ -11,9 +11,7 @@ class InvitationNotification extends Notification
 {
     use Queueable;
 
-    public function __construct(public readonly Invitation $invitation)
-    {
-    }
+    public function __construct(public readonly Invitation $invitation) {}
 
     public function via(object $notifiable): array
     {

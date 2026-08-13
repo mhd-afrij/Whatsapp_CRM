@@ -12,7 +12,7 @@ use Tests\TestCase;
  */
 class NotificationPreferenceTest extends TestCase
 {
-    use RefreshDatabase, CreatesWorkspaceUsers;
+    use CreatesWorkspaceUsers, RefreshDatabase;
 
     public function test_index_returns_a_default_row_for_every_known_type_when_none_saved(): void
     {

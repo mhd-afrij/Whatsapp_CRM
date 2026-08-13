@@ -33,6 +33,10 @@ class InternalNoteController extends Controller
             }
         }
 
+        if ($request->filled('calendar_date')) {
+            $query->whereDate('calendar_date', $request->string('calendar_date')->toString());
+        }
+
         if (! $user->isSuperAdmin() && ! $user->hasPermission('notes.view_private')) {
             $query->where(function ($q) use ($user) {
                 $q->where('is_private', false)->orWhere('author_id', $user->id);
@@ -53,6 +57,7 @@ class InternalNoteController extends Controller
             'conversation_id' => ['sometimes', 'nullable', 'integer', Rule::exists('conversations', 'id')],
             'contact_id' => ['sometimes', 'nullable', 'integer', Rule::exists('contacts', 'id')],
             'deal_id' => ['sometimes', 'nullable', 'integer', Rule::exists('deals', 'id')],
+            'calendar_date' => ['sometimes', 'nullable', 'date'],
             'body' => ['required', 'string'],
             'is_private' => ['sometimes', 'boolean'],
         ]);
@@ -63,9 +68,10 @@ class InternalNoteController extends Controller
 
         $data = $validator->validated();
         abort_if(
-            empty($data['conversation_id']) && empty($data['contact_id']) && empty($data['deal_id']),
+            empty($data['conversation_id']) && empty($data['contact_id'])
+                && empty($data['deal_id']) && empty($data['calendar_date']),
             422,
-            'A note must be linked to a conversation, contact, or deal.'
+            'A note must be linked to a conversation, contact, deal, or calendar date.'
         );
 
         $note = InternalNote::create(array_merge($data, [

@@ -9,13 +9,13 @@ use App\Http\Requests\Auth\InviteUserRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Models\Invitation;
-use App\Models\Role;
+use App\Models\Permission;
 use App\Models\User;
 use App\Notifications\InvitationNotification;
 use App\Support\AuditLogger;
 use App\Traits\ApiResponse;
 use Illuminate\Auth\Events\PasswordReset;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -59,7 +59,7 @@ class AuthController extends Controller
         ], 'Logged in successfully.');
     }
 
-    public function logout(\Illuminate\Http\Request $request)
+    public function logout(Request $request)
     {
         $user = $request->user();
 
@@ -70,9 +70,29 @@ class AuthController extends Controller
         return $this->success(null, 'Logged out successfully.');
     }
 
-    public function me(\Illuminate\Http\Request $request)
+    public function me(Request $request)
     {
         return $this->success($this->userPayload($request->user()), 'Current user retrieved.');
+    }
+
+    /**
+     * PATCH /api/v1/auth/me
+     * Lets the signed-in user update their own profile (display name and
+     * short bio). Email/roles/teams are admin-owned (UserController::update);
+     * this endpoint never crosses a workspace or user boundary.
+     */
+    public function updateMe(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:255'],
+            'about' => ['sometimes', 'nullable', 'string', 'max:1000'],
+        ]);
+
+        $request->user()->fill(array_intersect_key($data, ['name' => true, 'about' => true]))->save();
+
+        AuditLogger::log('user.profile_updated', $request->user(), $request->user(), $data, $request);
+
+        return $this->success($this->userPayload($request->user()), 'Profile updated successfully.');
     }
 
     public function forgotPassword(ForgotPasswordRequest $request)
@@ -176,11 +196,12 @@ class AuthController extends Controller
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
+            'about' => $user->about,
             'workspace_id' => $user->workspace_id,
             'is_active' => $user->is_active,
             'roles' => $user->roles()->pluck('name'),
             'permissions' => $user->isSuperAdmin()
-                ? \App\Models\Permission::pluck('name')
+                ? Permission::pluck('name')
                 : $user->permissionNames(),
         ];
     }

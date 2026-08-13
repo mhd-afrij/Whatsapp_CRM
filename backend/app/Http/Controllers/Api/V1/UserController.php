@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Invitation;
 use App\Models\Role;
 use App\Models\User;
@@ -73,7 +74,7 @@ class UserController extends Controller
         $this->authorize('view', $user);
 
         $payload = $this->adminUserPayload($user);
-        $payload['recent_activity'] = \App\Models\AuditLog::where('user_id', $user->id)
+        $payload['recent_activity'] = AuditLog::where('user_id', $user->id)
             ->orderByDesc('created_at')
             ->limit(20)
             ->get(['action', 'subject_type', 'subject_id', 'created_at']);
@@ -87,6 +88,7 @@ class UserController extends Controller
 
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
+            'about' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'email' => [
                 'sometimes', 'string', 'email',
                 Rule::unique('users', 'email')->where('workspace_id', $user->workspace_id)->ignore($user->id),
@@ -110,7 +112,7 @@ class UserController extends Controller
             $data
         );
 
-        $user->fill($request->only(['name', 'email']))->save();
+        $user->fill($request->only(['name', 'email', 'about']))->save();
 
         if (array_key_exists('role_id', $data)) {
             // A user has exactly one role in this schema's role_user usage today
@@ -176,6 +178,7 @@ class UserController extends Controller
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
+            'about' => $user->about,
             'is_active' => $user->is_active,
             'last_login_at' => $user->last_login_at,
             'roles' => $user->roles->map(fn (Role $r) => ['id' => $r->id, 'name' => $r->name, 'slug' => $r->slug]),
