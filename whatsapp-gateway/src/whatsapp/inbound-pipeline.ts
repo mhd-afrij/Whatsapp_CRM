@@ -38,6 +38,13 @@ async function processOneInboundMessage(workspaceId: number, raw: BaileysRawMess
 
     if (!result.ok) {
       // Unsupported/unknown type: still recorded, never silently dropped.
+      if (result.reason === 'encrypted_message_undecryptable') {
+        logger.warn(
+          { workspaceId, whatsappMessageId, waJid: raw.key.remoteJid },
+          'Skipping undecryptable Signal Protocol message (missing session or stale pre-key bundle)',
+        );
+        return;
+      }
       logger.warn({ workspaceId, whatsappMessageId, reason: result.reason }, 'Unsupported inbound message type');
       try {
         const inserted = await repository.insertInboundMessage(workspaceId, conversation.id, {

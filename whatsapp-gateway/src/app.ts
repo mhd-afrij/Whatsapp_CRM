@@ -1,8 +1,9 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { getRedisClient } from './lib/redis';
-import { getMysqlPool } from './lib/mysql';
+import { getMysqlPool, isHealthy } from './lib/mysql';
 import { logger } from './lib/logger';
 import { createInternalWhatsappRouter } from './routes/internal-whatsapp.routes';
+import { connectionManager } from './whatsapp/manager-instance';
 
 export function createApp() {
   const app = express();
@@ -36,15 +37,56 @@ export function createApp() {
     }
 
     try {
-      const pool = getMysqlPool();
-      await pool.query('SELECT 1');
-      checks.mysql = 'ok';
+      if (isHealthy()) {
+        const pool = await getMysqlPool();
+        await pool.query('SELECT 1');
+        checks.mysql = 'ok';
+      } else {
+        logger.warn('Readiness check: MySQL circuit breaker open');
+      }
     } catch (err) {
       logger.error({ err }, 'Readiness check: MySQL query failed');
     }
 
     const isReady = Object.values(checks).every((v) => v === 'ok');
     res.status(isReady ? 200 : 503).json({ status: isReady ? 'ok' : 'unavailable', checks });
+  });
+
+  // WhatsApp connection health: returns the current connection status
+  app.get('/whatsapp/health', async (_req: Request, res: Response) => {
+    const snapshot = connectionManager.getSnapshot();
+
+    let redisHealthy = false;
+    try {
+      const pong = await getRedisClient().ping();
+      redisHealthy = pong === 'PONG';
+    } catch {
+      // Redis unreachable
+    }
+
+    let mysqlHealthy = false;
+    try {
+      if (isHealthy()) {
+        const pool = await getMysqlPool();
+        await pool.query('SELECT 1');
+        mysqlHealthy = true;
+      }
+    } catch {
+      // MySQL unreachable or query failed
+    }
+
+    res.status(200).json({
+      status: 'ok',
+      whatsapp: {
+        status: snapshot.status,
+        phoneNumber: snapshot.phoneNumber,
+        qrPending: snapshot.status === 'qr_pending',
+      },
+      infrastructure: {
+        redis: redisHealthy ? 'ok' : 'error',
+        mysql: mysqlHealthy ? 'ok' : 'error',
+      },
+    });
   });
 
   app.use('/internal/whatsapp', createInternalWhatsappRouter());

@@ -53,21 +53,22 @@ function makeFakeSocket(): FakeSocketHandle {
     end: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),
     sendMessage: vi.fn().mockResolvedValue({ key: { id: 'ABC123' } }),
+    sendPresenceUpdate: vi.fn().mockResolvedValue(undefined),
   };
 
-  return {
-    socket,
-    triggerCredsUpdate: async () => {
-      await credsHandler?.();
-    },
-    triggerConnectionUpdate: async (update) => {
-      connectionHandler?.(update);
-      // allow the async handler chain (including QRCode.toDataURL) inside
-      // ConnectionManager to flush
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    },
-  };
-}
+    return {
+      socket,
+      triggerCredsUpdate: async () => {
+        await credsHandler?.();
+      },
+      triggerConnectionUpdate: async (update) => {
+        connectionHandler?.(update);
+        // allow the async handler chain (including QRCode.toDataURL) inside
+        // ConnectionManager to flush without depending on timer advancement.
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+    };
+  }
 
 describe('ConnectionManager', () => {
   let repository: SessionRepository;
@@ -103,7 +104,9 @@ describe('ConnectionManager', () => {
 
     await fakeSocket.triggerConnectionUpdate({ qr: 'raw-qr-payload' });
 
-    expect(manager.getStatus()).toBe('qr_pending');
+    await vi.waitFor(() => {
+      expect(manager.getStatus()).toBe('qr_pending');
+    });
     expect(repository.updateStatus).toHaveBeenCalledWith(
       1,
       'qr_pending',
@@ -141,6 +144,11 @@ describe('ConnectionManager', () => {
     expect(repository.recordConnectionEvent).toHaveBeenCalledWith(1, 1, 'logged_out', {
       statusCode: 401,
     });
+    expect(repository.updateStatus).toHaveBeenCalledWith(
+      1,
+      'logged_out',
+      expect.objectContaining({ phoneNumber: null }),
+    );
   });
 
   it('enters auth_required and clears credentials when Baileys reports badSession', async () => {
@@ -154,6 +162,11 @@ describe('ConnectionManager', () => {
     expect(repository.recordConnectionEvent).toHaveBeenCalledWith(1, 1, 'bad_session', {
       statusCode: 500,
     });
+    expect(repository.updateStatus).toHaveBeenCalledWith(
+      1,
+      'logged_out',
+      expect.objectContaining({ phoneNumber: null }),
+    );
   });
 
   it('reconnects immediately with no backoff and no retry-budget cost on restartRequired', async () => {
@@ -201,15 +214,47 @@ describe('ConnectionManager', () => {
       'reconnect_attempt',
       expect.objectContaining({ attempt: 1 }),
     );
+    expect(repository.updateStatus).toHaveBeenCalledWith(
+      1,
+      'disconnected',
+      expect.objectContaining({ phoneNumber: null }),
+    );
 
     // Backoff delay should be scheduled (base 2000ms +/- jitter); nothing has
     // fired yet before the timer elapses.
     expect(vi.getTimerCount()).toBeGreaterThan(0);
   });
 
+  it('clears the connected phone number on manual stop, keeping credentials and chat data', async () => {
+    await fakeSocket.triggerConnectionUpdate({ connection: 'open' });
+    expect(manager.getStatus()).toBe('connected');
+
+    await manager.stop();
+
+    expect(manager.getStatus()).toBe('disconnected');
+    expect(repository.updateStatus).toHaveBeenCalledWith(
+      1,
+      'disconnected',
+      expect.objectContaining({ phoneNumber: null }),
+    );
+    expect(repository.deleteCredentials).not.toHaveBeenCalled();
+    expect(repository.recordConnectionEvent).toHaveBeenCalledWith(1, 1, 'disconnected', {
+      reason: 'manual_disconnect',
+    });
+  });
+
   it('persists credentials to the database on creds.update', async () => {
     await fakeSocket.triggerCredsUpdate();
 
     expect(repository.persistCredentialsFromDisk).toHaveBeenCalledWith(1, expect.stringContaining('sessions-test'));
+  });
+
+  it('starts a fresh QR pairing flow by clearing old creds and stopping any active socket', async () => {
+    await manager.startFreshPairing();
+
+    expect(fakeSocket.socket.end).toHaveBeenCalledWith(undefined);
+    expect(repository.deleteCredentials).toHaveBeenCalledWith(1);
+    expect(repository.getOrCreateSession).toHaveBeenCalledTimes(3);
+    expect(manager.getStatus()).toBe('connecting');
   });
 });

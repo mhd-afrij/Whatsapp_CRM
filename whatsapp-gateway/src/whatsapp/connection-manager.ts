@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import QRCode from 'qrcode';
@@ -5,6 +6,8 @@ import { DisconnectReason, type AuthenticationState } from '@whiskeysockets/bail
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { SessionRepository } from './session-repository';
+import { SessionLockRepository } from './session-lock-repository';
+import { normalizePhoneToJid } from './jid';
 import {
   createBaileysSocket,
   loadAuthState,
@@ -36,12 +39,66 @@ const BASE_BACKOFF_MS = 2_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
 const MAX_RETRIES = 10;
 
+/**
+ * Pulls the diagnostic detail Baileys attaches to a `close` update out of the
+ * Boom-wrapped error so the connection event row carries the actual reason
+ * (statusCode + message) instead of an empty `{}`. Previously every disconnect
+ * was recorded with no detail, which made the ~30s reconnect loop (seen in
+ * production) impossible to diagnose from the DB alone.
+ */
+function extractDisconnectDetail(
+  lastDisconnect?: BaileysConnectionUpdate['lastDisconnect'],
+): { statusCode?: number; message?: string; errorName?: string } {
+  const error = lastDisconnect?.error;
+  if (!error) {
+    return {};
+  }
+  const boom = error as {
+    output?: { statusCode?: number };
+    message?: string;
+    data?: unknown;
+  };
+  const detail: { statusCode?: number; message?: string; errorName?: string } = {};
+  if (typeof boom.output?.statusCode === 'number') {
+    detail.statusCode = boom.output.statusCode;
+  }
+  if (typeof boom.message === 'string') {
+    detail.message = boom.message;
+  }
+  if (typeof (error as { name?: unknown }).name === 'string') {
+    detail.errorName = (error as { name: string }).name;
+  }
+  if (!detail.message && boom.data !== undefined && boom.data !== null) {
+    const serialized = JSON.stringify(boom.data);
+    if (serialized && serialized !== '{}') {
+      detail.message = serialized.slice(0, 500);
+    }
+  }
+  return detail;
+}
+
 export interface ConnectionManagerOptions {
   workspaceId?: number;
   sessionDir?: string;
   repository?: SessionRepository;
   socketFactory?: BaileysSocketFactory;
   loadAuthStateFn?: typeof loadAuthState;
+  /**
+   * Session-lock coordination (workspace_sync_assignments). When provided,
+   * the manager must acquire the lock before opening a Baileys socket and
+   * refuses to connect if another gateway instance holds a live lease.
+   * Defaults to null (locking disabled - single-instance deployments need
+   * no coordination; see src/config/env.ts SESSION_LOCK_ENABLED).
+   */
+  lockRepository?: SessionLockRepository | null;
+  /** Stable identity used to claim the session lock (defaults to env.GATEWAY_INSTANCE_ID). */
+  gatewayInstanceId?: string;
+  /** Lease duration in ms for the session lock (defaults to env.SESSION_LEASE_MS). */
+  sessionLockLeaseMs?: number;
+  /** Heartbeat interval in ms (defaults to env.SESSION_HEARTBEAT_INTERVAL_MS). */
+  sessionLockHeartbeatMs?: number;
+  /** Extra Baileys socket options (e.g. keepAliveIntervalMs) applied on every socket creation. */
+  socketConfig?: { keepAliveIntervalMs?: number };
 }
 
 /**
@@ -71,6 +128,12 @@ export class ConnectionManager extends EventEmitter {
   private readonly repository: SessionRepository;
   private readonly socketFactory: BaileysSocketFactory;
   private readonly loadAuthStateFn: typeof loadAuthState;
+  private readonly lockRepository: SessionLockRepository | null;
+  private readonly gatewayInstanceId: string;
+  private readonly sessionLockLeaseMs: number;
+  private readonly sessionLockHeartbeatMs: number;
+  private readonly socketConfig: { keepAliveIntervalMs?: number };
+  private lockHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: ConnectionManagerOptions = {}) {
     super();
@@ -79,6 +142,16 @@ export class ConnectionManager extends EventEmitter {
     this.repository = options.repository ?? new SessionRepository();
     this.socketFactory = options.socketFactory ?? createBaileysSocket;
     this.loadAuthStateFn = options.loadAuthStateFn ?? loadAuthState;
+    this.lockRepository = options.lockRepository ?? null;
+    this.gatewayInstanceId = options.gatewayInstanceId ?? env.GATEWAY_INSTANCE_ID;
+    this.sessionLockLeaseMs = options.sessionLockLeaseMs ?? env.SESSION_LEASE_MS;
+    this.sessionLockHeartbeatMs = options.sessionLockHeartbeatMs ?? env.SESSION_HEARTBEAT_INTERVAL_MS;
+    this.socketConfig = options.socketConfig ?? {};
+  }
+
+  /** Whether session-lock coordination is active for this manager. */
+  isLockingEnabled(): boolean {
+    return this.lockRepository !== null;
   }
 
   getStatus(): ConnectionStatus {
@@ -95,14 +168,14 @@ export class ConnectionManager extends EventEmitter {
     };
   }
 
-  /** Called on gateway boot: restores persisted creds (if any) and reconnects automatically. */
+  /** Called on gateway boot: restores an existing session if possible, otherwise starts QR pairing. */
   async restoreOnBoot(): Promise<void> {
     const session = await this.repository.getOrCreateSession(this.workspaceId);
     this.sessionId = session.id;
     this.phoneNumber = session.phone_number;
 
     if (session.status === 'logged_out') {
-      this.setStatus('auth_required');
+      await this.startFreshPairing();
       return;
     }
 
@@ -110,7 +183,26 @@ export class ConnectionManager extends EventEmitter {
     if (restored) {
       logger.info({ workspaceId: this.workspaceId }, 'Restoring WhatsApp session on gateway boot');
       await this.start();
+      return;
     }
+
+    await this.startFreshPairing();
+  }
+
+  /**
+   * Clears any saved WhatsApp auth material and starts a fresh QR pairing flow.
+   * This is the manual path exposed by the UI's Connect button.
+   */
+  async startFreshPairing(): Promise<void> {
+    if (this.socket) {
+      this.manualStop = true;
+      this.clearReconnectTimer();
+      this.socket.end(undefined);
+      this.socket = null;
+    }
+
+    await this.clearStoredCredentials();
+    await this.start();
   }
 
   async start(): Promise<void> {
@@ -121,6 +213,13 @@ export class ConnectionManager extends EventEmitter {
 
     this.manualStop = false;
 
+    if (this.lockRepository) {
+      const acquired = await this.acquireSessionLock();
+      if (!acquired) {
+        return;
+      }
+    }
+
     const session = await this.repository.getOrCreateSession(this.workspaceId);
     this.sessionId = session.id;
 
@@ -130,7 +229,12 @@ export class ConnectionManager extends EventEmitter {
     const { state, saveCreds }: { state: AuthenticationState; saveCreds: () => Promise<void> } =
       await this.loadAuthStateFn(this.authDir());
 
-    this.socket = this.socketFactory(state);
+    this.socket = this.socketFactory(state, {
+      onUnexpectedError: (context, err) => this.handleUnexpectedBaileysError(context, err),
+      ...(this.socketConfig.keepAliveIntervalMs !== undefined
+        ? { keepAliveIntervalMs: this.socketConfig.keepAliveIntervalMs }
+        : {}),
+    });
 
     this.socket.ev.on('creds.update', async () => {
       await saveCreds();
@@ -150,6 +254,67 @@ export class ConnectionManager extends EventEmitter {
     this.socket.ev.on('messages.update', (payload) => {
       this.emit('messages.update', { workspaceId: this.workspaceId, payload });
     });
+
+    this.socket.ev.on('contacts.upsert', (payload) => {
+      this.emit('contacts.upsert', { workspaceId: this.workspaceId, payload });
+    });
+
+    this.socket.ev.on('messages.upsert', (payload) => {
+      // Handle protocol messages (message revokes)
+      for (const raw of payload.messages) {
+        if (raw.message?.protocolMessage) {
+          this.emit('message.revoked', {
+            workspaceId: this.workspaceId,
+            payload: {
+              key: raw.key,
+              protocolMessage: raw.message.protocolMessage,
+            },
+          });
+        }
+      }
+    });
+  }
+
+  /**
+   * Ends the live socket so the connection.update 'close' handler schedules a
+   * bounded backoff reconnect. Used when a send times out against a session
+   * that still reports 'connected' but is not answering queries (a zombie
+   * connection) - the next send retry then runs against a fresh session.
+   */
+  requestConnectionRefresh(): void {
+    if (this.manualStop || !this.socket) {
+      return;
+    }
+    logger.warn('Refreshing WhatsApp connection after send failure');
+    try {
+      this.socket.end(undefined);
+    } catch (err) {
+      logger.warn({ err }, 'Failed to close socket during connection refresh');
+    }
+  }
+
+  /**
+   * Baileys reports "unexpected error in 'init queries'" (query timeouts) only
+   * through its logger - the socket stays flagged 'connected' but stops
+   * answering queries, so every send fails. React by closing the socket; the
+   * normal 'close' handler then schedules the bounded backoff reconnect,
+   * healing the session without manual intervention.
+   */
+  private handleUnexpectedBaileysError(context: string, err: unknown): void {
+    if (this.manualStop) {
+      return;
+    }
+    // Baileys surfaces transient failures here (init queries, presence updates,
+    // ...) without closing the socket itself. We deliberately do NOT close:
+    // tearing the socket down on any one timeout is what produced the endless
+    // connect -> init-query timeout -> reconnect loop seen in production. A
+    // genuinely dead query channel still surfaces via the WS ping/pong or the
+    // next real query, which Baileys handles itself. Log and let the
+    // connection carry on.
+    logger.warn(
+      { context, err },
+      'Baileys reported an unexpected (non-fatal) error; keeping connection open',
+    );
   }
 
   /** Exposes the raw socket's media downloader so the media-download queue processor can use it. */
@@ -160,6 +325,7 @@ export class ConnectionManager extends EventEmitter {
   async stop(): Promise<void> {
     this.manualStop = true;
     this.clearReconnectTimer();
+    this.stopLockHeartbeat();
 
     if (this.socket) {
       try {
@@ -170,14 +336,18 @@ export class ConnectionManager extends EventEmitter {
     }
 
     this.setStatus('disconnected');
+    this.phoneNumber = null;
     if (this.sessionId) {
       await this.repository.recordConnectionEvent(this.workspaceId, this.sessionId, 'disconnected', {
         reason: 'manual_disconnect',
       });
       await this.repository.updateStatus(this.sessionId, 'disconnected', {
+        phoneNumber: null,
         lastDisconnectedAt: new Date(),
       });
     }
+
+    await this.releaseSessionLock();
   }
 
   async reconnect(): Promise<void> {
@@ -203,16 +373,22 @@ export class ConnectionManager extends EventEmitter {
       }
     }
 
+    await this.clearStoredCredentials();
+    this.stopLockHeartbeat();
+    this.phoneNumber = null;
+
     if (this.sessionId) {
-      await this.repository.deleteCredentials(this.sessionId);
       await this.repository.recordConnectionEvent(this.workspaceId, this.sessionId, 'logged_out');
       await this.repository.updateStatus(this.sessionId, 'logged_out', {
+        phoneNumber: null,
         lastDisconnectedAt: new Date(),
         disconnectReason: 'logged_out',
       });
     }
 
     this.setStatus('auth_required');
+
+    await this.releaseSessionLock();
   }
 
   private async handleConnectionUpdate(update: BaileysConnectionUpdate): Promise<void> {
@@ -236,6 +412,7 @@ export class ConnectionManager extends EventEmitter {
 
     if (this.sessionId) {
       await this.repository.updateStatus(this.sessionId, 'qr_pending', {
+        phoneNumber: this.phoneNumber,
         qrCode: this.qrCode,
         qrExpiresAt: this.qrExpiresAt,
       });
@@ -262,8 +439,8 @@ export class ConnectionManager extends EventEmitter {
   }
 
   private async handleClose(lastDisconnect: BaileysConnectionUpdate['lastDisconnect']): Promise<void> {
-    const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)
-      ?.output?.statusCode;
+    const disconnectDetail = extractDisconnectDetail(lastDisconnect);
+    const statusCode = disconnectDetail.statusCode;
     const isLoggedOut = statusCode === DisconnectReason.loggedOut;
     // A corrupt/unrecoverable session (500) will fail identically on every retry - reconnecting
     // with the same on-disk creds just burns the retry budget. Force a fresh QR pairing instead,
@@ -282,28 +459,38 @@ export class ConnectionManager extends EventEmitter {
           this.workspaceId,
           this.sessionId,
           isLoggedOut ? 'logged_out' : 'bad_session',
-          { statusCode },
+          disconnectDetail,
         );
         await this.repository.updateStatus(this.sessionId, 'logged_out', {
+          phoneNumber: null,
           lastDisconnectedAt: new Date(),
           disconnectReason: isLoggedOut ? 'logged_out' : 'bad_session',
         });
       }
+      this.phoneNumber = null;
       this.setStatus('auth_required');
       return;
     }
 
     if (this.sessionId) {
       await this.repository.recordConnectionEvent(this.workspaceId, this.sessionId, 'disconnected', {
-        statusCode,
+        ...disconnectDetail,
+        reason: isRestartRequired ? 'restart_required' : 'transient_network_error',
       });
       await this.repository.updateStatus(this.sessionId, 'disconnected', {
+        phoneNumber: null,
         lastDisconnectedAt: new Date(),
         disconnectReason: isRestartRequired ? 'restart_required' : 'transient_network_error',
       });
     }
 
+    this.phoneNumber = null;
     this.setStatus('disconnected');
+
+    logger.warn(
+      { ...disconnectDetail, isRestartRequired },
+      'WhatsApp connection closed; scheduling reconnect',
+    );
 
     if (this.manualStop) {
       return;
@@ -387,28 +574,138 @@ export class ConnectionManager extends EventEmitter {
     return path.resolve(this.sessionDir);
   }
 
+  private async clearStoredCredentials(): Promise<void> {
+    const session = await this.repository.getOrCreateSession(this.workspaceId);
+    this.sessionId = session.id;
+
+    await this.repository.deleteCredentials(session.id);
+
+    try {
+      await fs.rm(this.authDir(), { recursive: true, force: true });
+    } catch (err) {
+      logger.warn({ err, workspaceId: this.workspaceId }, 'Failed to clear WhatsApp auth directory');
+    }
+  }
+
+  /**
+   * Claims the workspace's session lock before opening a socket. Returns
+   * false (after logging and setting an in-memory 'error' status) when
+   * another gateway instance holds a live lease - this process must not
+   * connect in that case, or it would force a re-pair on the owner.
+   */
+  private async acquireSessionLock(): Promise<boolean> {
+    if (!this.lockRepository) {
+      return true;
+    }
+
+    const acquired = await this.lockRepository.acquire(
+      this.workspaceId,
+      this.gatewayInstanceId,
+      this.sessionLockLeaseMs,
+    );
+    if (!acquired) {
+      logger.error(
+        { workspaceId: this.workspaceId, gatewayInstanceId: this.gatewayInstanceId },
+        'Cannot open WhatsApp socket: session lock is held by another gateway instance',
+      );
+      this.setStatus('error');
+      return false;
+    }
+
+    logger.info(
+      { workspaceId: this.workspaceId, gatewayInstanceId: this.gatewayInstanceId },
+      'Session lock acquired',
+    );
+    this.startLockHeartbeat();
+    return true;
+  }
+
+  private startLockHeartbeat(): void {
+    if (!this.lockRepository || this.lockHeartbeatTimer) {
+      return;
+    }
+
+    this.lockHeartbeatTimer = setInterval(() => {
+      void this.lockRepository
+        ?.heartbeat(this.workspaceId, this.gatewayInstanceId, this.sessionLockLeaseMs)
+        .then((owned) => {
+          if (owned) {
+            return;
+          }
+          logger.error(
+            { workspaceId: this.workspaceId, gatewayInstanceId: this.gatewayInstanceId },
+            'Session lock heartbeat lost ownership - stopping socket to avoid a concurrent session',
+          );
+          this.stopLockHeartbeat();
+          if (this.socket) {
+            try {
+              this.socket.end(undefined);
+            } finally {
+              this.socket = null;
+            }
+          }
+          this.setStatus('error');
+        })
+        .catch((err) => {
+          logger.warn({ err }, 'Session lock heartbeat failed (will retry)');
+        });
+    }, this.sessionLockHeartbeatMs);
+  }
+
+  private stopLockHeartbeat(): void {
+    if (this.lockHeartbeatTimer) {
+      clearInterval(this.lockHeartbeatTimer);
+      this.lockHeartbeatTimer = null;
+    }
+  }
+
+  private async releaseSessionLock(): Promise<void> {
+    this.stopLockHeartbeat();
+    if (!this.lockRepository) {
+      return;
+    }
+    await this.lockRepository.release(this.workspaceId, this.gatewayInstanceId).catch((err) => {
+      logger.warn({ err, workspaceId: this.workspaceId }, 'Failed to release WhatsApp session lock');
+    });
+  }
+
+  /**
+   * Send a presence update (typing indicator) to a WhatsApp contact.
+   * Baileys supports 'composing' (typing), 'recording' (voice), and 'available'/'unavailable' states.
+   */
+  async sendPresenceUpdate(
+    presence: 'composing' | 'recording' | 'available' | 'unavailable',
+    to: string,
+  ): Promise<void> {
+    if (!this.socket || this.status !== 'connected') {
+      return;
+    }
+    const jid = normalizePhoneToJid(to, env.WHATSAPP_COUNTRY_CODE);
+    await this.socket.sendPresenceUpdate(presence, jid);
+  }
+
   async sendMessage(to: string, text: string): Promise<{ id: string | null | undefined }> {
     if (!this.socket || this.status !== 'connected') {
       throw new Error(`Cannot send message: WhatsApp connection is not established (status=${this.status})`);
     }
 
-    const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    const jid = normalizePhoneToJid(to, env.WHATSAPP_COUNTRY_CODE);
     const result = await this.socket.sendMessage(jid, { text });
 
     return { id: result?.key.id };
   }
 
-  /** Generalized send used by the outbound dispatch pipeline (text + optional quoted reply). */
+  /** Generalized send used by the outbound dispatch pipeline (text, quoted reply, media). */
   async sendContent(
     to: string,
-    content: { text: string },
+    content: { text: string } | Record<string, unknown>,
     _replyToWhatsappMessageId?: string | null,
   ): Promise<{ id: string | null | undefined }> {
     if (!this.socket || this.status !== 'connected') {
       throw new Error(`Cannot send message: WhatsApp connection is not established (status=${this.status})`);
     }
 
-    const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    const jid = normalizePhoneToJid(to, env.WHATSAPP_COUNTRY_CODE);
     const result = await this.socket.sendMessage(jid, content);
     return { id: result?.key.id };
   }

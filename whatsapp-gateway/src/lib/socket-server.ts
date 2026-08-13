@@ -137,7 +137,9 @@ export function emitConversationEvent(
     | 'conversation.assigned'
     | 'conversation.closed'
     | 'conversation.reopened'
-    | 'conversation.priority_changed',
+    | 'conversation.priority_changed'
+    | 'conversation.cleared'
+    | 'conversation.deleted',
   workspaceId: number,
   conversationId: number | null,
   payload: Record<string, unknown>,
@@ -167,6 +169,81 @@ export function emitNotificationCreated(
   io.of('/gateway')
     .to(`workspace:${workspaceId}:user:${userId}`)
     .emit('notification.created', envelope('notification.created', workspaceId, payload));
+}
+
+/**
+ * Emit a message revoked event for a conversation.
+ */
+export function emitMessageRevoked(
+  workspaceId: number,
+  conversationId: number,
+  payload: {
+    messageId: number;
+    whatsappMessageId: string;
+    deletedBy?: string;
+  },
+): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}:conversation:${conversationId}`)
+    .to(`workspace:${workspaceId}:inbox`)
+    .emit('message.revoked', envelope('message.revoked', workspaceId, payload));
+}
+
+/**
+ * Emit a typing indicator event for a conversation.
+ * Used for both incoming (contact typing) and outgoing (agent typing) indicators.
+ */
+export function emitTypingUpdated(
+  workspaceId: number,
+  conversationId: number,
+  payload: {
+    conversationId: number;
+    userId?: number;
+    contactId?: number;
+    isTyping: boolean;
+    name?: string;
+  },
+): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}:conversation:${conversationId}`)
+    .to(`workspace:${workspaceId}:inbox`)
+    .emit('typing.updated', envelope('typing.updated', workspaceId, payload));
+}
+
+/**
+ * Emit a presence update event for a user/contact.
+ */
+export function emitPresenceUpdated(
+  workspaceId: number,
+  payload: {
+    userId?: number;
+    contactId?: number;
+    status: 'online' | 'offline' | 'away' | 'busy';
+    lastSeen?: string;
+    name?: string;
+  },
+): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}`)
+    .emit('presence.updated', envelope('presence.updated', workspaceId, payload));
+}
+
+/**
+ * Broadcasts that a workspace's WhatsApp chat/contact data was cleared (a
+ * "reset" action originated via POST /internal/whatsapp/reset-data). The
+ * inbox and workspace rooms both receive it so open conversation lists /
+ * detail panels can drop their local state and refetch rather than serving
+ * now-deleted rows.
+ */
+export function emitConversationsReset(workspaceId: number, payload: Record<string, unknown>): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}:inbox`)
+    .to(`workspace:${workspaceId}`)
+    .emit('conversations.reset', envelope('conversations.reset', workspaceId, payload));
 }
 
 export function getSocketServer(): SocketIOServer | null {

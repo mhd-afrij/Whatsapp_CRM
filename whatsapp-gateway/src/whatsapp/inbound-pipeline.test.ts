@@ -67,7 +67,10 @@ function makeFakePool() {
 }
 
 vi.mock('../lib/mysql', () => ({
-  getMysqlPool: () => makeFakePool(),
+  query: (...args: unknown[]) => makeFakePool().query(args[0] as string),
+  execute: (...args: unknown[]) => makeFakePool().query(args[0] as string),
+  transaction: (callback: (conn: FakeConn) => Promise<unknown>) =>
+    makeFakePool().getConnection().then((conn: FakeConn) => callback(conn)),
 }));
 
 import { handleMessagesUpsert } from './inbound-pipeline';

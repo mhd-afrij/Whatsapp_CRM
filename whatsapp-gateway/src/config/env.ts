@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import os from 'node:os';
 import { z } from 'zod';
 
 dotenv.config();
@@ -37,6 +38,29 @@ const envSchema = z.object({
   // MVP: this gateway process manages a single WhatsApp session tied to one
   // workspace. Multi-workspace/multi-session support is a Phase 5+ concern.
   WHATSAPP_WORKSPACE_ID: z.coerce.number().int().positive().default(1),
+
+  // --- Session lock (workspace_sync_assignments) ---
+  // Off by default: a single gateway instance is the current deployment shape
+  // and needs no lock. Enable only when two gateway replicas could race for
+  // the same workspace's Baileys session (docs/04-database-design.md §2).
+  SESSION_LOCK_ENABLED: z
+    .string()
+    .transform((v) => ['1', 'true', 'yes'].includes(v.toLowerCase()))
+    .default('false'),
+  GATEWAY_INSTANCE_ID: z.string().default(() => `${os.hostname()}:${process.env.PORT ?? '3000'}`),
+  SESSION_LEASE_MS: z.coerce.number().int().positive().default(30_000),
+  SESSION_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
+
+  // Baileys closes the WebSocket when a keep-alive pong is missed inside this
+  // window (default 30s). Optional; set to tune the reconnect loop once the
+  // enriched disconnect events identify whether it's network throttling or a
+  // server-side drop (docs: what killed the connection).
+  WHATSAPP_KEEPALIVE_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+
+  // Dialing country code (no leading +) applied to local-format phone numbers
+  // when building WhatsApp JIDs (see src/whatsapp/jid.ts). Matches the account
+  // number this session pairs with (e.g. "94788198996" -> "94").
+  WHATSAPP_COUNTRY_CODE: z.string().default('94'),
 
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])

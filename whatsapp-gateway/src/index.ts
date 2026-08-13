@@ -16,17 +16,25 @@ async function main() {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'whatsapp-gateway HTTP server listening');
   });
 
+  // BullMQ's Worker.run() only resolves when the worker is closed - awaiting it
+  // here would block the rest of startup (socket server, session restore) forever.
+  // Start both workers off-loop and let main() continue.
   const sendMessageWorker = createSendMessageWorker();
-  await sendMessageWorker.run();
+  void sendMessageWorker.run().catch((err) => {
+    logger.error({ err }, 'Send message worker stopped unexpectedly');
+  });
 
   const mediaDownloadWorker = createMediaDownloadWorker();
-  await mediaDownloadWorker.run();
+  void mediaDownloadWorker.run().catch((err) => {
+    logger.error({ err }, 'Media download worker stopped unexpectedly');
+  });
 
   createSocketServer(server);
 
-  // Restore any previously-persisted WhatsApp session on boot.
+  // Boot should come up ready to pair or reconnect automatically so the UI
+  // can show the QR / live session state without a manual "Connect" click.
   connectionManager.restoreOnBoot().catch((err) => {
-    logger.error({ err }, 'Failed to restore WhatsApp session on boot');
+    logger.error({ err }, 'Failed to initialize WhatsApp session on boot');
   });
 
   let shuttingDown = false;
@@ -45,6 +53,12 @@ async function main() {
     try {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
+      });
+
+      // Release the session lock (if held) before tearing down Redis/MySQL so
+      // a peer gateway instance can take over the workspace's session cleanly.
+      await connectionManager.stop().catch((err) => {
+        logger.warn({ err }, 'Failed to stop WhatsApp connection during shutdown');
       });
 
       await sendMessageWorker.close();

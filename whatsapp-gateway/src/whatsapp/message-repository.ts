@@ -1,5 +1,5 @@
-import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
-import { getMysqlPool } from '../lib/mysql';
+import type { PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
+import { query, execute, transaction } from '../lib/mysql';
 
 export type MessageType =
   | 'text'
@@ -40,6 +40,8 @@ export interface MessageRow extends RowDataPacket {
   message_type: MessageType;
   body: string | null;
   status: MessageStatus;
+  delivered_at: string | null;
+  read_at: string | null;
 }
 
 /** Thrown by getMysqlPool() query paths on a unique-key violation (ER_DUP_ENTRY). */
@@ -48,23 +50,18 @@ export function isDuplicateEntryError(err: unknown): boolean {
 }
 
 export class MessageRepository {
-  private pool(): Pool {
-    return getMysqlPool();
-  }
-
   async findOrCreateWhatsappContact(
     workspaceId: number,
     waJid: string,
     pushName: string | null,
   ): Promise<{ id: number }> {
-    const pool = this.pool();
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const [rows] = await query<RowDataPacket[]>(
       'SELECT id FROM whatsapp_contacts WHERE workspace_id = ? AND wa_jid = ? LIMIT 1',
       [workspaceId, waJid],
     );
     if (rows.length > 0) {
       if (pushName) {
-        await pool.query(
+        await execute(
           'UPDATE whatsapp_contacts SET push_name = COALESCE(?, push_name), last_seen_at = NOW(), updated_at = NOW() WHERE id = ?',
           [pushName, rows[0].id],
         );
@@ -73,7 +70,7 @@ export class MessageRepository {
     }
 
     const phoneNumber = waJid.split('@')[0] ?? null;
-    const [result] = await pool.query<ResultSetHeader>(
+    const result = await execute(
       `INSERT INTO whatsapp_contacts (workspace_id, wa_jid, push_name, phone_number, last_seen_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, NOW(), NOW(), NOW())`,
       [workspaceId, waJid, pushName, phoneNumber],
@@ -81,13 +78,28 @@ export class MessageRepository {
     return { id: result.insertId };
   }
 
+  /**
+   * Persists the saved (address-book) display name for a contact from Baileys'
+   * `contacts.upsert` events into `whatsapp_contacts.contact_name`, upserting by
+   * the (workspace_id, wa_jid) unique key. The saved name is the one the user
+   * gave the number in their phone book - preferred over the push/profile name.
+   */
+  async upsertContactName(workspaceId: number, waJid: string, contactName: string): Promise<void> {
+    const phoneNumber = waJid.split('@')[0] ?? null;
+    await execute(
+      `INSERT INTO whatsapp_contacts (workspace_id, wa_jid, contact_name, phone_number, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE contact_name = VALUES(contact_name), updated_at = NOW()`,
+      [workspaceId, waJid, contactName, phoneNumber],
+    );
+  }
+
   /** Resolves the conversation for a whatsapp_contact, creating it (gateway-owned columns only) if absent. */
   async findOrCreateConversation(
     workspaceId: number,
     whatsappContactId: number,
   ): Promise<{ id: number; created: boolean }> {
-    const pool = this.pool();
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const [rows] = await query<RowDataPacket[]>(
       'SELECT id FROM conversations WHERE workspace_id = ? AND whatsapp_contact_id = ? LIMIT 1',
       [workspaceId, whatsappContactId],
     );
@@ -95,7 +107,7 @@ export class MessageRepository {
       return { id: rows[0].id as number, created: false };
     }
 
-    const [result] = await pool.query<ResultSetHeader>(
+    const result = await execute(
       `INSERT INTO conversations
          (workspace_id, whatsapp_contact_id, status, unread_count, created_at, updated_at)
        VALUES (?, ?, 'open', 0, NOW(), NOW())`,
@@ -115,11 +127,7 @@ export class MessageRepository {
     conversationId: number,
     normalized: NormalizedInboundMessage,
   ): Promise<{ messageId: number } | null> {
-    const pool = this.pool();
-    const conn: PoolConnection = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-
+    return transaction(async (conn: PoolConnection) => {
       let repliedToId: number | null = null;
       if (normalized.repliedToWhatsappMessageId) {
         const [repliedRows] = await conn.query<RowDataPacket[]>(
@@ -133,7 +141,7 @@ export class MessageRepository {
         `INSERT INTO messages
            (workspace_id, conversation_id, whatsapp_message_id, direction, sender_type,
             message_type, body, status, replied_to_message_id, sent_at, created_at, updated_at)
-         VALUES (?, ?, ?, 'inbound', 'contact', ?, ?, 'sent', ?, ?, NOW(), NOW())`,
+        VALUES (?, ?, ?, 'inbound', 'contact', ?, ?, 'sent', ?, ?, NOW(), NOW())`,
         [
           workspaceId,
           conversationId,
@@ -153,31 +161,28 @@ export class MessageRepository {
         [normalized.sentAt, preview, conversationId],
       );
 
-      await conn.commit();
       return { messageId: result.insertId };
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
-    }
+    });
   }
 
-  /** Persists an outbound (agent-sent) message row after a successful Baileys send. */
+  /**
+   * Persists an outbound (agent-sent) message row. Defaults to `sent` (the
+   * original post-send path) but the send worker now inserts with `queued`
+   * BEFORE the Baileys send, so a message against a flaky session is still
+   * saved and visible; the row is later flipped to `sent`/`failed`.
+   */
   async insertOutboundMessage(
     workspaceId: number,
     conversationId: number,
     params: {
       whatsappMessageId: string;
-      body: string;
+      body: string | null;
+      messageType?: string;
       repliedToWhatsappMessageId?: string | null;
+      status?: MessageStatus;
     },
   ): Promise<{ messageId: number } | null> {
-    const pool = this.pool();
-    const conn: PoolConnection = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-
+    return transaction(async (conn: PoolConnection) => {
       let repliedToId: number | null = null;
       if (params.repliedToWhatsappMessageId) {
         const [repliedRows] = await conn.query<RowDataPacket[]>(
@@ -187,15 +192,25 @@ export class MessageRepository {
         repliedToId = repliedRows.length > 0 ? (repliedRows[0].id as number) : null;
       }
 
+      const messageType = params.messageType ?? 'text';
+      const status = params.status ?? 'sent';
       const [result] = await conn.query<ResultSetHeader>(
         `INSERT INTO messages
            (workspace_id, conversation_id, whatsapp_message_id, direction, sender_type,
             message_type, body, status, replied_to_message_id, sent_at, created_at, updated_at)
-         VALUES (?, ?, ?, 'outbound', 'user', 'text', ?, 'sent', ?, NOW(), NOW(), NOW())`,
-        [workspaceId, conversationId, params.whatsappMessageId, params.body, repliedToId],
+        VALUES (?, ?, ?, 'outbound', 'user', ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+        [
+          workspaceId,
+          conversationId,
+          params.whatsappMessageId,
+          messageType,
+          params.body,
+          status,
+          repliedToId,
+        ],
       );
 
-      const preview = params.body.slice(0, 255);
+      const preview = (params.body ?? '').slice(0, 255);
       await conn.query(
         `UPDATE conversations
          SET last_message_at = NOW(), last_message_preview = ?, updated_at = NOW()
@@ -203,14 +218,16 @@ export class MessageRepository {
         [preview, conversationId],
       );
 
-      await conn.commit();
       return { messageId: result.insertId };
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
-    }
+    });
+  }
+
+  /** Swaps the deterministic `queued:{dispatchId}` placeholder for the real Baileys message id once the send completes. */
+  async setOutboundWhatsappId(messageId: number, whatsappMessageId: string): Promise<void> {
+    await execute('UPDATE messages SET whatsapp_message_id = ?, updated_at = NOW() WHERE id = ?', [
+      whatsappMessageId,
+      messageId,
+    ]);
   }
 
   async insertMessageMedia(
@@ -222,8 +239,7 @@ export class MessageRepository {
       checksumSha256: string | null;
     },
   ): Promise<void> {
-    const pool = this.pool();
-    await pool.query(
+    await execute(
       `INSERT INTO message_media (message_id, mime_type, file_size_bytes, storage_path, checksum_sha256, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
       [messageId, media.mimeType, media.fileSizeBytes, media.storagePath, media.checksumSha256],
@@ -235,28 +251,45 @@ export class MessageRepository {
     status: MessageStatus,
     rawPayload: Record<string, unknown> | null = null,
   ): Promise<void> {
-    const pool = this.pool();
-    await pool.query(
+    await execute(
       `INSERT INTO message_status_events (message_id, status, occurred_at, raw_payload, created_at)
        VALUES (?, ?, NOW(), ?, NOW())`,
       [messageId, status, rawPayload ? JSON.stringify(rawPayload) : null],
     );
   }
 
-  async updateMessageStatus(messageId: number, status: MessageStatus): Promise<void> {
-    const pool = this.pool();
-    await pool.query('UPDATE messages SET status = ?, updated_at = NOW() WHERE id = ?', [
-      status,
-      messageId,
-    ]);
+  /**
+   * Moves a message forward in the status lifecycle, stamping delivered_at/
+   * read_at the first time the corresponding receipt is observed. The
+   * `occurredAt` (defaults to DB NOW()) is stored as-is on the receipt columns
+   * so the socket emit and the DB agree on the exact transition time.
+   */
+  async updateMessageStatus(
+    messageId: number,
+    status: MessageStatus,
+    occurredAt: Date | null = null,
+  ): Promise<void> {
+    await execute(
+      `UPDATE messages
+       SET status = ?,
+           delivered_at = COALESCE(delivered_at, ?),
+           read_at = COALESCE(read_at, ?),
+           updated_at = NOW()
+       WHERE id = ?`,
+      [
+        status,
+        status === 'delivered' ? (occurredAt ?? new Date()) : null,
+        status === 'read' ? (occurredAt ?? new Date()) : null,
+        messageId,
+      ],
+    );
   }
 
   async findMessageByWhatsappId(
     workspaceId: number,
     whatsappMessageId: string,
   ): Promise<MessageRow | null> {
-    const pool = this.pool();
-    const [rows] = await pool.query<MessageRow[]>(
+    const [rows] = await query<MessageRow[]>(
       'SELECT * FROM messages WHERE workspace_id = ? AND whatsapp_message_id = ? LIMIT 1',
       [workspaceId, whatsappMessageId],
     );
@@ -264,16 +297,14 @@ export class MessageRepository {
   }
 
   async findMessageById(messageId: number): Promise<MessageRow | null> {
-    const pool = this.pool();
-    const [rows] = await pool.query<MessageRow[]>('SELECT * FROM messages WHERE id = ? LIMIT 1', [
+    const [rows] = await query<MessageRow[]>('SELECT * FROM messages WHERE id = ? LIMIT 1', [
       messageId,
     ]);
     return rows[0] ?? null;
   }
 
   async getConversationJid(conversationId: number, workspaceId: number): Promise<string | null> {
-    const pool = this.pool();
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const [rows] = await query<RowDataPacket[]>(
       `SELECT wc.wa_jid AS wa_jid
        FROM conversations c
        JOIN whatsapp_contacts wc ON wc.id = c.whatsapp_contact_id
@@ -288,8 +319,7 @@ export class MessageRepository {
     workspaceId: number,
     mediaId: number,
   ): Promise<{ id: number; message_id: number; storage_path: string; mime_type: string } | null> {
-    const pool = this.pool();
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const [rows] = await query<RowDataPacket[]>(
       `SELECT mm.id, mm.message_id, mm.storage_path, mm.mime_type
        FROM message_media mm
        JOIN messages m ON m.id = mm.message_id
@@ -306,6 +336,23 @@ export class MessageRepository {
       : null;
   }
 
+  /** Returns the single message_media row for a message (media is 1:1 per message). */
+  async findMessageMediaByMessageId(
+    messageId: number,
+  ): Promise<{ id: number; mime_type: string; file_size_bytes: number | null } | null> {
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT id, mime_type, file_size_bytes FROM message_media WHERE message_id = ? LIMIT 1`,
+      [messageId],
+    );
+    return rows.length > 0
+      ? {
+          id: rows[0].id as number,
+          mime_type: rows[0].mime_type as string,
+          file_size_bytes: rows[0].file_size_bytes as number | null,
+        }
+      : null;
+  }
+
   async recordProcessingFailure(
     workspaceId: number,
     stage: 'validation' | 'send' | 'media_download' | 'persist',
@@ -313,8 +360,7 @@ export class MessageRepository {
     context: Record<string, unknown> = {},
     opts: { dispatchQueueId?: number | null; conversationId?: number | null } = {},
   ): Promise<void> {
-    const pool = this.pool();
-    await pool.query(
+    await execute(
       `INSERT INTO message_processing_failures
          (workspace_id, message_dispatch_queue_id, conversation_id, stage, error_message, error_context, created_at)
        VALUES (?, ?, ?, ?, ?, ?, NOW())`,
@@ -327,5 +373,35 @@ export class MessageRepository {
         JSON.stringify(context),
       ],
     );
+  }
+
+  async addReaction(messageId: number, userId: number | null, emoji: string): Promise<void> {
+    await execute(
+      `INSERT INTO message_reactions (message_id, user_id, emoji, reacted_at, created_at, updated_at)
+       VALUES (?, ?, ?, NOW(), NOW(), NOW())
+       ON DUPLICATE KEY UPDATE emoji = VALUES(emoji), reacted_at = NOW(), updated_at = NOW()`,
+      [messageId, userId, emoji],
+    );
+  }
+
+  async removeReaction(messageId: number, userId: number | null, emoji: string): Promise<void> {
+    await execute(
+      'DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?',
+      [messageId, userId, emoji],
+    );
+  }
+
+  async markMessageAsDeleted(
+    workspaceId: number,
+    whatsappMessageId: string,
+    deletedBy: string | null = null,
+  ): Promise<boolean> {
+    const result = await execute(
+      `UPDATE messages
+       SET is_deleted_for_everyone = 1, deleted_at = NOW(), deleted_by_type = ?, updated_at = NOW()
+       WHERE workspace_id = ? AND whatsapp_message_id = ?`,
+      [deletedBy, workspaceId, whatsappMessageId],
+    );
+    return (result as { affectedRows: number }).affectedRows > 0;
   }
 }

@@ -113,4 +113,33 @@ describe('POST /internal/whatsapp/messages/send', () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it('forwards outbound media metadata from the request into the BullMQ job', async () => {
+    findByIdempotencyKey.mockResolvedValueOnce(null);
+    createPending.mockResolvedValueOnce({ id: 43, status: 'pending', message_id: null, bullmq_job_id: null });
+
+    const res = await post({
+      conversationId: 10,
+      workspaceId: 1,
+      content: 'see photo',
+      mediaRef: '1/outbound/abc.jpg',
+      mediaMimeType: 'image/jpeg',
+      mediaFileName: 'photo.jpg',
+      mediaSizeBytes: 2048,
+      mediaChecksumSha256: 'cafebabe',
+      idempotencyKey: 'idem-media-1',
+    });
+
+    expect(res.status).toBe(202);
+    expect(queueAdd).toHaveBeenCalledTimes(1);
+    const jobData = queueAdd.mock.calls[0][1] as Record<string, unknown>;
+    expect(jobData.mediaRef).toBe('1/outbound/abc.jpg');
+    expect(jobData.mediaMimeType).toBe('image/jpeg');
+    expect(jobData.mediaFileName).toBe('photo.jpg');
+    expect(jobData.mediaSizeBytes).toBe(2048);
+    expect(jobData.mediaChecksumSha256).toBe('cafebabe');
+
+    const createPendingPayload = createPending.mock.calls[0][3] as { mediaRef: string | null };
+    expect(createPendingPayload.mediaRef).toBe('1/outbound/abc.jpg');
+  });
 });

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { env } from '../config/env';
 
 /**
@@ -13,6 +13,8 @@ import { env } from '../config/env';
 export interface StorageClient {
   /** Persists a buffer under `key` and returns the storage key (unchanged). */
   putObject(key: string, body: Buffer, contentType: string): Promise<string>;
+  /** Reads back the bytes stored under `key` (used to send outbound media). */
+  getObject(key: string): Promise<Buffer>;
 }
 
 class LocalDiskStorageClient implements StorageClient {
@@ -23,6 +25,10 @@ class LocalDiskStorageClient implements StorageClient {
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
     await fs.writeFile(fullPath, body);
     return key;
+  }
+
+  async getObject(key: string): Promise<Buffer> {
+    return fs.readFile(path.join(this.baseDir, key));
   }
 }
 
@@ -46,6 +52,18 @@ class S3StorageClient implements StorageClient {
       }),
     );
     return key;
+  }
+
+  async getObject(key: string): Promise<Buffer> {
+    const response = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    const stream = response.Body as unknown as NodeJS.ReadableStream;
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
   }
 }
 
