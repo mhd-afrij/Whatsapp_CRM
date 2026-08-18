@@ -31,8 +31,21 @@ function DealCard({
   onMove: (stageId: number) => void;
   pending: boolean;
 }) {
+  const [isDragging, setIsDragging] = useState(false);
+
   return (
-    <div className="rounded-md border border-border bg-bg p-3 text-sm shadow-sm">
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(deal.id));
+        setIsDragging(true);
+      }}
+      onDragEnd={() => setIsDragging(false)}
+      className={`cursor-grab rounded-md border border-border bg-bg p-3 text-sm shadow-sm active:cursor-grabbing ${
+        isDragging ? "opacity-40" : ""
+      }`}
+    >
       <Link href={`/deals/${deal.id}`} className="font-medium text-primary hover:underline">
         {deal.title}
       </Link>
@@ -74,6 +87,7 @@ function PipelineBoard() {
   const { data: board, isLoading: boardLoading, isError, refetch } = usePipelineBoard(pipelineId ?? 0);
   const moveMutation = useMoveDealStage(pipelineId ?? 0);
   const [showNewDeal, setShowNewDeal] = useState(false);
+  const [dragOverStageId, setDragOverStageId] = useState<number | null>(null);
 
   const stageOptions = board?.stages.map((s) => ({ id: s.id, name: s.name })) ?? [];
 
@@ -129,7 +143,33 @@ function PipelineBoard() {
           </p>
           <div className="flex gap-4 overflow-x-auto pb-4">
             {board.stages.map((stage) => (
-              <div key={stage.id} className="flex w-72 shrink-0 flex-col rounded-lg border border-border bg-surface">
+              <div
+                key={stage.id}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dragOverStageId !== stage.id) setDragOverStageId(stage.id);
+                }}
+                onDragLeave={() => {
+                  if (dragOverStageId === stage.id) setDragOverStageId(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOverStageId(null);
+                  const dealId = Number(e.dataTransfer.getData("text/plain"));
+                  if (!Number.isFinite(dealId) || dealId <= 0) return;
+                  const currentStage = board.stages.find((s) =>
+                    s.deals.some((d) => d.id === dealId)
+                  );
+                  if (currentStage && currentStage.id === stage.id) return;
+                  moveMutation.mutate({ dealId, stageId: stage.id });
+                }}
+                className={`flex w-72 shrink-0 flex-col rounded-lg border bg-surface transition-shadow ${
+                  dragOverStageId === stage.id
+                    ? "border-primary/60 ring-2 ring-primary/40"
+                    : "border-border"
+                }`}
+              >
                 <div className="border-b border-border p-3">
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold text-text">{stage.name}</h2>

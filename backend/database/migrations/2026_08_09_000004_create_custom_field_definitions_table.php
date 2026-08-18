@@ -22,7 +22,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['workspace_id', 'entity_type', 'key']);
-            $table->index(['workspace_id', 'entity_type', 'is_active']);
+            $table->index(['workspace_id', 'entity_type', 'is_active'], 'custom_fields_ws_entity_active_idx');
         });
     }
 
