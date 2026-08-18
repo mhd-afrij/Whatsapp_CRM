@@ -12,6 +12,7 @@ import {
   type OutboundMediaInfo,
 } from '../whatsapp/outbound-media';
 import { emitMessageCreated, emitMessageFailed, emitMessageUpdated } from '../lib/socket-server';
+import { emitMessageCreated, emitMessageFailed } from '../lib/socket-server';
 
 export const SEND_MESSAGE_QUEUE_NAME = 'send-message';
 
@@ -108,6 +109,12 @@ export async function processSendMessage(
     sendContent = buildBaileysMediaContent(resolvedType, buffer, mediaInfo, content || null);
   }
 
+  const result = await connectionManager.sendContent(waJid, sendContent, replyToWhatsappMessageId ?? null);
+  const whatsappMessageId = result.id;
+  if (!whatsappMessageId) {
+    throw new Error('Baileys did not return a message id for the send');
+  }
+
   // Persist the outbound row as 'queued' BEFORE the Baileys send so the
   // message survives send failures - the reported bug was that sends against
   // an unstable session never saved anything. A deterministic placeholder
@@ -156,12 +163,45 @@ export async function processSendMessage(
     const existingMedia = await messageRepository.findMessageMediaByMessageId(messageId);
     if (!existingMedia) {
       await messageRepository.insertMessageMedia(messageId, {
+  if (inserted) {
+    if (mediaRef) {
+      const mimeType = mediaMimeType ?? 'application/octet-stream';
+      await messageRepository.insertMessageMedia(inserted.messageId, {
         mimeType,
         fileSizeBytes: mediaSizeBytes ?? null,
         storagePath: mediaRef,
         checksumSha256: mediaChecksumSha256 ?? null,
       });
     }
+
+    await messageRepository.updateMessageStatus(inserted.messageId, 'sent');
+    await dispatchRepository.markSent(dispatchId, inserted.messageId);
+
+    const media = mediaRef
+      ? await messageRepository.findMessageMediaByMessageId(inserted.messageId)
+      : null;
+
+    emitMessageCreated(workspaceId, conversationId, {
+      message: {
+        id: inserted.messageId,
+        conversationId,
+        direction: 'outbound',
+        messageType,
+        body: content,
+        status: 'sent',
+        senderType: 'user',
+        sentAt: new Date().toISOString(),
+        media: media
+          ? {
+              id: media.id,
+              messageId: inserted.messageId,
+              mimeType: media.mime_type,
+              fileSizeBytes: media.file_size_bytes,
+            }
+          : null,
+      },
+      conversation: { id: conversationId },
+    });
   }
 
   // Surface the queued bubble to the open chat immediately; later retries

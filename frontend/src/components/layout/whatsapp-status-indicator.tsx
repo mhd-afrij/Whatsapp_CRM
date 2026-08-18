@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { MessageCircle } from "lucide-react";
 import { usePermission } from "@/hooks/use-permission";
 import { useWhatsappStatus } from "@/hooks/use-whatsapp-connection";
@@ -42,15 +43,26 @@ export function WhatsappStatusIndicator() {
   }
 
   const status = data?.status ?? "idle";
+  const label = LABELS[status];
+  const detail =
+    status === "connected"
+      ? data?.phoneNumber
+        ? `Connected ${data.phoneNumber}`
+        : "Connected"
+      : status === "qr_pending"
+        ? "Waiting for QR scan"
+        : label;
 
   return (
-    <div
-      title={LABELS[status]}
-      className="flex items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted"
+    <Link
+      href="/settings/whatsapp"
+      title={label}
+      className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-primary-soft/40 hover:text-text"
     >
       <MessageCircle className="h-3.5 w-3.5" />
       <span className={cn("h-2 w-2 rounded-full", DOT_STYLES[status])} />
-      <span className="hidden lg:inline">{LABELS[status]}</span>
-    </div>
+      <span className="hidden lg:inline">{detail}</span>
+      <span className="lg:hidden">{label}</span>
+    </Link>
   );
 }

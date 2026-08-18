@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Providers } from "./providers";
+import { QueryProvider } from "@/providers/query-provider";
+import { AuthProvider } from "@/context/auth-context";
+import { SocketProvider } from "@/providers/socket-provider";
+import { ToastProvider } from "@/providers/toast-provider";
+import { ThemeProvider } from "@/context/theme-context";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,6 +36,8 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body suppressHydrationWarning className="min-h-full flex flex-col">
+        {/* Set the theme class before first paint so there is no flash of the
+            wrong scheme; mirrors the logic in context/theme-context.tsx. */}
         <Script
           id="theme-init"
           strategy="beforeInteractive"
@@ -38,7 +45,17 @@ export default function RootLayout({
             __html: `(function(){try{var t=localStorage.getItem("theme");var d=t?t==="dark":window.matchMedia("(prefers-color-scheme: dark)").matches;var r=document.documentElement;r.classList.toggle("dark",d);r.classList.toggle("light",!d);}catch(e){}})();`,
           }}
         />
-        <Providers>{children}</Providers>
+        <QueryProvider>
+          <ToastProvider>
+            <ThemeProvider>
+              <AuthProvider>
+                <SocketProvider>
+                  <ErrorBoundary>{children}</ErrorBoundary>
+                </SocketProvider>
+              </AuthProvider>
+            </ThemeProvider>
+          </ToastProvider>
+        </QueryProvider>
       </body>
     </html>
   );

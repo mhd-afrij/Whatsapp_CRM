@@ -24,8 +24,6 @@ import {
   Clock,
   AlertTriangle,
   Wifi,
-  ChevronDown,
-  PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";

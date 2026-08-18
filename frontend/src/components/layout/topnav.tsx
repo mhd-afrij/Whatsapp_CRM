@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, Wifi, WifiOff, Sun, Moon } from "lucide-react";
+import { LogOut, Menu, Wifi, WifiOff, Sun, Moon } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { useSocket } from "@/providers/socket-provider";
 import { useTheme } from "@/context/theme-context";
@@ -15,7 +15,7 @@ export function Topnav() {
   const { user, logout } = useAuth();
   const { isConnected } = useSocket();
   const { theme, toggleTheme } = useTheme();
-  const { open, collapsed, toggleCollapsed } = useMobileSidebar();
+  const { open } = useMobileSidebar();
 
   if (pathname?.startsWith("/inbox")) {
     return null;

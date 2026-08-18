@@ -201,6 +201,23 @@ export class ConnectionManager extends EventEmitter {
       this.socket = null;
     }
 
+    }
+
+    await this.startFreshPairing();
+  }
+
+  /**
+   * Clears any saved WhatsApp auth material and starts a fresh QR pairing flow.
+   * This is the manual path exposed by the UI's Connect button.
+   */
+  async startFreshPairing(): Promise<void> {
+    if (this.socket) {
+      this.manualStop = true;
+      this.clearReconnectTimer();
+      this.socket.end(undefined);
+      this.socket = null;
+    }
+
     await this.clearStoredCredentials();
     await this.start();
   }
@@ -681,6 +698,7 @@ export class ConnectionManager extends EventEmitter {
       return;
     }
     const jid = normalizePhoneToJid(to, env.WHATSAPP_COUNTRY_CODE);
+    const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
     await this.socket.sendPresenceUpdate(presence, jid);
   }
 

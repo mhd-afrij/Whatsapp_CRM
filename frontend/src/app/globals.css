@@ -71,17 +71,9 @@
   --color-text: #f1f5f9;
   --color-muted: #94a3b8;
   --color-success: #22c55e;
-  --color-success-light: #14532d;
-  --color-success-dark: #22c55e;
   --color-warning: #fbbf24;
-  --color-warning-light: #78350f;
-  --color-warning-dark: #fbbf24;
   --color-danger: #f87171;
-  --color-danger-light: #4c0519;
-  --color-danger-dark: #f87171;
   --color-info: #60a5fa;
-  --color-info-light: #0c2a48;
-  --color-info-dark: #60a5fa;
 
   /* Chart categorical series (dark-mode step, see dataviz skill references/palette.md) */
   --chart-series-1: #3987e5;
@@ -147,10 +139,10 @@ body {
    follows the active theme instead of a strong image, keeping message
    readability high while breaking up the flat panel colour. */
 .message-list-bg {
-  background-color: var(--color-bg);
+  background-color: #08111b;
   background-image: radial-gradient(
     circle at 1px 1px,
-    color-mix(in srgb, var(--color-primary) 9%, transparent) 1px,
+    color-mix(in srgb, #22c55e 16%, transparent) 1px,
     transparent 0
   );
   background-size: 24px 24px;

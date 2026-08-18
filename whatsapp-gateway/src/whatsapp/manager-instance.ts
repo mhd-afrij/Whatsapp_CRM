@@ -34,6 +34,8 @@ export const connectionManager = new ConnectionManager(
             : {}),
         },
       },
+      }
+    : {},
 );
 
 connectionManager.on('connection.updated', (payload) => {
