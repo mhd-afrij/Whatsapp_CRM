@@ -31,6 +31,7 @@ export function ContactForm({
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ContactSchemaValues>({
     resolver: zodResolver(contactSchema),
@@ -50,6 +51,11 @@ export function ContactForm({
   }, [defaultValues?.custom_fields]);
 
   const submit = handleSubmit(async (values) => {
+    // Normalize to E.164 so the stored number can be dialed/WhatsApp'd later
+    // (see lib/phone.ts) - a bare "0750144774" can never receive a message.
+    const phone_number = values.phone_number
+      ? normalizePhoneNumber(values.phone_number)
+      : null;
     await onSubmit({
       full_name: values.full_name ?? null,
       email: values.email ?? null,
@@ -95,7 +101,28 @@ export function ContactForm({
           <label htmlFor="phone_number" className="text-sm font-medium text-text">
             Phone number
           </label>
-          <input id="phone_number" className={fieldClass(!!errors.phone_number)} {...register("phone_number")} />
+          <div className="relative">
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted"
+            >
+              +{PHONE_COUNTRY_CODE}
+            </span>
+            <input
+              id="phone_number"
+              placeholder="712345678"
+              className={cn(fieldClass(!!errors.phone_number), "pl-12")}
+              inputMode="tel"
+              {...register("phone_number", {
+                onBlur: (event) => {
+                  const normalized = normalizePhoneNumber(event.target.value);
+                  if (normalized !== event.target.value) {
+                    setValue("phone_number", normalized);
+                  }
+                },
+              })}
+            />
+          </div>
           {errors.phone_number && (
             <p className="text-xs text-danger">{errors.phone_number.message}</p>
           )}

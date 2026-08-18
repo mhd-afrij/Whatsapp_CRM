@@ -50,6 +50,10 @@ class TaskController extends Controller
             $query->where('priority', $request->string('priority')->toString());
         }
 
+        if ($request->filled('due_date')) {
+            $query->whereDate('due_at', $request->string('due_date')->toString());
+        }
+
         foreach (['contact_id', 'lead_id', 'deal_id', 'conversation_id', 'assignee_id'] as $field) {
             if ($request->filled($field)) {
                 $query->where($field, $request->integer($field));

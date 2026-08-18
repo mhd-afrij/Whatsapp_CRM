@@ -16,7 +16,9 @@ export function useNoteList(filters: NoteFilters) {
   return useQuery({
     queryKey: notesKey(filters),
     queryFn: () => fetchNotes(filters),
-    enabled: Boolean(filters.conversation_id || filters.contact_id || filters.deal_id),
+    enabled: Boolean(
+      filters.conversation_id || filters.contact_id || filters.deal_id || filters.calendar_date
+    ),
   });
 }
 

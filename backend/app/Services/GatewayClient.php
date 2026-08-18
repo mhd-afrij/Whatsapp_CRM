@@ -46,6 +46,20 @@ class GatewayClient
         return $this->request('post', '/internal/whatsapp/reconnect');
     }
 
+    /**
+     * Destructive reset: asks the gateway to log the WhatsApp session out
+     * (forcing a fresh QR re-pair) and purge every gateway-owned row for the
+     * workspace - chats, whatsapp_contacts, the dispatch queue / processing
+     * failures and the sync checkpoints. Backend-owned rows (leads, deals,
+     * tasks, CRM contacts) are never touched by the gateway; the caller is
+     * responsible for any backend-side cleanup. Returns the deleted-row
+     * counts plus the post-logout session snapshot.
+     */
+    public function resetData(int $workspaceId): array
+    {
+        return $this->request('post', '/internal/whatsapp/reset-data', ['workspaceId' => $workspaceId]);
+    }
+
     public function events(int $limit = 50): array
     {
         return $this->request('get', '/internal/whatsapp/events', ['limit' => $limit]);
@@ -62,6 +76,37 @@ class GatewayClient
     public function sendMessage(array $payload): array
     {
         return $this->request('post', '/internal/whatsapp/messages/send', $payload);
+    }
+
+    /**
+     * Start (find or create) a WhatsApp conversation for a contact by phone number.
+     * Returns the conversation ID, ready to use for sending messages.
+     */
+    public function startConversation(array $payload): array
+    {
+        return $this->request('post', '/internal/whatsapp/conversations/start', $payload);
+    }
+
+    /**
+     * Ask the gateway to delete every message in a conversation and reset the
+     * gateway-owned conversation summary columns (last_message_at,
+     * last_message_preview, unread_count). The conversation row itself stays
+     * so the chat thread can continue.
+     */
+    public function clearConversation(int $conversationId, int $workspaceId): array
+    {
+        return $this->request('delete', "/internal/whatsapp/conversations/{$conversationId}/messages", ['workspaceId' => $workspaceId]);
+    }
+
+    /**
+     * Ask the gateway to delete a conversation and every gateway-owned row it
+     * cascades (messages, media, reactions, status events, dispatch queue,
+     * participants, assignments, label links). Backend-owned CRM rows that
+     * merely reference the contact are untouched.
+     */
+    public function deleteConversation(int $conversationId, int $workspaceId): array
+    {
+        return $this->request('delete', "/internal/whatsapp/conversations/{$conversationId}", ['workspaceId' => $workspaceId]);
     }
 
     /**

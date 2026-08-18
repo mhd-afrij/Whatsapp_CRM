@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Archive, RotateCcw } from "lucide-react";
+import { ArrowLeft, Archive, RotateCcw, MessageSquare } from "lucide-react";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { usePermission } from "@/hooks/use-permission";
 import { useAuth } from "@/context/auth-context";
 import { useContact, useUpdateContact, useArchiveContact, useRestoreContact } from "@/hooks/use-contacts";
 import { useConvertContactToLead } from "@/hooks/use-leads";
+import { useCreateConversation } from "@/hooks/use-conversations";
+import { ChatPanel } from "@/components/inbox/chat-panel";
 import { ContactForm } from "@/components/contacts/contact-form";
+import { ChatOverviewPanel } from "@/components/contacts/chat-overview-panel";
 import { LabelPicker } from "@/components/labels/label-picker";
 import { ApiError } from "@/lib/api-client";
 import type { ContactFormValues } from "@/lib/contacts-api";
@@ -48,6 +51,22 @@ function ContactProfile({ id }: { id: number }) {
   const [editing, setEditing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const createConversationMutation = useCreateConversation();
+
+  const handleToggleChat = async () => {
+    if (!contact) return;
+    if (contact.conversations && contact.conversations.length > 0) {
+      router.push(`/inbox/${contact.conversations[0].id}`);
+    } else {
+      try {
+        const conversation = await createConversationMutation.mutateAsync(contact.id);
+        router.push(`/inbox/${conversation.id}`);
+      } catch (err) {
+        setActionError(err instanceof ApiError ? err.message : "Unable to start conversation.");
+      }
+    }
+  };
 
   if (isLoading) {
     return <DetailSkeleton />;
@@ -111,6 +130,17 @@ function ContactProfile({ id }: { id: number }) {
           )}
         </div>
         <div className="flex gap-2">
+          {!contact.deleted_at && (
+            <button
+              type="button"
+              onClick={handleToggleChat}
+              disabled={createConversationMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm font-medium text-text hover:bg-primary-soft/40 disabled:opacity-60"
+            >
+              <MessageSquare className="h-4 w-4" />
+              {createConversationMutation.isPending ? "Starting Chat…" : "Messages"}
+            </button>
+          )}
           {canManageLeads && !contact.deleted_at && (
             <button
               type="button"
@@ -194,7 +224,7 @@ function ContactProfile({ id }: { id: number }) {
           <h2 className="mb-3 text-sm font-semibold text-text">WhatsApp profile</h2>
           {contact.whatsapp_contact ? (
             <dl className="space-y-2 text-sm">
-              <div className="flex justify-between"><dt className="text-muted">Display name</dt><dd className="text-text">{contact.whatsapp_contact.push_name || "—"}</dd></div>
+              <div className="flex justify-between"><dt className="text-muted">Display name</dt><dd className="text-text">{contact.whatsapp_contact.contact_name || contact.whatsapp_contact.push_name || "—"}</dd></div>
               <div className="flex justify-between"><dt className="text-muted">Number</dt><dd className="text-text">{contact.whatsapp_contact.phone_number || "—"}</dd></div>
               <div className="flex justify-between"><dt className="text-muted">Business account</dt><dd className="text-text">{contact.whatsapp_contact.is_business ? "Yes" : "No"}</dd></div>
               <div className="flex justify-between"><dt className="text-muted">Last seen</dt><dd className="text-text">{formatDate(contact.whatsapp_contact.last_seen_at)}</dd></div>
@@ -221,6 +251,10 @@ function ContactProfile({ id }: { id: number }) {
             <p className="text-sm text-muted">No conversations yet.</p>
           )}
         </section>
+
+        <div className="lg:col-span-2">
+          <ChatOverviewPanel conversationId={contact.conversations?.[0]?.id ?? null} />
+        </div>
 
         <section className="rounded-lg border border-border bg-surface p-5">
           <h2 className="mb-3 text-sm font-semibold text-text">Activity timeline</h2>

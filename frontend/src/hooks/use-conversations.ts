@@ -107,7 +107,10 @@ export function useConversationList(filters: ConversationFilters) {
     const handleConversationPayload = (payload: { conversation?: Conversation } | Conversation) => {
       const conversation: Conversation | undefined =
         "conversation" in payload ? payload.conversation : (payload as Conversation);
-      if (!conversation) {
+      // Some events (e.g. conversation.assigned) may carry only a partial row;
+      // upserting it would inject an entry with an undefined id that breaks the
+      // list's React keys. Refetch the full list instead.
+      if (!conversation || typeof conversation.id !== "number") {
         refresh();
         return;
       }
@@ -116,14 +119,11 @@ export function useConversationList(filters: ConversationFilters) {
       );
       queryClient.setQueryData(conversationKey(conversation.id), conversation);
     };
-    const handleMessageCreated = (payload: Message & { conversation?: Conversation }) => {
-      if (payload.conversation) {
-        queryClient.setQueriesData({ queryKey: ["conversations"] }, (current) =>
-          upsertConversationToTop(current, payload.conversation as Conversation)
-        );
-      } else {
-        refresh();
-      }
+    // The gateway's `message.created` payload only carries a minimal
+    // `conversation: { id, lastMessagePreview }` summary — upserting that would
+    // clobber the list with a partial row, so refetch the full list instead.
+    const handleMessageCreated = () => {
+      refresh();
     };
 
     joinRoom();
@@ -199,49 +199,75 @@ export function useConversation(conversationId: number | null) {
 }
 
 export function useMessages(conversationId: number | null) {
-  const { socket } = useSocket();
+  const { socket, isConnected } = useSocket();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const query = useQuery({
     queryKey: conversationId ? messagesKey(conversationId) : ["conversations", "none", "messages"],
     queryFn: () => fetchMessages(conversationId as number, { per_page: 30 }),
     enabled: !!conversationId,
+    // Poll only while the socket isn't connected (same pattern as the list/
+    // conversation queries) so sent/received messages still surface without the
+    // realtime channel.
+    refetchInterval: isConnected ? false : 10_000,
   });
 
   useEffect(() => {
-    if (!socket || !conversationId) return;
+    if (!socket || !conversationId || !user?.workspace_id) return;
 
-    const handleCreated = (payload: Message) => {
-      queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
-        const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
-        if (!typedCurrent) return current;
-        if (typedCurrent.data.some((m) => m.id === payload.id)) return current;
-        return { ...typedCurrent, data: [payload, ...typedCurrent.data] };
-      });
+    // The gateway fans `message.*` events out to `workspace:{id}:conversation:{conversationId}`
+    // (see whatsapp-gateway/src/lib/socket-server.ts), so join that room and re-join
+    // on reconnect - without it the open chat never sees inbound/outbound updates.
+    const joinRoom = () => {
+      socket.emit("join", `workspace:${user.workspace_id}:conversation:${conversationId}`);
+    };
+    joinRoom();
+    socket.on("connect", joinRoom);
+
+    const refresh = () => {
+      queryClient.invalidateQueries({ queryKey: messagesKey(conversationId) });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     };
 
-    const handleUpdated = (payload: Partial<Message> & { id: number }) => {
+    // `message.created` carries a minimal camelCase payload ({message, conversation});
+    // refetching the real rows guarantees the full Message shape (sender, media, etc.).
+    const handleCreated = () => {
+      refresh();
+    };
+
+    // `message.updated` is `{ messageId, changes: { status } }` from the gateway's
+    // status pipeline - merge it into the cached message for live ticks.
+    const handleUpdated = (payload: { messageId: number; changes?: Partial<Message> }) => {
       queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
         const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
         if (!typedCurrent) return current;
         return {
           ...typedCurrent,
-          data: typedCurrent.data.map((m) => (m.id === payload.id ? { ...m, ...payload } : m)),
+          data: typedCurrent.data.map((m) =>
+            m.id === payload.messageId ? { ...m, ...payload.changes } : m
+          ),
         };
       });
     };
 
+    // `message.failed` has no message id (the row is never persisted), so a
+    // refetch is the best we can do.
+    const handleFailed = () => {
+      refresh();
+    };
+
     socket.on("message.created", handleCreated);
     socket.on("message.updated", handleUpdated);
-    socket.on("message.failed", handleUpdated);
+    socket.on("message.failed", handleFailed);
 
     return () => {
+      socket.off("connect", joinRoom);
       socket.off("message.created", handleCreated);
       socket.off("message.updated", handleUpdated);
-      socket.off("message.failed", handleUpdated);
+      socket.off("message.failed", handleFailed);
     };
-  }, [socket, conversationId, queryClient]);
+  }, [socket, conversationId, user?.workspace_id, queryClient]);
 
   return query;
 }
@@ -267,6 +293,7 @@ export function useLoadOlderMessages(conversationId: number | null) {
 
 export function useSendMessage(conversationId: number | null) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   return useMutation({
     mutationFn: (payload: {
       body?: string;
@@ -277,13 +304,51 @@ export function useSendMessage(conversationId: number | null) {
       if (!conversationId) throw new Error("No conversation selected");
       return sendMessage(conversationId, payload);
     },
+    onMutate: async (payload) => {
+      if (!conversationId) return undefined;
+      // Cancel in-flight refetches so they can't overwrite the optimistic row
+      // before the server row lands.
+      await queryClient.cancelQueries({ queryKey: messagesKey(conversationId) });
+      const tempId = -Date.now();
+      const tempMessage: Message = {
+        id: tempId,
+        conversation_id: conversationId,
+        whatsapp_message_id: `pending:${tempId}`,
+        direction: "outbound",
+        sender_type: "user",
+        sender: user ? { id: Number(user.id), name: user.name, email: user.email } : null,
+        message_type: payload.message_type ?? "text",
+        body: payload.body ?? null,
+        status: "queued",
+        replied_to_message_id: payload.replied_to_message_id ?? null,
+        sent_at: new Date().toISOString(),
+        delivered_at: null,
+        read_at: null,
+        created_at: new Date().toISOString(),
+        media: null,
+        reactions: [],
+      };
+      queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
+        const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
+        if (!typedCurrent) return current;
+        return { ...typedCurrent, data: [tempMessage, ...typedCurrent.data] };
+      });
+      return { tempId };
+    },
     onSuccess: (result) => {
       if (!conversationId) return;
       const isQueuedAck = (value: Message | SendMessageQueuedAck): value is SendMessageQueuedAck =>
         typeof value === "object" && value !== null && "dispatchId" in value;
 
       if (isQueuedAck(result)) {
-        queryClient.invalidateQueries({ queryKey: messagesKey(conversationId) });
+        // The gateway persists the queued row right after enqueueing and emits
+        // message.created; that socket event (or the next poll) swaps the
+        // optimistic bubble for the real row. Delay the invalidate slightly so
+        // the first refetch is likely to find the server row rather than an
+        // empty page that would make the just-sent message flicker away.
+        window.setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: messagesKey(conversationId) });
+        }, 1500);
       } else {
         queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
           const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
@@ -293,6 +358,15 @@ export function useSendMessage(conversationId: number | null) {
         });
       }
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+    onError: (_error, _payload, context) => {
+      if (!conversationId || !context) return;
+      const { tempId } = context;
+      queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
+        const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
+        if (!typedCurrent) return current;
+        return { ...typedCurrent, data: typedCurrent.data.filter((m) => m.id !== tempId) };
+      });
     },
   });
 }

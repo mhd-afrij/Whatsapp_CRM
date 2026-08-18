@@ -32,6 +32,16 @@ export function Topnav() {
         <Menu className="h-5 w-5" />
       </button>
 
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        className="hidden shrink-0 rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary md:inline-flex"
+      >
+        {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+      </button>
+
       <div className="hidden shrink-0 items-center gap-2 text-sm text-muted lg:flex">
         {isConnected ? (
           <Wifi className="h-4 w-4 text-success" />

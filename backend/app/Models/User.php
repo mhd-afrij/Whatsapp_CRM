@@ -32,6 +32,7 @@ class User extends Authenticatable
         'email',
         'password',
         'avatar_path',
+        'about',
         'is_active',
         'last_login_at',
     ];

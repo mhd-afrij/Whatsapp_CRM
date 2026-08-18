@@ -13,12 +13,15 @@ class InternalNote extends Model
     use BelongsToWorkspace, HasFactory;
 
     protected $fillable = [
-        'workspace_id', 'conversation_id', 'contact_id', 'deal_id', 'author_id', 'body', 'is_private',
+        'workspace_id', 'conversation_id', 'contact_id', 'deal_id', 'calendar_date', 'author_id', 'body', 'is_private',
     ];
 
     protected function casts(): array
     {
-        return ['is_private' => 'boolean'];
+        return [
+            'is_private' => 'boolean',
+            'calendar_date' => 'date:Y-m-d',
+        ];
     }
 
     public function conversation(): BelongsTo

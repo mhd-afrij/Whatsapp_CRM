@@ -23,6 +23,7 @@ export function ConversationItem({
   const contact = conversation.contact || conversation.whatsapp_contact;
   const name =
     (conversation.contact?.full_name as string) ||
+    (conversation.whatsapp_contact?.contact_name as string) ||
     (conversation.whatsapp_contact?.push_name as string) ||
     contact?.phone_number ||
     `Conversation #${conversation.id}`;

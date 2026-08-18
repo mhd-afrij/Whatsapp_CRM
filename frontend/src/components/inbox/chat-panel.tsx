@@ -5,8 +5,6 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Ban,
-  Check,
-  CheckCheck,
   ChevronDown,
   Clock,
   Copy,
@@ -22,7 +20,6 @@ import {
   Pin,
   Search,
   Send,
-  Smile,
   Sparkles,
   Trash2,
   Video,
@@ -66,6 +63,7 @@ import { useToast } from "@/providers/toast-provider";
 import { PRIORITY_OPTIONS } from "@/components/inbox/priority-selector";
 import { formatInboxDateSeparator, formatInboxTime, isSameInboxDay } from "@/lib/time-format";
 import { useMessageSearch } from "@/hooks/use-message-search";
+import { MessageStatusTick } from "./message/message-status-tick";
 
 const NEAR_BOTTOM_THRESHOLD_PX = 80;
 const NEAR_TOP_THRESHOLD_PX = 80;
@@ -106,6 +104,7 @@ function contactLabel(conversation: ReturnType<typeof useConversation>["data"]):
   if (!conversation) return "";
   return (
     conversation.contact?.full_name ||
+    conversation.whatsapp_contact?.contact_name ||
     conversation.whatsapp_contact?.push_name ||
     conversation.whatsapp_contact?.phone_number ||
     conversation.whatsapp_contact?.wa_jid ||
@@ -179,14 +178,6 @@ function ReplyMediaThumb({
       )}
     </div>
   );
-}
-
-function StatusTick({ status }: { status: Message["status"] }) {
-  if (status === "failed") return <XCircle className="h-3 w-3 text-danger" />;
-  if (status === "read") return <CheckCheck className="h-3 w-3 text-info" />;
-  if (status === "delivered") return <CheckCheck className="h-3 w-3 text-muted" />;
-  if (status === "sent") return <Check className="h-3 w-3 text-muted" />;
-  return <Clock className="h-3 w-3 text-muted" />;
 }
 
 function MessageActionsMenu({
@@ -508,8 +499,11 @@ function MessageBubble({
           <button
             type="button"
             className={cn(
+              // WhatsApp-style quote strip: a subtle tint behind the quoted text
+              // (translucent white over the green outbound bubble, light gray
+              // over the surface inbound bubble) so it reads as a distinct block.
               "mb-1 block w-full rounded border-l-2 px-2 py-1 text-left text-xs",
-              isOutbound ? "border-white/50" : "border-primary"
+              isOutbound ? "border-white/50 bg-white/10" : "border-primary bg-bg/70"
             )}
             onClick={() => onJumpToMessage(repliedTo.id)}
             title="Jump to replied message"
@@ -537,7 +531,13 @@ function MessageBubble({
           <span className={cn("text-[10px] leading-none", isOutbound ? "text-white/70" : "text-muted")}>
             {formatInboxTime(message.sent_at, timeZone)}
           </span>
-          {isOutbound && <StatusTick status={message.status} />}
+          {isOutbound && (
+            <MessageStatusTick
+              status={message.status}
+              deliveredAt={message.delivered_at}
+              readAt={message.read_at}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -877,7 +877,6 @@ function Composer({
   const [attachment, setAttachment] = useState<{ file: File; previewUrl: string | null } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sendMutation = useSendMessage(conversationId);
@@ -1114,7 +1113,7 @@ function Composer({
         className={cn(
           "grid items-end gap-2",
           canReply && canCreateNote
-            ? "grid-cols-[auto_auto_auto_minmax(0,1fr)_42px]"
+            ? "grid-cols-[auto_auto_minmax(0,1fr)_42px]"
             : canReply
               ? "grid-cols-[auto_auto_minmax(0,1fr)_42px]"
             ? "grid-cols-[auto_auto_minmax(0,1fr)_42px]"
@@ -1127,13 +1126,16 @@ function Composer({
           <button
             type="button"
             onClick={() => setMode(isNoteMode ? "reply" : "note")}
+            aria-label={isNoteMode ? "Switch to reply mode" : "Switch to internal note mode"}
             className={cn(
-              "flex h-[42px] items-center gap-2 rounded-full border px-3 text-xs font-medium",
-              isNoteMode ? "border-warning bg-warning/10 text-warning" : "border-border bg-bg text-muted hover:text-text"
+              "flex h-[42px] items-center justify-center gap-2 rounded-full border text-xs font-medium",
+              isNoteMode
+                ? "w-[42px] border-warning bg-warning/10 text-warning"
+                : "border-border bg-bg px-3 text-muted hover:text-text"
             )}
           >
             <Lock className="h-3.5 w-3.5" />
-            {isNoteMode ? "Note" : "Reply"}
+            {!isNoteMode && "Reply"}
           </button>
         )}
 
@@ -1151,17 +1153,6 @@ function Composer({
             >
               <Paperclip className="h-5 w-5" />
             </button>
-            <button
-              type="button"
-              onClick={() => setShowEmojiPicker((c) => !c)}
-              aria-label="Open emoji picker"
-              className={cn(
-                "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
-              )}
-              disabled={isNoteMode || isUploading}
-            >
-              <Smile className="h-5 w-5" />
-            </button>
 </>
           <button
             type="button"
@@ -1177,7 +1168,7 @@ function Composer({
           </button>
         )}
 
-        <div className="relative">
+        <div className="relative min-w-0">
           {!isNoteMode && showTemplatePicker && (
             <TemplatePicker onSelect={handleTemplateSelect} onClose={() => setShowTemplatePicker(false)} />
           )}
@@ -1452,69 +1443,68 @@ export function ChatPanel({
         </div>
       </header>
 
-      {showSearch && (
-        <div className="border-b border-border bg-surface px-3 py-2">
-          <div className="flex items-center gap-2">
-            <Search className="h-4 w-4 shrink-0 text-muted" />
-            <input
-              autoFocus
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  setShowSearch(false);
-                  setSearchQuery("");
-                }
-              }}
-              placeholder="Search in conversation…"
-              className="min-w-0 flex-1 bg-transparent text-sm text-text placeholder:text-muted focus:outline-none"
-            />
-            {searchQuery && (
+      <div className="relative flex min-h-0 flex-col overflow-hidden">
+        {showSearch && (
+          <div className="shrink-0 border-b border-border bg-surface px-3 py-2">
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 shrink-0 text-muted" />
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setShowSearch(false);
+                    setSearchQuery("");
+                  }
+                }}
+                placeholder="Search in conversation…"
+                className="min-w-0 flex-1 bg-transparent text-sm text-text placeholder:text-muted focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchQuery(""); }}
+                  className="text-muted hover:text-text"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => { setSearchQuery(""); }}
+                onClick={() => { setShowSearch(false); setSearchQuery(""); }}
                 className="text-muted hover:text-text"
+                aria-label="Close search"
               >
                 <X className="h-4 w-4" />
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => { setShowSearch(false); setSearchQuery(""); }}
-              className="text-muted hover:text-text"
-              aria-label="Close search"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          {searchResults && searchResults.data.length > 0 && (
-            <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-border bg-bg">
-              {searchResults.data.map((msg) => (
-                <button
-                  key={msg.id}
-                  type="button"
-                  onClick={() => {
-                    handleJumpToMessage(msg.id);
-                    setShowSearch(false);
-                    setSearchQuery("");
-                  }}
-                  className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-primary-soft/40"
-                >
-                  <span className="shrink-0 text-[10px] text-muted">
-                    {msg.sent_at ? formatInboxTime(msg.sent_at, workspace?.timezone) : ""}
-                  </span>
-                  <span className="min-w-0 truncate text-text">{msg.body ?? `[${msg.message_type}]`}</span>
-                </button>
-              ))}
             </div>
-          )}
-          {searchQuery.trim() && searchResults && searchResults.data.length === 0 && (
-            <p className="mt-2 text-center text-xs text-muted">No messages found.</p>
-          )}
-        </div>
-      )}
-
-      <div className="relative min-h-0 overflow-hidden">
+            {searchResults && searchResults.data.length > 0 && (
+              <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-border bg-bg">
+                {searchResults.data.map((msg) => (
+                  <button
+                    key={msg.id}
+                    type="button"
+                    onClick={() => {
+                      handleJumpToMessage(msg.id);
+                      setShowSearch(false);
+                      setSearchQuery("");
+                    }}
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-primary-soft/40"
+                  >
+                    <span className="shrink-0 text-[10px] text-muted">
+                      {msg.sent_at ? formatInboxTime(msg.sent_at, workspace?.timezone) : ""}
+                    </span>
+                    <span className="min-w-0 truncate text-text">{msg.body ?? `[${msg.message_type}]`}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {searchQuery.trim() && searchResults && searchResults.data.length === 0 && (
+              <p className="mt-2 text-center text-xs text-muted">No messages found.</p>
+            )}
+          </div>
+        )}
         <section
           ref={scrollRef}
           onScroll={handleScroll}

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BusinessHoursController;
+use App\Http\Controllers\Api\V1\CalendarEventController;
 use App\Http\Controllers\Api\V1\ContactController;
 use App\Http\Controllers\Api\V1\ConversationController;
 use App\Http\Controllers\Api\V1\DashboardController;
@@ -50,6 +51,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
             Route::get('/me', [AuthController::class, 'me'])->name('me');
+            Route::patch('/me', [AuthController::class, 'updateMe'])->name('me.update');
 
             // Permission matrix (docs/07-permission-matrix.md) names this
             // "invitations.manage" — used here instead of a non-existent "users.create".
@@ -110,6 +112,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/disconnect', [WhatsappController::class, 'disconnect'])->name('disconnect');
             Route::post('/logout', [WhatsappController::class, 'logout'])->name('logout');
             Route::post('/reconnect', [WhatsappController::class, 'reconnect'])->name('reconnect');
+            Route::post('/reset-data', [WhatsappController::class, 'resetData'])->name('reset-data');
             Route::get('/connection-history', [WhatsappController::class, 'connectionHistory'])->name('connection-history');
         });
 
@@ -123,6 +126,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::prefix('conversations')->name('conversations.')->group(function () {
             Route::get('/', [ConversationController::class, 'index'])
                 ->middleware('permission:conversations.view')->name('index');
+            Route::post('/', [ConversationController::class, 'store'])
+                ->middleware('permission:conversations.reply')->name('store');
             Route::get('/{conversation}', [ConversationController::class, 'show'])
                 ->middleware('permission:conversations.view')->name('show');
             Route::get('/{conversation}/messages', [ConversationController::class, 'messages'])
@@ -175,6 +180,18 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:conversations.view')->name('messages.reaction.remove');
             Route::delete('/{conversation}/messages/{message}/revoke', [ConversationController::class, 'revokeMessage'])
                 ->middleware('permission:conversations.reply')->name('messages.revoke');
+            Route::post('/{conversation}/messages/{message}/retry', [ConversationController::class, 'retryMessage'])
+                ->middleware('permission:conversations.reply')->name('messages.retry');
+            Route::delete('/{conversation}/messages', [ConversationController::class, 'clearMessages'])
+                ->middleware('permission:conversations.close')->name('messages.clear');
+            Route::delete('/{conversation}', [ConversationController::class, 'deleteConversation'])
+                ->middleware('permission:conversations.close')->name('destroy');
+            Route::patch('/{conversation}/block', [ConversationController::class, 'block'])
+                ->middleware('permission:conversations.close')->name('block');
+            Route::patch('/{conversation}/unblock', [ConversationController::class, 'unblock'])
+                ->middleware('permission:conversations.close')->name('unblock');
+            Route::patch('/{conversation}/report', [ConversationController::class, 'report'])
+                ->middleware('permission:conversations.close')->name('report');
             Route::post('/{conversation}/labels/{label}', [ConversationController::class, 'attachLabel'])
                 ->middleware('permission:conversations.reply')->name('labels.attach');
             Route::delete('/{conversation}/labels/{label}', [ConversationController::class, 'detachLabel'])
@@ -277,6 +294,13 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/', [InternalNoteController::class, 'store'])->name('store');
             Route::patch('/{internalNote}', [InternalNoteController::class, 'update'])->name('update');
             Route::delete('/{internalNote}', [InternalNoteController::class, 'destroy'])->name('destroy');
+        });
+
+        Route::prefix('calendar-events')->name('calendar-events.')->group(function () {
+            Route::get('/', [CalendarEventController::class, 'index'])->name('index');
+            Route::post('/', [CalendarEventController::class, 'store'])->name('store');
+            Route::patch('/{calendarEvent}', [CalendarEventController::class, 'update'])->name('update');
+            Route::delete('/{calendarEvent}', [CalendarEventController::class, 'destroy'])->name('destroy');
         });
 
         Route::prefix('labels')->name('labels.')->group(function () {

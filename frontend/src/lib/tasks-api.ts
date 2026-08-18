@@ -54,6 +54,8 @@ export interface TaskFilters {
   completed?: boolean;
   status?: TaskStatus;
   priority?: TaskPriority;
+  /** Due on a specific day (YYYY-MM-DD). */
+  due_date?: string;
   contact_id?: number;
   lead_id?: number;
   deal_id?: number;

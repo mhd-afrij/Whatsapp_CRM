@@ -7,12 +7,14 @@ import { ArrowLeft } from "lucide-react";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { ContactForm } from "@/components/contacts/contact-form";
 import { useCreateContact } from "@/hooks/use-contacts";
+import { useCreateConversation } from "@/hooks/use-conversations";
 import { ApiError } from "@/lib/api-client";
 import type { ContactFormValues } from "@/lib/contacts-api";
 
 function NewContactContent() {
   const router = useRouter();
   const createMutation = useCreateContact();
+  const createConversationMutation = useCreateConversation();
   const [error, setError] = useState<string | null>(null);
   const [duplicateNotice, setDuplicateNotice] = useState<string | null>(null);
 
@@ -27,8 +29,16 @@ function NewContactContent() {
             result.duplicate_of.full_name ? `, ${result.duplicate_of.full_name}` : ""
           }). Both contacts were kept — merge manually if needed.`
         );
+        router.push(`/contacts/${result.contact.id}`);
+        return;
       }
-      router.push(`/contacts/${result.contact.id}`);
+
+      try {
+        const conversation = await createConversationMutation.mutateAsync(result.contact.id);
+        router.push(`/inbox/${conversation.id}`);
+      } catch (conversationErr) {
+        router.push(`/contacts/${result.contact.id}`);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Unable to create contact.");
     }
