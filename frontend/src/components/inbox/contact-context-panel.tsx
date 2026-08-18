@@ -15,6 +15,7 @@ import { useWhatsappStatus } from "@/hooks/use-whatsapp-connection";
 import { LabelPicker } from "@/components/labels/label-picker";
 import { Avatar } from "@/components/ui/avatar";
 import { ApiError } from "@/lib/api-client";
+import { ChatOverviewPanel } from "@/components/contacts/chat-overview-panel";
 
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -46,6 +47,7 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
   const convertMutation = useConvertConversationToLead();
   const router = useRouter();
   const [convertError, setConvertError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"overview" | "chat" | "notes" | "tasks">("overview");
   const [activeTab, setActiveTab] = useState<"overview" | "notes" | "tasks">("overview");
   const contactId = conversation?.contact?.id ?? null;
   const { data: contact } = useContact(contactId ?? 0);
@@ -97,6 +99,7 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
       <div className="min-h-0 overflow-y-auto overflow-x-hidden p-3">
         <div className="space-y-3">
           <div className="flex gap-2 rounded-2xl border border-border bg-bg p-1 text-xs">
+            {(["overview", "chat", "notes", "tasks"] as const).map((tab) => (
             {(["overview", "notes", "tasks"] as const).map((tab) => (
               <button
                 key={tab}
@@ -202,6 +205,68 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
                 >
                   {convertMutation.isPending ? "Converting..." : "Convert to lead"}
                 </button>
+              )}
+
+              {conversation.status === "closed" ? (
+                canReopen && (
+                  <button
+                    type="button"
+                    onClick={() => reopen.mutate()}
+                    disabled={reopen.isPending}
+                    className="rounded-full border border-border bg-bg px-3 py-1.5 text-xs font-medium text-text hover:bg-primary-soft/40 disabled:opacity-50"
+                  >
+                    Reopen conversation
+                  </button>
+                )
+              ) : (
+                canClose && (
+                  <button
+                    type="button"
+                    onClick={() => close.mutate()}
+                    disabled={close.isPending}
+                    className="rounded-full border border-danger bg-danger/10 px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger/20 disabled:opacity-50"
+                  >
+                    Close conversation
+                  </button>
+                )
+              )}
+            </div>
+            {convertError && <p className="mt-2 text-xs text-danger">{convertError}</p>}
+          </SectionCard>
+            </>
+          )}
+
+          {activeTab === "chat" && (
+            <ChatOverviewPanel conversationId={conversationId} showOpenLink={false} compact />
+          )}
+
+          {activeTab === "notes" && (
+            <SectionCard title="Notes">
+              <div className="space-y-2">
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const form = event.currentTarget;
+                    const input = form.elements.namedItem("note") as HTMLTextAreaElement | null;
+                    const body = input?.value.trim();
+                    if (!body) return;
+                    createNote.mutate({ conversation_id: conversationId, body });
+                    if (input) input.value = "";
+                  }}
+                  className="space-y-2"
+                >
+                  <textarea
+                    name="note"
+                    placeholder="Add an internal note"
+                    className="min-h-24 w-full rounded-2xl border border-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <button
+                    type="submit"
+                    disabled={createNote.isPending}
+                    className="rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    Add note
+                  </button>
               )}
 
               {conversation.status === "closed" ? (

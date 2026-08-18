@@ -127,6 +127,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:conversations.view')->name('show');
             Route::get('/{conversation}/messages', [ConversationController::class, 'messages'])
                 ->middleware('permission:conversations.view')->name('messages.index');
+            Route::get('/{conversation}/messages/search', [ConversationController::class, 'searchMessages'])
+                ->middleware('permission:conversations.view')->name('messages.search');
             Route::post('/{conversation}/messages', [ConversationController::class, 'storeMessage'])
                 ->middleware('permission:conversations.reply')->name('messages.store');
             Route::patch('/{conversation}/assign', [ConversationController::class, 'assign'])
@@ -161,6 +163,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:conversations.view')->name('assignment-history');
             Route::get('/{conversation}/messages/{message}/media/{media}/url', [MediaController::class, 'url'])
                 ->middleware('permission:conversations.view')->name('messages.media.url');
+            Route::get('/{conversation}/messages/{message}/status-events', [ConversationController::class, 'messageStatusEvents'])
+                ->middleware('permission:conversations.view')->name('messages.status-events');
+            Route::get('/{conversation}/messages/{message}/reactions', [ConversationController::class, 'messageReactions'])
+                ->middleware('permission:conversations.view')->name('messages.reactions');
             Route::post('/{conversation}/media', [MediaController::class, 'store'])
                 ->middleware('permission:conversations.reply')->name('media.store');
             Route::post('/{conversation}/messages/{message}/reaction', [ConversationController::class, 'addReaction'])

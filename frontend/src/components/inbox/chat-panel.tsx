@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import Link from "next/link";
 import {
   ArrowLeft,
+  Ban,
   Check,
   CheckCheck,
   ChevronDown,
@@ -12,11 +13,19 @@ import {
   CornerUpLeft,
   Archive,
   FileText,
+  Flag,
   Info,
   Lock,
   MoreVertical,
+  Music,
   Paperclip,
   Pin,
+  Search,
+  Send,
+  Smile,
+  Sparkles,
+  Trash2,
+  Video,
   Send,
   Sparkles,
   Volume2,
@@ -34,12 +43,18 @@ import {
   useTypingIndicator,
   messagesKey,
 } from "@/hooks/use-conversations";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCreateNote } from "@/hooks/use-notes";
 import { useComposerDraft } from "@/hooks/use-composer-draft";
 import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
 import { ApiError } from "@/lib/api-client";
 import type { ConversationPriority, Message, OutboundMessageType } from "@/lib/conversations-api";
+import { uploadMessageMedia, addReaction, removeReaction, revokeMessage, fetchMediaUrl } from "@/lib/conversations-api";
+import { useAuth } from "@/context/auth-context";
+import { MediaPreview } from "./media-preview";
+import { MessageReactions } from "./message-reactions";
+import { EmojiPicker } from "./emoji-picker";
 import { uploadMessageMedia, addReaction, removeReaction, revokeMessage } from "@/lib/conversations-api";
 import { useAuth } from "@/context/auth-context";
 import { MediaPreview } from "./media-preview";
@@ -50,6 +65,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/providers/toast-provider";
 import { PRIORITY_OPTIONS } from "@/components/inbox/priority-selector";
 import { formatInboxDateSeparator, formatInboxTime, isSameInboxDay } from "@/lib/time-format";
+import { useMessageSearch } from "@/hooks/use-message-search";
 
 const NEAR_BOTTOM_THRESHOLD_PX = 80;
 const NEAR_TOP_THRESHOLD_PX = 80;
@@ -108,6 +124,61 @@ function contactSubtitle(conversation: ReturnType<typeof useConversation>["data"
         ? "last seen recently"
         : conversation.status;
   return [number, status].filter(Boolean).join(" | ");
+}
+
+function mediaTypeLabel(mime: string): string {
+  if (mime.startsWith("image/")) return "Photo";
+  if (mime.startsWith("video/")) return "Video";
+  if (mime.startsWith("audio/")) return "Audio";
+  return "Document";
+}
+
+/** Compact 36px thumbnail for the reply quote bar — reuses the same signed-URL
+ *  query ("media-url") as MediaPreview, so already-loaded media is instant. */
+function ReplyMediaThumb({
+  conversationId,
+  message,
+}: {
+  conversationId: number;
+  message: Message;
+}) {
+  const media = message.media;
+  const isImage = Boolean(media?.mime_type.startsWith("image/"));
+  const { data } = useQuery({
+    queryKey: ["media-url", conversationId, message.id, media?.id],
+    queryFn: () =>
+      media ? fetchMediaUrl(conversationId, message.id, media.id) : Promise.resolve(null),
+    enabled: isImage,
+    staleTime: 60_000,
+  });
+
+  if (!media) return null;
+
+  const isVideo = media.mime_type.startsWith("video/");
+  const isAudio = media.mime_type.startsWith("audio/");
+
+  if (isImage && data?.kind === "signed_url" && data.url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL
+      <img
+        src={data.url}
+        alt=""
+        className="h-9 w-9 shrink-0 rounded-lg border border-border object-cover"
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface">
+      {isVideo ? (
+        <Video className="h-4 w-4 text-muted" />
+      ) : isAudio ? (
+        <Music className="h-4 w-4 text-muted" />
+      ) : (
+        <FileText className="h-4 w-4 text-muted" />
+      )}
+    </div>
+  );
 }
 
 function StatusTick({ status }: { status: Message["status"] }) {
@@ -231,11 +302,155 @@ function MessageActionsMenu({
   );
 }
 
+function MessageContextMenu({
+  message,
+  conversationId,
+  onReply,
+  onCopy,
+  onStarToggle,
+  onRetry,
+  onRevoke,
+}: {
+  message: Message;
+  conversationId: number;
+  onReply: (message: Message) => void;
+  onCopy: (text: string) => void;
+  onStarToggle: (messageId: number) => void;
+  onRetry: (messageId: number) => void;
+  onRevoke: (messageId: number) => void;
+}) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [x, setX] = useState(0);
+  const [y, setY] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickaway = (e: MouseEvent) => {
+      if (e.target instanceof Node && !(e.target as HTMLElement).closest(".message-context-menu")) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickaway);
+    return () => document.removeEventListener("mousedown", handleClickaway);
+  }, [open]);
+
+  const handleReply = () => {
+    onReply(message);
+    setOpen(false);
+  };
+
+  const handleCopy = () => {
+    const text = message.body?.trim() || `[${message.message_type}]`;
+    onCopy(text);
+    setOpen(false);
+  };
+
+  const canRevoke =
+    message.direction === "outbound" &&
+    message.sender_type === "user" &&
+    message.sender?.id === user?.id;
+
+  const canRetry =
+    message.direction === "outbound" &&
+    message.sender_type === "user" &&
+    message.sender?.id === user?.id &&
+    message.status === "failed";
+
+  return (
+    <div
+      className={`absolute pointer-events-none transform transition-opacity opacity-0 rounded-xl border border-border bg-surface py-1 shadow-lg z-40 ${
+        open ? "pointer-events-auto opacity-100" : ""
+      }`}
+      style={{ left: `${x}px`, top: `${y}px` }}
+      onClick={(e) => {
+        // Click outside closes menu
+        setOpen(false);
+      }}
+    >
+      <div
+        className="rounded-xl border border-border bg-surface py-1 shadow-lg w-max max-w-xs"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={handleReply}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+        >
+          <CornerUpLeft className="h-3.5 w-3.5 text-muted" />
+          Reply
+        </button>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg mt-2"
+        >
+          <Copy className="h-3.5 w-3.5 text-muted" />
+          Copy text
+        </button>
+        {canRetry && (
+          <button
+            type="button"
+            onClick={() => {
+              onRetry(message.id);
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-primary hover:bg-primary/10"
+          >
+            <Clock className="h-3.5 w-3.5 text-muted" />
+            Retry
+          </button>
+        )}
+        {!canRetry && (
+          <button
+            type="button"
+            onClick={() => {
+              onStarToggle(message.id);
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-muted" />
+            {message.starred_at ? "Unstar" : "Star"}
+          </button>
+        )}
+        {canRevoke && (
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("Revoke this message for everyone?")) {
+                onRevoke(message.id);
+              }
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-danger/10 mt-2"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            Revoke message
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MessageBubble({
   message,
   conversationId,
   allMessages,
   timeZone,
+  isReplyingTo,
   onReply,
   onJumpToMessage,
   onReact,
@@ -245,6 +460,7 @@ function MessageBubble({
   conversationId: number;
   allMessages: Message[];
   timeZone?: string | null;
+  isReplyingTo?: boolean;
   onReply: (message: Message) => void;
   onJumpToMessage: (messageId: number) => void;
   onReact: (messageId: number, emoji: string, remove: boolean) => void;
@@ -257,12 +473,22 @@ function MessageBubble({
     : null;
 
   return (
+    <div
+      id={`message-${message.id}`}
+      className={cn("group relative flex min-w-0", isOutbound ? "justify-end" : "justify-start")}
+    >
     <div id={`message-${message.id}`} className={cn("group relative flex min-w-0", isOutbound ? "justify-end" : "justify-start")}>
       <div
         className={cn(
           "w-fit min-w-[72px] max-w-[84%] rounded-2xl px-3 py-2 text-sm shadow-sm md:max-w-[68%] lg:max-w-[560px]",
           isOutbound
             ? "rounded-tr-sm bg-primary text-white"
+            : "rounded-tl-sm border border-border bg-surface text-text",
+          isReplyingTo
+            ? isOutbound
+              ? "ring-2 ring-primary-dark/70"
+              : "ring-2 ring-primary/50"
+            : undefined
             : "rounded-tl-sm border border-border bg-surface text-text"
         )}
       >
@@ -325,6 +551,7 @@ function ActionMenu({
   isPinned,
   isMuted,
   isStarred,
+  isBlocked,
   canClose,
   canReopen,
   canChangePriority,
@@ -339,6 +566,11 @@ function ActionMenu({
   onClose,
   onReopen,
   onPriorityChange,
+  onClear,
+  onDelete,
+  onBlock,
+  onUnblock,
+  onReport,
 }: {
   status: string;
   priority: ConversationPriority;
@@ -346,6 +578,7 @@ function ActionMenu({
   isPinned: boolean;
   isMuted: boolean;
   isStarred: boolean;
+  isBlocked: boolean;
   canClose: boolean;
   canReopen: boolean;
   canChangePriority: boolean;
@@ -360,8 +593,15 @@ function ActionMenu({
   onClose: () => void;
   onReopen: () => void;
   onPriorityChange: (priority: ConversationPriority) => void;
+  onClear: () => void;
+  onDelete: () => void;
+  onBlock: () => void;
+  onUnblock: () => void;
+  onReport: (reason?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<"clear" | "delete" | "block" | "report" | null>(null);
+  const [reportReason, setReportReason] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -375,8 +615,76 @@ function ActionMenu({
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
+  const ConfirmDialog = () => {
+    if (!confirmAction) return null;
+
+    const configs = {
+      clear: {
+        title: "Clear all messages?",
+        message: "This will permanently delete all messages in this conversation. This action cannot be undone.",
+        confirmLabel: "Clear",
+        onConfirm: () => { onClear(); setConfirmAction(null); setOpen(false); },
+      },
+      delete: {
+        title: "Delete conversation?",
+        message: "This will permanently delete this conversation and all its messages. This action cannot be undone.",
+        confirmLabel: "Delete",
+        onConfirm: () => { onDelete(); setConfirmAction(null); setOpen(false); },
+      },
+      block: {
+        title: "Block this contact?",
+        message: "You will no longer receive messages from this contact. You can unblock them later.",
+        confirmLabel: "Block",
+        onConfirm: () => { onBlock(); setConfirmAction(null); setOpen(false); },
+      },
+      report: {
+        title: "Report this conversation?",
+        message: "Flag this conversation for review by an administrator.",
+        confirmLabel: "Report",
+        onConfirm: () => { onReport(reportReason || undefined); setConfirmAction(null); setReportReason(""); setOpen(false); },
+      },
+    };
+    const config = configs[confirmAction];
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/50" onClick={() => { setConfirmAction(null); setReportReason(""); }} />
+        <div className="relative mx-4 w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-xl">
+          <h3 className="text-base font-semibold text-text">{config.title}</h3>
+          <p className="mt-2 text-sm text-muted">{config.message}</p>
+          {confirmAction === "report" && (
+            <textarea
+              value={reportReason}
+              onChange={(e) => setReportReason(e.target.value)}
+              placeholder="Optional: describe the reason"
+              className="mt-3 w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+              rows={3}
+            />
+          )}
+          <div className="mt-4 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => { setConfirmAction(null); setReportReason(""); }}
+              className="rounded-xl border border-border bg-bg px-3 py-1.5 text-sm text-text hover:bg-surface"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={config.onConfirm}
+              className="rounded-xl bg-danger px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-dark"
+            >
+              {config.confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div ref={ref} className="relative">
+      <ConfirmDialog />
       <button
         type="button"
         aria-label="Conversation actions"
@@ -387,6 +695,7 @@ function ActionMenu({
       </button>
 
       {open && (
+        <div className="absolute right-0 top-full z-30 mt-2 w-52 overflow-hidden rounded-2xl border border-border bg-surface py-1 shadow-lg">
         <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-border bg-surface py-1 shadow-lg">
           {canChangePriority && (
             <>
@@ -456,6 +765,47 @@ function ActionMenu({
             {isArchived ? "Unarchive" : "Archive"}
           </button>
 
+          <div className="my-1 border-t border-border" />
+
+          {isBlocked ? (
+            <button
+              type="button"
+              onClick={() => { onUnblock(); setOpen(false); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            >
+              <Ban className="h-4 w-4 text-muted" />
+              Unblock contact
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmAction("block")}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            >
+              <Ban className="h-4 w-4 text-muted" />
+              Block contact
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setConfirmAction("report")}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+          >
+            <Flag className="h-4 w-4 text-muted" />
+            Report
+          </button>
+
+          <div className="my-1 border-t border-border" />
+
+          <button
+            type="button"
+            onClick={() => setConfirmAction("clear")}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-warning hover:bg-warning/10"
+          >
+            <Trash2 className="h-4 w-4" />
+            Clear all messages
+          </button>
+
           {status === "closed" ? (
             canReopen && (
               <button
@@ -483,6 +833,16 @@ function ActionMenu({
               </button>
             )
           )}
+
+          <div className="my-1 border-t border-border" />
+          <button
+            type="button"
+            onClick={() => setConfirmAction("delete")}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete conversation
+          </button>
         </div>
       )}
     </div>
@@ -491,6 +851,7 @@ function ActionMenu({
 
 function Composer({
   conversationId,
+  contactName,
   replyTo,
   onClearReply,
   isClosed,
@@ -498,6 +859,7 @@ function Composer({
   onReopen,
 }: {
   conversationId: number;
+  contactName: string;
   replyTo: Message | null;
   onClearReply: () => void;
   isClosed: boolean;
@@ -515,6 +877,7 @@ function Composer({
   const [attachment, setAttachment] = useState<{ file: File; previewUrl: string | null } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sendMutation = useSendMessage(conversationId);
@@ -537,6 +900,14 @@ function Composer({
       return null;
     });
   }, []);
+
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    const nextHeight = Math.min(Math.max(el.scrollHeight, COMPOSER_MIN_HEIGHT_PX), COMPOSER_MAX_HEIGHT_PX);
+    el.style.height = `${nextHeight}px`;
+  }, [body, mode]);
 
   const handleTemplateSelect = (content: string) => {
     setBody(content);
@@ -667,6 +1038,36 @@ function Composer({
       )}
 
       {!isNoteMode && replyTo && (
+        <div
+          key={replyTo.id}
+          className="mb-2 flex items-stretch overflow-hidden rounded-2xl border border-border bg-bg shadow-sm animate-in slide-in-from-bottom-1 fade-in duration-150"
+        >
+          <div
+            className={cn(
+              "w-1 shrink-0",
+              replyTo.direction === "outbound" ? "bg-primary" : "bg-muted"
+            )}
+          />
+          <div className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2">
+            <ReplyMediaThumb conversationId={conversationId} message={replyTo} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-primary">
+                {replyTo.direction === "outbound" ? "You" : contactName}
+              </p>
+              <p className="truncate text-xs text-muted">
+                {replyTo.body ??
+                  (replyTo.media ? mediaTypeLabel(replyTo.media.mime_type) : `[${replyTo.message_type}]`)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClearReply}
+              aria-label="Cancel reply"
+              className="shrink-0 rounded-full p-1.5 text-muted transition-colors hover:bg-border/60 hover:text-text"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         <div className="mb-2 flex items-center justify-between gap-2 rounded-2xl border border-border bg-bg px-3 py-2 text-xs text-text">
           <span className="truncate">
             <span className="font-medium">Replying to:</span> {replyTo.body ?? `[${replyTo.message_type}]`}
@@ -713,6 +1114,9 @@ function Composer({
         className={cn(
           "grid items-end gap-2",
           canReply && canCreateNote
+            ? "grid-cols-[auto_auto_auto_minmax(0,1fr)_42px]"
+            : canReply
+              ? "grid-cols-[auto_auto_minmax(0,1fr)_42px]"
             ? "grid-cols-[auto_auto_minmax(0,1fr)_42px]"
             : canReply
               ? "grid-cols-[auto_minmax(0,1fr)_42px]"
@@ -734,6 +1138,31 @@ function Composer({
         )}
 
         {canReply && (
+          <>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isNoteMode || isUploading}
+              aria-label="Attach media"
+              className={cn(
+                "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
+                attachment && "text-primary"
+              )}
+            >
+              <Paperclip className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker((c) => !c)}
+              aria-label="Open emoji picker"
+              className={cn(
+                "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+              )}
+              disabled={isNoteMode || isUploading}
+            >
+              <Smile className="h-5 w-5" />
+            </button>
+</>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -752,6 +1181,16 @@ function Composer({
           {!isNoteMode && showTemplatePicker && (
             <TemplatePicker onSelect={handleTemplateSelect} onClose={() => setShowTemplatePicker(false)} />
           )}
+          <EmojiPicker
+            isOpen={showEmojiPicker}
+            onSelect={(emoji) => {
+              setBody(body + emoji);
+              setShowEmojiPicker(false);
+            }}
+            onClose={() => setShowEmojiPicker(false)}
+          />
+        </div>
+        <textarea
           <textarea
             ref={textareaRef}
             value={body}
@@ -800,6 +1239,7 @@ export function ChatPanel({
   const { data: messagesPage, isLoading } = useMessages(conversationId);
   const { data: workspace } = useWorkspaceSettings();
   const loadOlder = useLoadOlderMessages(conversationId);
+  const { close, reopen, markRead, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar, clearMessages, deleteConv, block, unblock, report } =
   const { close, reopen, markRead, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar } =
     useConversationActions(conversationId);
   const { isContactTyping, typingName } = useTypingIndicator(conversationId);
@@ -810,6 +1250,9 @@ export function ChatPanel({
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [isAtTop, setIsAtTop] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const { data: searchResults } = useMessageSearch(conversationId, searchQuery);
   const scrollRef = useRef<HTMLDivElement>(null);
   const readMarker = useRef<number | null>(null);
   const [trackedConversationId, setTrackedConversationId] = useState<number | null>(null);
@@ -926,6 +1369,9 @@ export function ChatPanel({
         <div className="flex h-16 items-center border-b border-border px-3">
           <div className="h-4 w-28 rounded bg-border/60" />
         </div>
+        <div className="message-list-bg space-y-3 overflow-hidden p-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div key={index} className="h-10 w-2/3 animate-pulse rounded-2xl bg-border/60" />
         <div className="space-y-3 overflow-hidden p-4">
           {Array.from({ length: 8 }).map((_, index) => (
             <div key={index} className="h-10 w-2/3 animate-pulse rounded-2xl bg-bg" />
@@ -957,6 +1403,14 @@ export function ChatPanel({
         </div>
 
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setShowSearch((v) => !v)}
+            className="rounded-full p-2 text-muted hover:bg-bg hover:text-text"
+            aria-label="Search messages"
+          >
+            <Search className="h-5 w-5" />
+          </button>
           {onOpenContactInfo && (
             <button
               type="button"
@@ -974,6 +1428,7 @@ export function ChatPanel({
             isPinned={Boolean(conversation?.pinned_at)}
             isMuted={Boolean(conversation?.muted_until && new Date(conversation.muted_until) > new Date())}
             isStarred={Boolean(conversation?.starred_at)}
+            isBlocked={Boolean(conversation?.blocked_at)}
             canClose={canClose}
             canReopen={canReopen}
             canChangePriority={canChangePriority}
@@ -988,14 +1443,82 @@ export function ChatPanel({
             onClose={() => close.mutate()}
             onReopen={() => reopen.mutate()}
             onPriorityChange={(priority) => changePriority.mutate(priority)}
+            onClear={() => clearMessages.mutate()}
+            onDelete={() => deleteConv.mutate()}
+            onBlock={() => block.mutate()}
+            onUnblock={() => unblock.mutate()}
+            onReport={(reason) => report.mutate(reason)}
           />
         </div>
       </header>
+
+      {showSearch && (
+        <div className="border-b border-border bg-surface px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Search className="h-4 w-4 shrink-0 text-muted" />
+            <input
+              autoFocus
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setShowSearch(false);
+                  setSearchQuery("");
+                }
+              }}
+              placeholder="Search in conversation…"
+              className="min-w-0 flex-1 bg-transparent text-sm text-text placeholder:text-muted focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => { setSearchQuery(""); }}
+                className="text-muted hover:text-text"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { setShowSearch(false); setSearchQuery(""); }}
+              className="text-muted hover:text-text"
+              aria-label="Close search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {searchResults && searchResults.data.length > 0 && (
+            <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-border bg-bg">
+              {searchResults.data.map((msg) => (
+                <button
+                  key={msg.id}
+                  type="button"
+                  onClick={() => {
+                    handleJumpToMessage(msg.id);
+                    setShowSearch(false);
+                    setSearchQuery("");
+                  }}
+                  className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-primary-soft/40"
+                >
+                  <span className="shrink-0 text-[10px] text-muted">
+                    {msg.sent_at ? formatInboxTime(msg.sent_at, workspace?.timezone) : ""}
+                  </span>
+                  <span className="min-w-0 truncate text-text">{msg.body ?? `[${msg.message_type}]`}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {searchQuery.trim() && searchResults && searchResults.data.length === 0 && (
+            <p className="mt-2 text-center text-xs text-muted">No messages found.</p>
+          )}
+        </div>
+      )}
 
       <div className="relative min-h-0 overflow-hidden">
         <section
           ref={scrollRef}
           onScroll={handleScroll}
+          className="message-list-bg h-full min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4"
           className="h-full min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4"
         >
           {isAtTop && hasOlderMessages && (
@@ -1052,6 +1575,7 @@ export function ChatPanel({
                     conversationId={conversationId}
                     allMessages={messages}
                     timeZone={workspace?.timezone}
+                    isReplyingTo={replyTo?.id === message.id}
                     onReply={(item) => setReplyTo(item)}
                     onJumpToMessage={handleJumpToMessage}
                     onReact={handleReact}
@@ -1082,6 +1606,7 @@ export function ChatPanel({
 
       <Composer
         conversationId={conversationId}
+        contactName={contactLabel(conversation)}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
         isClosed={conversation?.status === "closed"}

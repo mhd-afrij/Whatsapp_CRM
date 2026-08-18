@@ -40,6 +40,8 @@ export interface MessageRow extends RowDataPacket {
   message_type: MessageType;
   body: string | null;
   status: MessageStatus;
+  delivered_at: string | null;
+  read_at: string | null;
 }
 
 /** Thrown by getMysqlPool() query paths on a unique-key violation (ER_DUP_ENTRY). */
@@ -74,6 +76,22 @@ export class MessageRepository {
       [workspaceId, waJid, pushName, phoneNumber],
     );
     return { id: result.insertId };
+  }
+
+  /**
+   * Persists the saved (address-book) display name for a contact from Baileys'
+   * `contacts.upsert` events into `whatsapp_contacts.contact_name`, upserting by
+   * the (workspace_id, wa_jid) unique key. The saved name is the one the user
+   * gave the number in their phone book - preferred over the push/profile name.
+   */
+  async upsertContactName(workspaceId: number, waJid: string, contactName: string): Promise<void> {
+    const phoneNumber = waJid.split('@')[0] ?? null;
+    await execute(
+      `INSERT INTO whatsapp_contacts (workspace_id, wa_jid, contact_name, phone_number, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE contact_name = VALUES(contact_name), updated_at = NOW()`,
+      [workspaceId, waJid, contactName, phoneNumber],
+    );
   }
 
   /** Resolves the conversation for a whatsapp_contact, creating it (gateway-owned columns only) if absent. */
@@ -147,7 +165,12 @@ export class MessageRepository {
     });
   }
 
-  /** Persists an outbound (agent-sent) message row after a successful Baileys send. */
+  /**
+   * Persists an outbound (agent-sent) message row. Defaults to `sent` (the
+   * original post-send path) but the send worker now inserts with `queued`
+   * BEFORE the Baileys send, so a message against a flaky session is still
+   * saved and visible; the row is later flipped to `sent`/`failed`.
+   */
   async insertOutboundMessage(
     workspaceId: number,
     conversationId: number,
@@ -156,6 +179,7 @@ export class MessageRepository {
       body: string | null;
       messageType?: string;
       repliedToWhatsappMessageId?: string | null;
+      status?: MessageStatus;
     },
   ): Promise<{ messageId: number } | null> {
     return transaction(async (conn: PoolConnection) => {
@@ -169,10 +193,21 @@ export class MessageRepository {
       }
 
       const messageType = params.messageType ?? 'text';
+      const status = params.status ?? 'sent';
       const [result] = await conn.query<ResultSetHeader>(
         `INSERT INTO messages
            (workspace_id, conversation_id, whatsapp_message_id, direction, sender_type,
             message_type, body, status, replied_to_message_id, sent_at, created_at, updated_at)
+        VALUES (?, ?, ?, 'outbound', 'user', ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+        [
+          workspaceId,
+          conversationId,
+          params.whatsappMessageId,
+          messageType,
+          params.body,
+          status,
+          repliedToId,
+        ],
         VALUES (?, ?, ?, 'outbound', 'user', ?, ?, 'sent', ?, NOW(), NOW(), NOW())`,
         [workspaceId, conversationId, params.whatsappMessageId, messageType, params.body, repliedToId],
       );
@@ -187,6 +222,14 @@ export class MessageRepository {
 
       return { messageId: result.insertId };
     });
+  }
+
+  /** Swaps the deterministic `queued:{dispatchId}` placeholder for the real Baileys message id once the send completes. */
+  async setOutboundWhatsappId(messageId: number, whatsappMessageId: string): Promise<void> {
+    await execute('UPDATE messages SET whatsapp_message_id = ?, updated_at = NOW() WHERE id = ?', [
+      whatsappMessageId,
+      messageId,
+    ]);
   }
 
   async insertMessageMedia(
@@ -217,6 +260,31 @@ export class MessageRepository {
     );
   }
 
+  /**
+   * Moves a message forward in the status lifecycle, stamping delivered_at/
+   * read_at the first time the corresponding receipt is observed. The
+   * `occurredAt` (defaults to DB NOW()) is stored as-is on the receipt columns
+   * so the socket emit and the DB agree on the exact transition time.
+   */
+  async updateMessageStatus(
+    messageId: number,
+    status: MessageStatus,
+    occurredAt: Date | null = null,
+  ): Promise<void> {
+    await execute(
+      `UPDATE messages
+       SET status = ?,
+           delivered_at = COALESCE(delivered_at, ?),
+           read_at = COALESCE(read_at, ?),
+           updated_at = NOW()
+       WHERE id = ?`,
+      [
+        status,
+        status === 'delivered' ? (occurredAt ?? new Date()) : null,
+        status === 'read' ? (occurredAt ?? new Date()) : null,
+        messageId,
+      ],
+    );
   async updateMessageStatus(messageId: number, status: MessageStatus): Promise<void> {
     await execute('UPDATE messages SET status = ?, updated_at = NOW() WHERE id = ?', [
       status,

@@ -16,6 +16,15 @@ import { cn } from "@/lib/utils";
 import { useConversationList } from "@/hooks/use-conversations";
 import { useWhatsappActions, useWhatsappStatus } from "@/hooks/use-whatsapp-connection";
 import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
+import { useConversationFilters, type TabFilter } from "@/hooks/use-conversation-filters";
+import { ErrorState } from "@/components/ui/error-state";
+import { formatWhatsAppTime } from "@/lib/time-format";
+import { ConversationItem } from "./conversation-item";
+import { ActiveFilterChips } from "./active-filter-chips";
+import { ConversationFilterPopover } from "./conversation-filter-popover";
+
+type FilterOption = {
+  key: TabFilter;
 import type { ConversationFilters } from "@/lib/conversations-api";
 import { ErrorState } from "@/components/ui/error-state";
 import { formatWhatsAppTime } from "@/lib/time-format";
@@ -26,10 +35,17 @@ type FilterKey = "all" | "unread" | "assigned" | "unassigned" | "groups" | "arch
 type FilterOption = {
   key: FilterKey;
   label: string;
-  filters: ConversationFilters;
 };
 
 const FILTERS: FilterOption[] = [
+  { key: "all", label: "All" },
+  { key: "mine", label: "Mine" },
+  { key: "unassigned", label: "Unassigned" },
+  { key: "unread", label: "Unread" },
+  { key: "waiting", label: "Waiting" },
+  { key: "sla_risk", label: "SLA Risk" },
+  { key: "sla_breach", label: "SLA Breached" },
+  { key: "archived", label: "Archived" },
   { key: "all", label: "All", filters: {} },
   { key: "unread", label: "Unread", filters: { unread: true } },
   { key: "assigned", label: "Assigned", filters: { assigned_to: "me" } },
@@ -42,6 +58,7 @@ const FILTERS: FilterOption[] = [
 export function ConversationListPanel() {
   const params = useParams<{ conversationId?: string }>();
   const router = useRouter();
+  const { tabFilter, advancedFilters, apiFilters, setTab, setAdvanced, clearAdvanced } = useConversationFilters();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -65,6 +82,7 @@ export function ConversationListPanel() {
     fetchNextPage,
     isFetchingNextPage,
   } = useConversationList({
+    ...apiFilters,
     ...filters,
     per_page: 30,
     search: debouncedSearch || undefined,
@@ -162,11 +180,16 @@ export function ConversationListPanel() {
           />
         </div>
 
+        <div className="mt-2.5 flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="mt-2.5 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {FILTERS.map((filter) => (
             <button
               key={filter.key}
               type="button"
+              onClick={() => setTab(filter.key)}
+              className={cn(
+                "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                tabFilter === filter.key
               onClick={() => setActiveFilter(filter.key)}
               className={cn(
                 "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
@@ -178,8 +201,22 @@ export function ConversationListPanel() {
               {filter.label}
             </button>
           ))}
+          <div className="ml-auto shrink-0">
+            <ConversationFilterPopover
+              filters={advancedFilters}
+              onFiltersChange={setAdvanced}
+            />
+          </div>
         </div>
       </div>
+
+      {Object.values(advancedFilters).some((v) => v !== undefined) && (
+        <ActiveFilterChips
+          filters={advancedFilters}
+          onRemove={(key) => setAdvanced({ ...advancedFilters, [key]: undefined })}
+          onClear={clearAdvanced}
+        />
+      )}
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {isLoading && (

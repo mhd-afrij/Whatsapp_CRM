@@ -13,8 +13,12 @@ import { useAuth } from "@/context/auth-context";
 import {
   archiveConversation,
   assignConversation,
+  blockConversation,
   changeConversationPriority,
+  clearConversationMessages,
   closeConversation,
+  createConversation,
+  deleteConversation,
   fetchConversation,
   fetchConversations,
   fetchMessages,
@@ -22,10 +26,12 @@ import {
   muteConversation,
   pinConversation,
   reopenConversation,
+  reportConversation,
   sendTypingIndicator,
   starConversation,
   sendMessage,
   unarchiveConversation,
+  unblockConversation,
   unmuteConversation,
   unpinConversation,
   unstarConversation,
@@ -402,6 +408,47 @@ export function useConversationActions(conversationId: number | null) {
     onSuccess: invalidate,
   });
 
+  const clearMessages = useMutation({
+    mutationFn: () => {
+      if (!conversationId) throw new Error("No conversation selected");
+      return clearConversationMessages(conversationId);
+    },
+    onSuccess: invalidate,
+  });
+
+  const deleteConv = useMutation({
+    mutationFn: () => {
+      if (!conversationId) throw new Error("No conversation selected");
+      return deleteConversation(conversationId);
+    },
+    onSuccess: invalidate,
+  });
+
+  const block = useMutation({
+    mutationFn: () => {
+      if (!conversationId) throw new Error("No conversation selected");
+      return blockConversation(conversationId);
+    },
+    onSuccess: invalidate,
+  });
+
+  const unblock = useMutation({
+    mutationFn: () => {
+      if (!conversationId) throw new Error("No conversation selected");
+      return unblockConversation(conversationId);
+    },
+    onSuccess: invalidate,
+  });
+
+  const report = useMutation({
+    mutationFn: (reason?: string) => {
+      if (!conversationId) throw new Error("No conversation selected");
+      return reportConversation(conversationId, reason);
+    },
+    onSuccess: invalidate,
+  });
+
+  return { assign, close, reopen, markRead, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar, clearMessages, deleteConv, block, unblock, report };
   return { assign, close, reopen, markRead, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar };
 }
 
@@ -556,4 +603,16 @@ export function useTypingIndicator(conversationId: number | null) {
     startTyping,
     stopTyping,
   };
+}
+
+export function useCreateConversation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (contactId: number) => createConversation(contactId),
+    onSuccess: (conversation) => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.setQueryData(conversationKey(conversation.id), conversation);
+    },
+  });
 }

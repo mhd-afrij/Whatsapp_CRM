@@ -137,7 +137,9 @@ export function emitConversationEvent(
     | 'conversation.assigned'
     | 'conversation.closed'
     | 'conversation.reopened'
-    | 'conversation.priority_changed',
+    | 'conversation.priority_changed'
+    | 'conversation.cleared'
+    | 'conversation.deleted',
   workspaceId: number,
   conversationId: number | null,
   payload: Record<string, unknown>,
@@ -227,6 +229,21 @@ export function emitPresenceUpdated(
   io.of('/gateway')
     .to(`workspace:${workspaceId}`)
     .emit('presence.updated', envelope('presence.updated', workspaceId, payload));
+}
+
+/**
+ * Broadcasts that a workspace's WhatsApp chat/contact data was cleared (a
+ * "reset" action originated via POST /internal/whatsapp/reset-data). The
+ * inbox and workspace rooms both receive it so open conversation lists /
+ * detail panels can drop their local state and refetch rather than serving
+ * now-deleted rows.
+ */
+export function emitConversationsReset(workspaceId: number, payload: Record<string, unknown>): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}:inbox`)
+    .to(`workspace:${workspaceId}`)
+    .emit('conversations.reset', envelope('conversations.reset', workspaceId, payload));
 }
 
 export function getSocketServer(): SocketIOServer | null {

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { X } from "lucide-react";
 import { ChatPanel } from "@/components/inbox/chat-panel";
 import { ContactContextPanel } from "@/components/inbox/contact-context-panel";
+import { ContactContextDrawer } from "@/components/inbox/contact-context-drawer";
 
 export default function ConversationPage() {
   const params = useParams<{ conversationId: string }>();
@@ -27,6 +28,11 @@ export default function ConversationPage() {
         <ContactContextPanel conversationId={conversationId} />
       </div>
 
+      <ContactContextDrawer
+        conversationId={conversationId}
+        open={panelOpen}
+        onOpenChange={setPanelOpen}
+      />
       {panelOpen && (
         <div
           key="overlay"

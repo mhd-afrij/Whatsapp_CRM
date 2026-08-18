@@ -80,9 +80,10 @@ export class SessionRepository {
     }> = {},
   ): Promise<void> {
     await execute(
+       `UPDATE whatsapp_sessions SET
       `UPDATE whatsapp_sessions SET
          status = ?,
-         phone_number = COALESCE(?, phone_number),
+         phone_number = ?,
          device_id = COALESCE(?, device_id),
          last_connected_at = COALESCE(?, last_connected_at),
          last_disconnected_at = COALESCE(?, last_disconnected_at),

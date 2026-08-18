@@ -144,6 +144,11 @@ describe('ConnectionManager', () => {
     expect(repository.recordConnectionEvent).toHaveBeenCalledWith(1, 1, 'logged_out', {
       statusCode: 401,
     });
+    expect(repository.updateStatus).toHaveBeenCalledWith(
+      1,
+      'logged_out',
+      expect.objectContaining({ phoneNumber: null }),
+    );
   });
 
   it('enters auth_required and clears credentials when Baileys reports badSession', async () => {
@@ -157,6 +162,11 @@ describe('ConnectionManager', () => {
     expect(repository.recordConnectionEvent).toHaveBeenCalledWith(1, 1, 'bad_session', {
       statusCode: 500,
     });
+    expect(repository.updateStatus).toHaveBeenCalledWith(
+      1,
+      'logged_out',
+      expect.objectContaining({ phoneNumber: null }),
+    );
   });
 
   it('reconnects immediately with no backoff and no retry-budget cost on restartRequired', async () => {
@@ -204,10 +214,33 @@ describe('ConnectionManager', () => {
       'reconnect_attempt',
       expect.objectContaining({ attempt: 1 }),
     );
+    expect(repository.updateStatus).toHaveBeenCalledWith(
+      1,
+      'disconnected',
+      expect.objectContaining({ phoneNumber: null }),
+    );
 
     // Backoff delay should be scheduled (base 2000ms +/- jitter); nothing has
     // fired yet before the timer elapses.
     expect(vi.getTimerCount()).toBeGreaterThan(0);
+  });
+
+  it('clears the connected phone number on manual stop, keeping credentials and chat data', async () => {
+    await fakeSocket.triggerConnectionUpdate({ connection: 'open' });
+    expect(manager.getStatus()).toBe('connected');
+
+    await manager.stop();
+
+    expect(manager.getStatus()).toBe('disconnected');
+    expect(repository.updateStatus).toHaveBeenCalledWith(
+      1,
+      'disconnected',
+      expect.objectContaining({ phoneNumber: null }),
+    );
+    expect(repository.deleteCredentials).not.toHaveBeenCalled();
+    expect(repository.recordConnectionEvent).toHaveBeenCalledWith(1, 1, 'disconnected', {
+      reason: 'manual_disconnect',
+    });
   });
 
   it('persists credentials to the database on creds.update', async () => {

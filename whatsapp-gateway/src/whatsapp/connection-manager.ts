@@ -7,6 +7,7 @@ import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { SessionRepository } from './session-repository';
 import { SessionLockRepository } from './session-lock-repository';
+import { normalizePhoneToJid } from './jid';
 import {
   createBaileysSocket,
   loadAuthState,
@@ -38,6 +39,44 @@ const BASE_BACKOFF_MS = 2_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
 const MAX_RETRIES = 10;
 
+/**
+ * Pulls the diagnostic detail Baileys attaches to a `close` update out of the
+ * Boom-wrapped error so the connection event row carries the actual reason
+ * (statusCode + message) instead of an empty `{}`. Previously every disconnect
+ * was recorded with no detail, which made the ~30s reconnect loop (seen in
+ * production) impossible to diagnose from the DB alone.
+ */
+function extractDisconnectDetail(
+  lastDisconnect?: BaileysConnectionUpdate['lastDisconnect'],
+): { statusCode?: number; message?: string; errorName?: string } {
+  const error = lastDisconnect?.error;
+  if (!error) {
+    return {};
+  }
+  const boom = error as {
+    output?: { statusCode?: number };
+    message?: string;
+    data?: unknown;
+  };
+  const detail: { statusCode?: number; message?: string; errorName?: string } = {};
+  if (typeof boom.output?.statusCode === 'number') {
+    detail.statusCode = boom.output.statusCode;
+  }
+  if (typeof boom.message === 'string') {
+    detail.message = boom.message;
+  }
+  if (typeof (error as { name?: unknown }).name === 'string') {
+    detail.errorName = (error as { name: string }).name;
+  }
+  if (!detail.message && boom.data !== undefined && boom.data !== null) {
+    const serialized = JSON.stringify(boom.data);
+    if (serialized && serialized !== '{}') {
+      detail.message = serialized.slice(0, 500);
+    }
+  }
+  return detail;
+}
+
 export interface ConnectionManagerOptions {
   workspaceId?: number;
   sessionDir?: string;
@@ -58,6 +97,8 @@ export interface ConnectionManagerOptions {
   sessionLockLeaseMs?: number;
   /** Heartbeat interval in ms (defaults to env.SESSION_HEARTBEAT_INTERVAL_MS). */
   sessionLockHeartbeatMs?: number;
+  /** Extra Baileys socket options (e.g. keepAliveIntervalMs) applied on every socket creation. */
+  socketConfig?: { keepAliveIntervalMs?: number };
 }
 
 /**
@@ -91,6 +132,7 @@ export class ConnectionManager extends EventEmitter {
   private readonly gatewayInstanceId: string;
   private readonly sessionLockLeaseMs: number;
   private readonly sessionLockHeartbeatMs: number;
+  private readonly socketConfig: { keepAliveIntervalMs?: number };
   private lockHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: ConnectionManagerOptions = {}) {
@@ -104,6 +146,7 @@ export class ConnectionManager extends EventEmitter {
     this.gatewayInstanceId = options.gatewayInstanceId ?? env.GATEWAY_INSTANCE_ID;
     this.sessionLockLeaseMs = options.sessionLockLeaseMs ?? env.SESSION_LEASE_MS;
     this.sessionLockHeartbeatMs = options.sessionLockHeartbeatMs ?? env.SESSION_HEARTBEAT_INTERVAL_MS;
+    this.socketConfig = options.socketConfig ?? {};
   }
 
   /** Whether session-lock coordination is active for this manager. */
@@ -158,6 +201,23 @@ export class ConnectionManager extends EventEmitter {
       this.socket = null;
     }
 
+    }
+
+    await this.startFreshPairing();
+  }
+
+  /**
+   * Clears any saved WhatsApp auth material and starts a fresh QR pairing flow.
+   * This is the manual path exposed by the UI's Connect button.
+   */
+  async startFreshPairing(): Promise<void> {
+    if (this.socket) {
+      this.manualStop = true;
+      this.clearReconnectTimer();
+      this.socket.end(undefined);
+      this.socket = null;
+    }
+
     await this.clearStoredCredentials();
     await this.start();
   }
@@ -186,7 +246,12 @@ export class ConnectionManager extends EventEmitter {
     const { state, saveCreds }: { state: AuthenticationState; saveCreds: () => Promise<void> } =
       await this.loadAuthStateFn(this.authDir());
 
-    this.socket = this.socketFactory(state);
+    this.socket = this.socketFactory(state, {
+      onUnexpectedError: (context, err) => this.handleUnexpectedBaileysError(context, err),
+      ...(this.socketConfig.keepAliveIntervalMs !== undefined
+        ? { keepAliveIntervalMs: this.socketConfig.keepAliveIntervalMs }
+        : {}),
+    });
 
     this.socket.ev.on('creds.update', async () => {
       await saveCreds();
@@ -207,6 +272,10 @@ export class ConnectionManager extends EventEmitter {
       this.emit('messages.update', { workspaceId: this.workspaceId, payload });
     });
 
+    this.socket.ev.on('contacts.upsert', (payload) => {
+      this.emit('contacts.upsert', { workspaceId: this.workspaceId, payload });
+    });
+
     this.socket.ev.on('messages.upsert', (payload) => {
       // Handle protocol messages (message revokes)
       for (const raw of payload.messages) {
@@ -221,6 +290,48 @@ export class ConnectionManager extends EventEmitter {
         }
       }
     });
+  }
+
+  /**
+   * Ends the live socket so the connection.update 'close' handler schedules a
+   * bounded backoff reconnect. Used when a send times out against a session
+   * that still reports 'connected' but is not answering queries (a zombie
+   * connection) - the next send retry then runs against a fresh session.
+   */
+  requestConnectionRefresh(): void {
+    if (this.manualStop || !this.socket) {
+      return;
+    }
+    logger.warn('Refreshing WhatsApp connection after send failure');
+    try {
+      this.socket.end(undefined);
+    } catch (err) {
+      logger.warn({ err }, 'Failed to close socket during connection refresh');
+    }
+  }
+
+  /**
+   * Baileys reports "unexpected error in 'init queries'" (query timeouts) only
+   * through its logger - the socket stays flagged 'connected' but stops
+   * answering queries, so every send fails. React by closing the socket; the
+   * normal 'close' handler then schedules the bounded backoff reconnect,
+   * healing the session without manual intervention.
+   */
+  private handleUnexpectedBaileysError(context: string, err: unknown): void {
+    if (this.manualStop) {
+      return;
+    }
+    // Baileys surfaces transient failures here (init queries, presence updates,
+    // ...) without closing the socket itself. We deliberately do NOT close:
+    // tearing the socket down on any one timeout is what produced the endless
+    // connect -> init-query timeout -> reconnect loop seen in production. A
+    // genuinely dead query channel still surfaces via the WS ping/pong or the
+    // next real query, which Baileys handles itself. Log and let the
+    // connection carry on.
+    logger.warn(
+      { context, err },
+      'Baileys reported an unexpected (non-fatal) error; keeping connection open',
+    );
   }
 
   /** Exposes the raw socket's media downloader so the media-download queue processor can use it. */
@@ -242,11 +353,13 @@ export class ConnectionManager extends EventEmitter {
     }
 
     this.setStatus('disconnected');
+    this.phoneNumber = null;
     if (this.sessionId) {
       await this.repository.recordConnectionEvent(this.workspaceId, this.sessionId, 'disconnected', {
         reason: 'manual_disconnect',
       });
       await this.repository.updateStatus(this.sessionId, 'disconnected', {
+        phoneNumber: null,
         lastDisconnectedAt: new Date(),
       });
     }
@@ -279,10 +392,12 @@ export class ConnectionManager extends EventEmitter {
 
     await this.clearStoredCredentials();
     this.stopLockHeartbeat();
+    this.phoneNumber = null;
 
     if (this.sessionId) {
       await this.repository.recordConnectionEvent(this.workspaceId, this.sessionId, 'logged_out');
       await this.repository.updateStatus(this.sessionId, 'logged_out', {
+        phoneNumber: null,
         lastDisconnectedAt: new Date(),
         disconnectReason: 'logged_out',
       });
@@ -314,6 +429,7 @@ export class ConnectionManager extends EventEmitter {
 
     if (this.sessionId) {
       await this.repository.updateStatus(this.sessionId, 'qr_pending', {
+        phoneNumber: this.phoneNumber,
         qrCode: this.qrCode,
         qrExpiresAt: this.qrExpiresAt,
       });
@@ -340,8 +456,8 @@ export class ConnectionManager extends EventEmitter {
   }
 
   private async handleClose(lastDisconnect: BaileysConnectionUpdate['lastDisconnect']): Promise<void> {
-    const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)
-      ?.output?.statusCode;
+    const disconnectDetail = extractDisconnectDetail(lastDisconnect);
+    const statusCode = disconnectDetail.statusCode;
     const isLoggedOut = statusCode === DisconnectReason.loggedOut;
     // A corrupt/unrecoverable session (500) will fail identically on every retry - reconnecting
     // with the same on-disk creds just burns the retry budget. Force a fresh QR pairing instead,
@@ -360,28 +476,38 @@ export class ConnectionManager extends EventEmitter {
           this.workspaceId,
           this.sessionId,
           isLoggedOut ? 'logged_out' : 'bad_session',
-          { statusCode },
+          disconnectDetail,
         );
         await this.repository.updateStatus(this.sessionId, 'logged_out', {
+          phoneNumber: null,
           lastDisconnectedAt: new Date(),
           disconnectReason: isLoggedOut ? 'logged_out' : 'bad_session',
         });
       }
+      this.phoneNumber = null;
       this.setStatus('auth_required');
       return;
     }
 
     if (this.sessionId) {
       await this.repository.recordConnectionEvent(this.workspaceId, this.sessionId, 'disconnected', {
-        statusCode,
+        ...disconnectDetail,
+        reason: isRestartRequired ? 'restart_required' : 'transient_network_error',
       });
       await this.repository.updateStatus(this.sessionId, 'disconnected', {
+        phoneNumber: null,
         lastDisconnectedAt: new Date(),
         disconnectReason: isRestartRequired ? 'restart_required' : 'transient_network_error',
       });
     }
 
+    this.phoneNumber = null;
     this.setStatus('disconnected');
+
+    logger.warn(
+      { ...disconnectDetail, isRestartRequired },
+      'WhatsApp connection closed; scheduling reconnect',
+    );
 
     if (this.manualStop) {
       return;
@@ -571,6 +697,7 @@ export class ConnectionManager extends EventEmitter {
     if (!this.socket || this.status !== 'connected') {
       return;
     }
+    const jid = normalizePhoneToJid(to, env.WHATSAPP_COUNTRY_CODE);
     const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
     await this.socket.sendPresenceUpdate(presence, jid);
   }
@@ -580,7 +707,7 @@ export class ConnectionManager extends EventEmitter {
       throw new Error(`Cannot send message: WhatsApp connection is not established (status=${this.status})`);
     }
 
-    const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    const jid = normalizePhoneToJid(to, env.WHATSAPP_COUNTRY_CODE);
     const result = await this.socket.sendMessage(jid, { text });
 
     return { id: result?.key.id };
@@ -596,7 +723,7 @@ export class ConnectionManager extends EventEmitter {
       throw new Error(`Cannot send message: WhatsApp connection is not established (status=${this.status})`);
     }
 
-    const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
+    const jid = normalizePhoneToJid(to, env.WHATSAPP_COUNTRY_CODE);
     const result = await this.socket.sendMessage(jid, content);
     return { id: result?.key.id };
   }

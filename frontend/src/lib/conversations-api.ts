@@ -52,6 +52,8 @@ export interface Conversation {
   pinned_at?: string | null;
   muted_until?: string | null;
   starred_at?: string | null;
+  blocked_at?: string | null;
+  reported_at?: string | null;
   whatsapp_contact: WhatsappContactSummary | null;
   contact: ContactSummary | null;
   assigned_user: UserSummary | null;
@@ -179,6 +181,10 @@ export async function fetchConversations(filters: ConversationFilters): Promise<
 
 export async function fetchConversation(id: number): Promise<Conversation> {
   return unwrap(apiClient.get(`/conversations/${id}`));
+}
+
+export async function createConversation(contactId: number): Promise<Conversation> {
+  return unwrap(apiClient.post('/conversations', { contact_id: contactId }));
 }
 
 export async function fetchMessages(
@@ -341,4 +347,83 @@ export async function revokeMessage(
   messageId: number
 ): Promise<void> {
   await apiClient.delete(`/conversations/${conversationId}/messages/${messageId}/revoke`);
+}
+
+export async function clearConversationMessages(conversationId: number): Promise<Conversation> {
+  return unwrap(apiClient.delete(`/conversations/${conversationId}/messages`));
+}
+
+export async function deleteConversation(conversationId: number): Promise<{ conversation_id: number }> {
+  return unwrap(apiClient.delete(`/conversations/${conversationId}`));
+}
+
+export async function blockConversation(conversationId: number): Promise<Conversation> {
+  return unwrap(apiClient.patch(`/conversations/${conversationId}/block`));
+}
+
+export async function unblockConversation(conversationId: number): Promise<Conversation> {
+  return unwrap(apiClient.patch(`/conversations/${conversationId}/unblock`));
+}
+
+export async function reportConversation(
+  conversationId: number,
+  reason?: string
+): Promise<Conversation> {
+  return unwrap(apiClient.patch(`/conversations/${conversationId}/report`, { report_reason: reason }));
+}
+
+export interface MessageStatusEvent {
+  id: number;
+  message_id: number;
+  status: "queued" | "sending" | "sent" | "delivered" | "read" | "failed";
+  error_message?: string | null;
+  created_at: string;
+}
+
+export async function fetchMessageStatusEvents(
+  conversationId: number,
+  messageId: number
+): Promise<MessageStatusEvent[]> {
+  return unwrap(apiClient.get(`/conversations/${conversationId}/messages/${messageId}/status-events`));
+}
+
+export interface ReactionGroup {
+  emoji: string;
+  count: number;
+  reactors: Array<{
+    user_id: number | null;
+    user_name: string;
+    reacted_at: string;
+  }>;
+}
+
+export async function fetchMessageReactions(
+  conversationId: number,
+  messageId: number
+): Promise<ReactionGroup[]> {
+  return unwrap(apiClient.get(`/conversations/${conversationId}/messages/${messageId}/reactions`));
+}
+
+export interface MessageSearchResult {
+  data: Message[];
+  meta: {
+    current_page: number;
+    from: number | null;
+    last_page: number;
+    per_page: number;
+    to: number | null;
+    total: number;
+  };
+}
+
+export async function searchMessages(
+  conversationId: number,
+  query: string,
+  page: number = 1
+): Promise<MessageSearchResult> {
+  return unwrap(
+    apiClient.get(`/conversations/${conversationId}/messages/search`, {
+      params: { q: query, page, per_page: 30 },
+    })
+  );
 }

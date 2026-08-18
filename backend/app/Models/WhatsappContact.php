@@ -18,7 +18,7 @@ class WhatsappContact extends Model
     use BelongsToWorkspace, ReadOnlyFromBackend;
 
     protected $fillable = [
-        'workspace_id', 'wa_jid', 'push_name', 'phone_number', 'profile_picture_url',
+        'workspace_id', 'wa_jid', 'push_name', 'contact_name', 'phone_number', 'profile_picture_url',
         'is_business', 'contact_id', 'last_seen_at',
     ];
 
