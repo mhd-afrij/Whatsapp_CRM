@@ -36,11 +36,25 @@ export function Avatar({
   name,
   size = "md",
   className,
+  src,
 }: {
   name: string;
   size?: keyof typeof SIZE_CLASSES;
   className?: string;
+  /** Optional photo (e.g. WhatsApp profile picture) - falls back to initials. */
+  src?: string | null;
 }) {
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- remote profile photos, no next/image domain config
+      <img
+        src={src}
+        alt={name}
+        className={`inline-flex shrink-0 rounded-full object-cover ${SIZE_CLASSES[size]} ${className ?? ""}`}
+      />
+    );
+  }
+
   return (
     <span
       className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ${SIZE_CLASSES[size]} ${className ?? ""}`}

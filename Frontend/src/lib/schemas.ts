@@ -9,9 +9,11 @@ export const contactSchema = z.object({
     .optional()
     .or(z.literal(""))
     .or(z.null()),
-  company: z.string().max(255).optional().or(z.literal("")).or(z.null()),
-  job_title: z.string().max(150).optional().or(z.literal("")).or(z.null()),
   phone_number: z.string().max(32).optional().or(z.literal("")).or(z.null()),
+  address: z.string().max(255).optional().or(z.literal("")).or(z.null()),
+  city: z.string().max(100).optional().or(z.literal("")).or(z.null()),
+  country: z.string().max(100).optional().or(z.literal("")).or(z.null()),
+  timezone: z.string().max(64).optional().or(z.literal("")).or(z.null()),
   custom_fields: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -19,12 +21,47 @@ export type ContactSchemaValues = z.infer<typeof contactSchema>;
 
 export const leadSchema = z.object({
   contact_id: z.number({ message: "Select a contact" }).int().positive("Select a contact"),
-  source: z.enum(["whatsapp", "manual", "import", "other"]),
-  status: z.enum(["new", "contacted", "qualified", "disqualified", "converted"]),
+  source: z.enum([
+    "website", "lead_form", "whatsapp", "facebook", "instagram",
+    "referral", "phone", "email", "manual", "import", "api",
+    "campaign", "other",
+  ]),
+  source_detail: z.string().max(255).optional().or(z.literal("")),
+  campaign: z.string().max(255).optional().or(z.literal("")),
+  stage: z.enum(["new", "contacted", "qualified", "viewing", "negotiation", "converted", "lost"]),
+  owner_user_id: z.number().int().positive().nullable().optional(),
+  assigned_team_id: z.number().int().positive().nullable().optional(),
+  property_type: z.string().max(100).optional().or(z.literal("")),
+  preferred_location: z.string().max(255).optional().or(z.literal("")),
+  budget_min: z.coerce.number().min(0).nullable().optional(),
+  budget_max: z.coerce.number().min(0).nullable().optional(),
+  bedrooms: z.coerce.number().min(0).max(20).nullable().optional(),
+  bathrooms: z.coerce.number().min(0).max(20).nullable().optional(),
+  requirement_type: z.enum(["purchase", "rental"]).nullable().optional(),
   notes: z.string().max(2000).optional().or(z.literal("")),
 });
 
 export type LeadSchemaValues = z.infer<typeof leadSchema>;
+
+export const leadLostSchema = z.object({
+  lost_reason: z.enum([
+    "price_too_high", "not_interested", "purchased_elsewhere",
+    "no_response", "invalid_lead", "duplicate",
+    "requirement_changed", "other",
+  ]),
+  lost_notes: z.string().max(2000).optional().or(z.literal("")),
+});
+
+export type LeadLostSchemaValues = z.infer<typeof leadLostSchema>;
+
+export const leadConvertSchema = z.object({
+  deal_title: z.string().max(255).optional().or(z.literal("")),
+  pipeline_stage_id: z.number().int().positive().nullable().optional(),
+  value_amount: z.coerce.number().min(0).nullable().optional(),
+  value_currency: z.string().length(3).optional().or(z.literal("")),
+});
+
+export type LeadConvertSchemaValues = z.infer<typeof leadConvertSchema>;
 
 export const dealSchema = z.object({
   contact_id: z.number({ message: "Select a contact" }).int().positive("Select a contact"),

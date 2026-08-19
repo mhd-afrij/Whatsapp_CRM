@@ -29,6 +29,23 @@ export async function fetchWhatsappStatus(): Promise<WhatsappStatus> {
   return unwrap(apiClient.get("/whatsapp/status"));
 }
 
+export interface WhatsappHealth {
+  status: string;
+  whatsapp: {
+    status: WhatsappConnectionStatus;
+    phoneNumber: string | null;
+    qrPending: boolean;
+  };
+  infrastructure: {
+    redis: "ok" | "error";
+    mysql: "ok" | "error";
+  };
+}
+
+export async function fetchWhatsappHealth(): Promise<WhatsappHealth> {
+  return unwrap(apiClient.get("/whatsapp/health"));
+}
+
 export async function fetchWhatsappQr(): Promise<Partial<WhatsappStatus>> {
   return unwrap(apiClient.get("/whatsapp/qr"));
 }

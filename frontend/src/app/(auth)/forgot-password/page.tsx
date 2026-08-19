@@ -6,12 +6,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { apiClient, type ApiResponse } from "@/lib/api-client";
 import { applyApiErrorsToForm } from "@/lib/form-errors";
-import { useToast } from "@/providers/toast-provider";
 import { cn } from "@/lib/utils";
 import { forgotPasswordSchema, type ForgotPasswordSchemaValues } from "@/lib/schemas";
 
 export default function ForgotPasswordPage() {
-  const { toast } = useToast();
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
@@ -31,7 +29,6 @@ export default function ForgotPasswordPage() {
       const { data } = await apiClient.post<ApiResponse<null>>("/auth/forgot-password", values);
       if (!data.success) throw data;
       setSubmitted(true);
-      toast(data.message, "success");
     } catch (error) {
       const message = applyApiErrorsToForm<ForgotPasswordSchemaValues>(error, setError);
       setFormError(message);

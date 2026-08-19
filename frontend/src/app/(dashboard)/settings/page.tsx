@@ -4,12 +4,12 @@ import Link from "next/link";
 import {
   Building2,
   Clock,
+  Copy,
   Globe,
   KeyRound,
   MessageSquare,
   BellRing,
   Palette,
-  Phone,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -45,6 +45,7 @@ const SETTINGS_LINKS: SettingsLink[] = [
   { href: "/settings/business-hours", label: "Business Hours", description: "Define operating hours", icon: Globe, permission: "workspace.settings.manage" },
   { href: "/settings/away-message", label: "Away Message", description: "Auto-reply when offline", icon: MessageSquare, permission: "workspace.settings.manage" },
   { href: "/settings/custom-fields", label: "Custom Fields", description: "Add custom data fields", icon: Settings, permission: "workspace.settings.manage" },
+  { href: "/settings/contacts", label: "Duplicate Contacts", description: "Find and merge duplicate contacts", icon: Copy, permission: "contacts.delete" },
   { href: "/settings/audit-log", label: "Audit Log", description: "Review system activity", icon: ScrollText, permission: "audit_logs.view" },
   { href: "/settings/failed-jobs", label: "Failed Jobs", description: "Review failed background jobs", icon: ShieldCheck, permission: "dlq.manage" },
   { href: "/settings/whatsapp-health", label: "WhatsApp Health", description: "Monitor connection health", icon: Smartphone, permission: "whatsapp.connection.manage" },
@@ -65,6 +66,7 @@ export default function SettingsRootPage() {
   const canViewRoles = usePermission("roles.view");
   const canViewAuditLog = usePermission("audit_logs.view");
   const canManageDlq = usePermission("dlq.manage");
+  const canDeleteContacts = usePermission("contacts.delete");
 
   const permissionMap: Record<string, boolean> = {
     "users.manage": canManageUsers,
@@ -81,6 +83,7 @@ export default function SettingsRootPage() {
     "roles.view": canViewRoles,
     "audit_logs.view": canViewAuditLog,
     "dlq.manage": canManageDlq,
+    "contacts.delete": canDeleteContacts,
   };
 
   const visibleLinks = SETTINGS_LINKS.filter(

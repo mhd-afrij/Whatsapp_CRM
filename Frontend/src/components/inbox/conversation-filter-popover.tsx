@@ -27,6 +27,8 @@ import {
 import type { AdvancedFilters } from "@/hooks/use-conversation-filters";
 import { useUsers } from "@/hooks/use-users";
 import { useLabelList } from "@/hooks/use-labels";
+import { usePipelineList } from "@/hooks/use-pipelines";
+import { Input } from "@/components/ui/input";
 
 interface ConversationFilterPopoverProps {
   filters: AdvancedFilters;
@@ -61,8 +63,15 @@ export function ConversationFilterPopover({
   const [open, setOpen] = useState(false);
   const { data: users } = useUsers();
   const { data: labels } = useLabelList();
+  const { data: pipelines } = usePipelineList();
 
-  const handleFilterChange = (key: keyof AdvancedFilters, value: any) => {
+  // Flatten every pipeline's stages into one list of { id, name } so the
+  // filter can match deals by stage name regardless of which pipeline owns it.
+  const dealStages = pipelines?.flatMap((pipeline) =>
+    (pipeline.stages ?? []).map((stage) => ({ id: stage.id, name: stage.name }))
+  ) ?? [];
+
+  const handleFilterChange = (key: keyof AdvancedFilters, value: string | null | undefined) => {
     onFiltersChange({
       ...filters,
       [key]: value || undefined,
@@ -159,6 +168,69 @@ export function ConversationFilterPopover({
             </Select>
           </div>
 
+          {/* Deal Stage Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Deal Stage</Label>
+            <Select
+              value={filters.dealStage || ""}
+              onValueChange={(value) => handleFilterChange("dealStage", value)}
+            >
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue placeholder="Select deal stage..." />
+              </SelectTrigger>
+              <SelectContent>
+                {dealStages.map((stage) => (
+                  <SelectItem key={stage.id} value={stage.name}>
+                    {stage.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Date Range Filter */}
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Last activity</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Input
+                  type="date"
+                  value={filters.dateRange?.from ? toDateInputValue(filters.dateRange.from) : ""}
+                  onChange={(e) => {
+                    const from = e.target.value ? new Date(`${e.target.value}T00:00:00`) : undefined;
+                    onFiltersChange({
+                      ...filters,
+                      dateRange:
+                        from || filters.dateRange?.to
+                          ? { from: from ?? filters.dateRange!.from, to: filters.dateRange?.to ?? new Date() }
+                          : undefined,
+                    });
+                  }}
+                  aria-label="From date"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Input
+                  type="date"
+                  value={filters.dateRange?.to ? toDateInputValue(filters.dateRange.to) : ""}
+                  onChange={(e) => {
+                    const to = e.target.value ? new Date(`${e.target.value}T00:00:00`) : undefined;
+                    onFiltersChange({
+                      ...filters,
+                      dateRange:
+                        to || filters.dateRange?.from
+                          ? { from: filters.dateRange?.from ?? new Date(0), to: to ?? filters.dateRange!.to }
+                          : undefined,
+                    });
+                  }}
+                  aria-label="To date"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Label Filter */}
           <div className="space-y-2">
             <Label className="text-xs font-medium">Label</Label>
@@ -196,4 +268,11 @@ export function ConversationFilterPopover({
       </PopoverContent>
     </Popover>
   );
+}
+
+function toDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }

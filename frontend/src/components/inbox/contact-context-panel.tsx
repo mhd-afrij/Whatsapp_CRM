@@ -2,7 +2,8 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CircleAlert, MessageSquareText, NotebookPen, StickyNote } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, CircleAlert, MessageSquareText, NotebookPen, StickyNote, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
 import { useConversation, useConversationActions } from "@/hooks/use-conversations";
@@ -97,6 +98,15 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
             ? `WhatsApp connected${whatsapp.phoneNumber ? ` · ${whatsapp.phoneNumber}` : ""}`
             : `WhatsApp ${whatsapp?.status ?? "idle"}`}
         </p>
+        {contactId && (
+          <Link
+            href={`/contacts/${contactId}`}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border bg-bg px-3 py-1.5 text-xs font-medium text-text hover:bg-primary-soft/40"
+          >
+            <UserRound className="h-3.5 w-3.5 text-muted" />
+            View full contact
+          </Link>
+        )}
       </div>
 
       <div className="min-h-0 overflow-y-auto overflow-x-hidden p-3">
@@ -129,8 +139,6 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
                 />
               )}
               {contact?.email && <DetailRow label="Email" value={contact.email} />}
-              {contact?.company && <DetailRow label="Company" value={contact.company} />}
-              {contact?.job_title && <DetailRow label="Job title" value={contact.job_title} />}
               {conversation.contact?.full_name && conversation.contact.full_name !== name && (
                 <DetailRow label="CRM name" value={conversation.contact.full_name} />
               )}

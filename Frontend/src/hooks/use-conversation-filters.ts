@@ -38,6 +38,15 @@ export function useConversationFilters() {
     if (searchParams.has("label")) advanced.label = searchParams.get("label") ?? undefined;
     if (searchParams.has("leadStatus")) advanced.leadStatus = searchParams.get("leadStatus") ?? undefined;
     if (searchParams.has("dealStage")) advanced.dealStage = searchParams.get("dealStage") ?? undefined;
+    const dateFrom = searchParams.get("dateFrom");
+    const dateTo = searchParams.get("dateTo");
+    if (dateFrom && dateTo) {
+      const from = new Date(dateFrom);
+      const to = new Date(dateTo);
+      if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime())) {
+        advanced.dateRange = { from, to };
+      }
+    }
 
     setAdvancedFilters(advanced);
   }, [searchParams]);
@@ -53,6 +62,10 @@ export function useConversationFilters() {
     if (filters.label) params.set("label", filters.label);
     if (filters.leadStatus) params.set("leadStatus", filters.leadStatus);
     if (filters.dealStage) params.set("dealStage", filters.dealStage);
+    if (filters.dateRange) {
+      params.set("dateFrom", filters.dateRange.from.toISOString());
+      params.set("dateTo", filters.dateRange.to.toISOString());
+    }
 
     router.replace(`?${params.toString()}`, { scroll: false });
   };
@@ -73,19 +86,25 @@ export function useConversationFilters() {
   };
 
   // Convert tab + advanced filters to API query
-  // Note: SLA Risk/Breach and Waiting filters require backend support for SLA state exposure
   const apiFilters: ConversationFilters = {
     ...(advancedFilters.agent && { assigned_to: advancedFilters.agent }),
     ...(advancedFilters.status && { status: advancedFilters.status as any }),
     ...(advancedFilters.priority && { priority: advancedFilters.priority as any }),
     ...(advancedFilters.label && { label: advancedFilters.label }),
     ...(advancedFilters.team && { team_id: parseInt(advancedFilters.team) || undefined }),
+    ...(advancedFilters.leadStatus && { lead_status: advancedFilters.leadStatus }),
+    ...(advancedFilters.dealStage && { deal_stage: advancedFilters.dealStage }),
+    ...(advancedFilters.dateRange && {
+      date_from: advancedFilters.dateRange.from.toISOString(),
+      date_to: advancedFilters.dateRange.to.toISOString(),
+    }),
     ...(tabFilter === "mine" && { assigned_to: "me" }),
     ...(tabFilter === "unassigned" && { assigned_to: "unassigned" }),
     ...(tabFilter === "unread" && { unread: true }),
     ...(tabFilter === "waiting" && { status: "pending" }),
     ...(tabFilter === "archived" && { archived: true }),
-    // SLA Risk and Breach will be added once backend supports SLA state filtering
+    ...(tabFilter === "sla_risk" && { sla_status: "risk" }),
+    ...(tabFilter === "sla_breach" && { sla_status: "breached" }),
   };
 
   return {

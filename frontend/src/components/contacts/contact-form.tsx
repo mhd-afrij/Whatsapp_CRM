@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { contactSchema, type ContactSchemaValues } from "@/lib/schemas";
 import { fetchCustomFieldDefinitions, type CustomFieldDefinition } from "@/lib/custom-fields-api";
 import { normalizePhoneNumber, PHONE_COUNTRY_CODE } from "@/lib/phone";
+import { detectCountryFromNumber } from "@/lib/countries";
+import { PhoneNumberInput } from "@/components/contacts/phone-number-input";
 
 export function ContactForm({
   defaultValues,
@@ -24,6 +26,18 @@ export function ContactForm({
     defaultValues?.custom_fields ?? {}
   );
 
+  // A stored number arrives as E.164 ("94750144774"); detect the country and
+  // split it so the field holds the national part while the dropdown carries
+  // the dialing code. Done once up front - typing is handled by
+  // PhoneNumberInput's auto-detect.
+  const initialPhone = detectCountryFromNumber(defaultValues?.phone_number ?? "");
+  const initialPhoneNumber = initialPhone?.national ?? defaultValues?.phone_number ?? "";
+
+  // Dialing code of the country selected in the phone dropdown (defaults to
+  // the workspace's +{PHONE_COUNTRY_CODE}); the input itself only ever holds
+  // the national part.
+  const [phoneDial, setPhoneDial] = useState(initialPhone?.country.dial ?? PHONE_COUNTRY_CODE);
+
   const { data: customFieldDefs = [] } = useQuery({
     queryKey: ["custom-field-definitions", "contact"],
     queryFn: () => fetchCustomFieldDefinitions("contact"),
@@ -33,17 +47,23 @@ export function ContactForm({
     register,
     handleSubmit,
     setValue,
+    getValues,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<ContactSchemaValues>({
     resolver: zodResolver(contactSchema),
     defaultValues: {
       full_name: defaultValues?.full_name ?? "",
       email: defaultValues?.email ?? "",
-      company: defaultValues?.company ?? "",
-      job_title: defaultValues?.job_title ?? "",
-      phone_number: defaultValues?.phone_number ?? "",
+      phone_number: initialPhoneNumber,
+      address: defaultValues?.address ?? "",
+      city: defaultValues?.city ?? "",
+      country: defaultValues?.country ?? "",
+      timezone: defaultValues?.timezone ?? "",
     },
   });
+
+  const watchedPhoneNumber = useWatch({ control, name: "phone_number" }) ?? "";
 
   useEffect(() => {
     if (defaultValues?.custom_fields) {
@@ -52,18 +72,36 @@ export function ContactForm({
     }
   }, [defaultValues?.custom_fields]);
 
+  // Timezone is always filled in automatically from the visitor's browser;
+  // the field is informational and not editable. Only set it when the form
+  // has no saved timezone (e.g. a contact imported without one) so an
+  // existing value is never clobbered. Runs client-side after hydration to
+  // avoid a server/client mismatch.
+  useEffect(() => {
+    if (getValues("timezone")) return;
+    const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (browserTimezone) {
+      setValue("timezone", browserTimezone, { shouldValidate: false });
+    }
+  }, [getValues, setValue]);
+
   const submit = handleSubmit(async (values) => {
     // Normalize to E.164 so the stored number can be dialed/WhatsApp'd later
     // (see lib/phone.ts) - a bare "0750144774" can never receive a message.
+    // The dialing code comes from the country dropdown (phoneDial), not the
+    // workspace default, so international numbers stay correct.
     const phone_number = values.phone_number
-      ? normalizePhoneNumber(values.phone_number)
+      ? normalizePhoneNumber(values.phone_number, phoneDial)
       : null;
     await onSubmit({
       full_name: values.full_name ?? null,
       email: values.email ? values.email : null,
-      company: values.company ? values.company : null,
-      job_title: values.job_title ? values.job_title : null,
       phone_number,
+      address: values.address ? values.address : null,
+      city: values.city ? values.city : null,
+      country: values.country ? values.country : null,
+      timezone:
+        values.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || null,
       custom_fields: Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined,
     });
   });
@@ -103,47 +141,62 @@ export function ContactForm({
           <label htmlFor="phone_number" className="text-sm font-medium text-text">
             Phone number
           </label>
-          <div className="relative">
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted"
-            >
-              +{PHONE_COUNTRY_CODE}
-            </span>
-            <input
-              id="phone_number"
-              placeholder="712345678"
-              className={cn(fieldClass(!!errors.phone_number), "pl-12")}
-              inputMode="tel"
-              {...register("phone_number", {
-                onBlur: (event) => {
-                  const normalized = normalizePhoneNumber(event.target.value);
-                  if (normalized !== event.target.value) {
-                    setValue("phone_number", normalized);
-                  }
-                },
-              })}
-            />
-          </div>
+          <PhoneNumberInput
+            id="phone_number"
+            value={watchedPhoneNumber}
+            dialCode={phoneDial}
+            onDialCodeChange={setPhoneDial}
+            onChange={(nationalNumber) => setValue("phone_number", nationalNumber, { shouldValidate: true })}
+            hasError={!!errors.phone_number}
+          />
           {errors.phone_number && (
             <p className="text-xs text-danger">{errors.phone_number.message}</p>
           )}
+          <p className="text-xs text-muted">
+            Select the country code — numbers are saved in international format.
+          </p>
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="company" className="text-sm font-medium text-text">
-            Company
+          <label htmlFor="timezone" className="text-sm font-medium text-text">
+            Timezone
           </label>
-          <input id="company" className={fieldClass(!!errors.company)} {...register("company")} />
-          {errors.company && <p className="text-xs text-danger">{errors.company.message}</p>}
+          <input
+            id="timezone"
+            readOnly
+            placeholder="Set automatically"
+            className={cn(fieldClass(!!errors.timezone), "cursor-not-allowed opacity-70")}
+            {...register("timezone")}
+          />
+          <p className="text-xs text-muted">Set automatically from your browser.</p>
+          {errors.timezone && <p className="text-xs text-danger">{errors.timezone.message}</p>}
         </div>
+      </div>
 
-        <div className="space-y-1">
-          <label htmlFor="job_title" className="text-sm font-medium text-text">
-            Job title
-          </label>
-          <input id="job_title" className={fieldClass(!!errors.job_title)} {...register("job_title")} />
-          {errors.job_title && <p className="text-xs text-danger">{errors.job_title.message}</p>}
+      <div className="space-y-3 border-t pt-4">
+        <h3 className="text-sm font-medium text-text">Location</h3>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1">
+            <label htmlFor="country" className="text-sm font-medium text-text">
+              Country
+            </label>
+            <input id="country" className={fieldClass(!!errors.country)} {...register("country")} />
+            {errors.country && <p className="text-xs text-danger">{errors.country.message}</p>}
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="city" className="text-sm font-medium text-text">
+              City
+            </label>
+            <input id="city" className={fieldClass(!!errors.city)} {...register("city")} />
+            {errors.city && <p className="text-xs text-danger">{errors.city.message}</p>}
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <label htmlFor="address" className="text-sm font-medium text-text">
+              Address
+            </label>
+            <input id="address" className={fieldClass(!!errors.address)} {...register("address")} />
+            {errors.address && <p className="text-xs text-danger">{errors.address.message}</p>}
+          </div>
         </div>
       </div>
 

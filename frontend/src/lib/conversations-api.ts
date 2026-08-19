@@ -160,6 +160,11 @@ export interface ConversationFilters {
   starred?: boolean;
   pinned?: boolean;
   groups?: boolean;
+  sla_status?: "risk" | "breached";
+  lead_status?: string;
+  deal_stage?: string;
+  date_from?: string;
+  date_to?: string;
   per_page?: number;
   page?: number;
 }
@@ -224,7 +229,15 @@ export async function sendMessage(
 export async function uploadMessageMedia(conversationId: number, file: File): Promise<UploadedMedia> {
   const formData = new FormData();
   formData.append("file", file);
-  return unwrap(apiClient.post(`/conversations/${conversationId}/media`, formData));
+  // Explicit multipart Content-Type: without it, apiClient's global
+  // application/json default makes axios 1.19's transformRequest convert the
+  // FormData to JSON and the backend's `file` rule fails with
+  // "The given data was invalid.". Same pattern as the other FormData uploads.
+  return unwrap(
+    apiClient.post(`/conversations/${conversationId}/media`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })
+  );
 }
 
 export async function assignConversation(
@@ -288,6 +301,12 @@ export async function markConversationRead(conversationId: number): Promise<{ co
   return unwrap(apiClient.patch(`/conversations/${conversationId}/read`));
 }
 
+export async function markConversationUnread(
+  conversationId: number
+): Promise<{ conversation_id: number; unread_count: number }> {
+  return unwrap(apiClient.patch(`/conversations/${conversationId}/unread`));
+}
+
 export interface MediaAccess {
   mimeType: string;
   kind: "signed_url" | "local_file";
@@ -304,6 +323,25 @@ export async function fetchMediaUrl(
   return unwrap(
     apiClient.get(`/conversations/${conversationId}/messages/${messageId}/media/${mediaId}/url`)
   );
+}
+
+/**
+ * Local-disk dev mode (no S3_BUCKET on the gateway): fetches the raw media
+ * bytes through the backend proxy so previews/downloads work without MinIO.
+ * The backend streams the gateway's local file after verifying the user can
+ * view the owning conversation.
+ */
+export async function fetchMediaContent(
+  conversationId: number,
+  messageId: number,
+  mediaId: number,
+  mimeType: string
+): Promise<Blob> {
+  const response = await apiClient.get(
+    `/conversations/${conversationId}/messages/${messageId}/media/${mediaId}/content`,
+    { responseType: "blob" }
+  );
+  return new Blob([response.data as BlobPart], { type: mimeType });
 }
 
 export async function sendTypingIndicator(
@@ -353,6 +391,13 @@ export async function revokeMessage(
   messageId: number
 ): Promise<void> {
   await apiClient.delete(`/conversations/${conversationId}/messages/${messageId}/revoke`);
+}
+
+export async function deleteMessageForMe(
+  conversationId: number,
+  messageId: number
+): Promise<void> {
+  await apiClient.delete(`/conversations/${conversationId}/messages/${messageId}/delete-for-me`);
 }
 
 export async function clearConversationMessages(conversationId: number): Promise<Conversation> {
@@ -432,4 +477,102 @@ export async function searchMessages(
       params: { q: query, page, per_page: 30 },
     })
   );
+}
+
+export async function setMessageStarred(
+  conversationId: number,
+  messageId: number,
+  starred: boolean
+): Promise<{ message_id: number; starred_at: string | null }> {
+  return unwrap(apiClient.patch(`/conversations/${conversationId}/messages/${messageId}/star`, { starred }));
+}
+
+export async function forwardMessage(
+  conversationId: number,
+  messageId: number,
+  targetConversationId: number
+): Promise<{ message_id: number; whatsapp_message_id: string; target_conversation_id: number }> {
+  return unwrap(
+    apiClient.post(`/conversations/${conversationId}/messages/${messageId}/forward`, {
+      target_conversation_id: targetConversationId,
+    })
+  );
+}
+
+function conversationDisplayName(conversation: Conversation): string {
+  return (
+    conversation.contact?.full_name ||
+    conversation.whatsapp_contact?.contact_name ||
+    conversation.whatsapp_contact?.push_name ||
+    conversation.whatsapp_contact?.phone_number ||
+    `Conversation #${conversation.id}`
+  );
+}
+
+function messageText(message: Message): string {
+  if (message.body?.trim()) return message.body.trim();
+  const labels: Record<string, string> = {
+    image: "Photo",
+    video: "Video",
+    audio: "Audio",
+    document: "Document",
+    sticker: "Sticker",
+    location: "Location",
+    contact_card: "Contact",
+    template: "Template",
+    system: "System message",
+    unsupported: "Unsupported message",
+  };
+  return `[${labels[message.message_type] ?? message.message_type}]`;
+}
+
+function formatExportTimestamp(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * Export chat (mirrors WhatsApp Web's "Export chat"): fetches the full
+ * message history (oldest first) and downloads a plain-text .txt file.
+ */
+export async function exportConversationChat(conversation: Conversation): Promise<void> {
+  const lines: string[] = [];
+  let cursor: string | undefined;
+  let pages = 0;
+
+  do {
+    const page = await fetchMessages(conversation.id, { per_page: 100, cursor });
+    // fetchMessages returns newest-first; reverse to append oldest-first.
+    const oldestFirst = [...page.data].reverse();
+    for (const message of oldestFirst) {
+      const sender =
+        message.direction === "outbound"
+          ? "You"
+          : conversationDisplayName(conversation);
+      lines.push(`[${formatExportTimestamp(message.sent_at ?? message.created_at)}] ${sender}: ${messageText(message)}`);
+    }
+    cursor = page.meta.next_cursor ?? undefined;
+    pages += 1;
+    if (pages > 100) break; // hard safety cap
+  } while (cursor);
+
+  if (lines.length === 0) {
+    lines.push(`[${formatExportTimestamp(new Date().toISOString())}] No messages in this conversation.`);
+  }
+
+  const safeName = (conversationDisplayName(conversation) || `conversation-${conversation.id}`)
+    .replace(/[^\w\- ]+/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+  const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${safeName || "chat"}-${conversation.id}-chat.txt`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
 }

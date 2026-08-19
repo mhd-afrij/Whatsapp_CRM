@@ -19,7 +19,15 @@ export function applyApiErrorsToForm<T extends FieldValues>(
 
   if (error.errors && !Array.isArray(error.errors)) {
     for (const [field, messages] of Object.entries(error.errors)) {
-      setError(field as Path<T>, { type: "server", message: messages[0] });
+      // Guard: setError throws if the field doesn't exist in the form schema.
+      // When that happens the exception propagates out of the caller's catch
+      // block, leaving react-hook-form's isSubmitting stuck at true forever.
+      try {
+        setError(field as Path<T>, { type: "server", message: messages[0] });
+      } catch {
+        // Field not in this form schema — skip the field-level error and rely
+        // on the top-level message returned below.
+      }
     }
     return error.message;
   }

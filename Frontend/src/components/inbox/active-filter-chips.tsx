@@ -122,6 +122,23 @@ export function ActiveFilterChips({ filters, onRemove, onClear }: ActiveFilterCh
         </Badge>
       )}
 
+      {filters.dateRange && (
+        <Badge
+          variant="secondary"
+          className="flex items-center gap-1 pr-1"
+        >
+          <span>
+            Activity: {filters.dateRange.from.toLocaleDateString()} – {filters.dateRange.to.toLocaleDateString()}
+          </span>
+          <button
+            onClick={() => onRemove("dateRange")}
+            className="text-muted hover:text-text"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </Badge>
+      )}
+
       {activeCount > 0 && (
         <button
           onClick={onClear}

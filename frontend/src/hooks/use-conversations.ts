@@ -22,12 +22,15 @@ import {
   fetchConversation,
   fetchConversations,
   fetchMessages,
+  forwardMessage,
   markConversationRead,
+  markConversationUnread,
   muteConversation,
   pinConversation,
   reopenConversation,
   reportConversation,
   sendTypingIndicator,
+  setMessageStarred,
   starConversation,
   sendMessage,
   unarchiveConversation,
@@ -238,10 +241,24 @@ export function useMessages(conversationId: number | null) {
 
     // `message.updated` is `{ messageId, changes: { status } }` from the gateway's
     // status pipeline - merge it into the cached message for live ticks.
-    const handleUpdated = (payload: { messageId: number; changes?: Partial<Message> }) => {
+    const handleUpdated = (payload: {
+      messageId: number;
+      // deletedForMeAt arrives from the gateway's message.updated fan-out for
+      // "Delete for me" but is never part of the Message row the API returns.
+      changes?: Partial<Message> & { deletedForMeAt?: string | null };
+    }) => {
       queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
         const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
         if (!typedCurrent) return current;
+        // A WhatsApp-style "Delete for me" (changes.deletedForMeAt) drops the
+        // bubble for every agent with the chat open; the row still exists but
+        // is filtered out by the messages query on the next refetch.
+        if (payload.changes?.deletedForMeAt) {
+          return {
+            ...typedCurrent,
+            data: typedCurrent.data.filter((m) => m.id !== payload.messageId),
+          };
+        }
         return {
           ...typedCurrent,
           data: typedCurrent.data.map((m) =>
@@ -330,12 +347,16 @@ export function useSendMessage(conversationId: number | null) {
       };
       queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
         const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
-        if (!typedCurrent) return current;
+        if (!typedCurrent) {
+          // First visit: cache is still empty — seed it so the optimistic
+          // bubble is visible while the initial fetch completes.
+          return { data: [tempMessage], meta: { per_page: 30, has_more: false, next_cursor: null, prev_cursor: null } };
+        }
         return { ...typedCurrent, data: [tempMessage, ...typedCurrent.data] };
       });
       return { tempId };
     },
-    onSuccess: (result) => {
+    onSuccess: (result, _variables, context) => {
       if (!conversationId) return;
       const isQueuedAck = (value: Message | SendMessageQueuedAck): value is SendMessageQueuedAck =>
         typeof value === "object" && value !== null && "dispatchId" in value;
@@ -353,8 +374,14 @@ export function useSendMessage(conversationId: number | null) {
         queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
           const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
           if (!typedCurrent) return current;
-          if (typedCurrent.data.some((m) => m.id === result.id)) return current;
-          return { ...typedCurrent, data: [result, ...typedCurrent.data] };
+          // Remove the optimistic temp message (negative ID) before inserting
+          // the real server row so we never show a duplicate bubble.
+          const tempId = context?.tempId;
+          const filtered = typeof tempId === "number"
+            ? typedCurrent.data.filter((m) => m.id !== tempId)
+            : typedCurrent.data.filter((m) => m.id < 0);
+          if (filtered.some((m) => m.id === result.id)) return current;
+          return { ...typedCurrent, data: [result, ...filtered] };
         });
       }
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -365,7 +392,11 @@ export function useSendMessage(conversationId: number | null) {
       queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
         const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
         if (!typedCurrent) return current;
-        return { ...typedCurrent, data: typedCurrent.data.filter((m) => m.id !== tempId) };
+        const filtered = typedCurrent.data.filter((m) => m.id !== tempId);
+        // If we seeded the cache in onMutate and now removed the only entry,
+        // drop the entire cache entry so the query refetches properly.
+        if (filtered.length === 0 && typedCurrent.data.length === 1) return undefined;
+        return { ...typedCurrent, data: filtered };
       });
     },
   });
@@ -474,6 +505,14 @@ export function useConversationActions(conversationId: number | null) {
     onSuccess: invalidate,
   });
 
+  const markUnread = useMutation({
+    mutationFn: () => {
+      if (!conversationId) throw new Error("No conversation selected");
+      return markConversationUnread(conversationId);
+    },
+    onSuccess: invalidate,
+  });
+
   const changePriority = useMutation({
     mutationFn: (priority: ConversationPriority) => {
       if (!conversationId) throw new Error("No conversation selected");
@@ -522,7 +561,43 @@ export function useConversationActions(conversationId: number | null) {
     onSuccess: invalidate,
   });
 
-  return { assign, close, reopen, markRead, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar, clearMessages, deleteConv, block, unblock, report };
+  return { assign, close, reopen, markRead, markUnread, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar, clearMessages, deleteConv, block, unblock, report };
+}
+
+/**
+ * Star/unstar a single message (mirrors WhatsApp's starred messages).
+ */
+export function useMessageStar(conversationId: number | null) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ messageId, starred }: { messageId: number; starred: boolean }) => {
+      if (!conversationId) throw new Error("No conversation selected");
+      return setMessageStarred(conversationId, messageId, starred);
+    },
+    onSuccess: () => {
+      if (!conversationId) return;
+      queryClient.invalidateQueries({ queryKey: messagesKey(conversationId) });
+    },
+  });
+}
+
+/**
+ * Forward a message into another conversation (mirrors WhatsApp's forward).
+ */
+export function useForwardMessage(conversationId: number | null) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ messageId, targetConversationId }: { messageId: number; targetConversationId: number }) => {
+      if (!conversationId) throw new Error("No conversation selected");
+      return forwardMessage(conversationId, messageId, targetConversationId);
+    },
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: messagesKey(variables.targetConversationId) });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+  });
 }
 
 export type { Conversation, Message };

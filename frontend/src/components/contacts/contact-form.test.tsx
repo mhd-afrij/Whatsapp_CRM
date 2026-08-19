@@ -39,7 +39,7 @@ describe("ContactForm validation", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("allows an empty email (optional field) and submits null for blank optional fields", async () => {
+  it("allows an empty email (optional field), submits null for blank optional fields, and auto-fills the browser timezone", async () => {
     const { onSubmit } = renderForm();
     const user = userEvent.setup();
 
@@ -49,13 +49,15 @@ describe("ContactForm validation", () => {
     expect(onSubmit).toHaveBeenCalledWith({
       full_name: "Jane Doe",
       email: null,
-      company: null,
-      job_title: null,
       phone_number: null,
+      address: null,
+      city: null,
+      country: null,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
   });
 
-  it("normalizes a local phone number to E.164 on blur", async () => {
+  it("keeps the national number in the field and submits E.164 using the selected country code", async () => {
     const { onSubmit } = renderForm();
     const user = userEvent.setup();
 
@@ -63,7 +65,8 @@ describe("ContactForm validation", () => {
     await user.type(phoneInput, "0750144774");
     await user.tab();
 
-    expect(phoneInput).toHaveValue("94750144774");
+    // The dropdown holds the +94 code; the field keeps the national number.
+    expect(phoneInput).toHaveValue("0750144774");
     await user.click(screen.getByRole("button", { name: /save/i }));
 
     expect(onSubmit).toHaveBeenCalledWith(

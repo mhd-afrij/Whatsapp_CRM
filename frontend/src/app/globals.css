@@ -27,6 +27,10 @@
   --color-info-light: #dbeafe;
   --color-info-dark: #1d4ed8;
 
+  /* Chat/message-list background: deliberately a step darker than --color-surface
+     so white inbound bubbles and green outbound bubbles stand out clearly. */
+  --color-chat-bg: #e6ebf0;
+
   /* Chart categorical series (validated palette, see dataviz skill references/palette.md) */
   --chart-series-1: #2a78d6; /* blue */
   --chart-series-2: #eb6834; /* orange */
@@ -83,6 +87,9 @@
   --color-info-light: #0c2a48;
   --color-info-dark: #60a5fa;
 
+  /* Chat/message-list background: darker than --color-surface so bubbles pop. */
+  --color-chat-bg: #0a0f1a;
+
   /* Chart categorical series (dark-mode step, see dataviz skill references/palette.md) */
   --chart-series-1: #3987e5;
   --chart-series-2: #d95926;
@@ -119,6 +126,9 @@
     --color-info-light: #0c2a48;
     --color-info-dark: #60a5fa;
 
+    /* Chat/message-list background: darker than --color-surface so bubbles pop. */
+    --color-chat-bg: #0a0f1a;
+
     /* Chart categorical series (dark-mode step, see dataviz skill references/palette.md) */
     --chart-series-1: #3987e5;
     --chart-series-2: #d95926;
@@ -143,11 +153,11 @@ body {
   overflow-x: hidden;
 }
 
-/* WhatsApp-style message list background: a very faint dot texture that
-   follows the active theme instead of a strong image, keeping message
-   readability high while breaking up the flat panel colour. */
+/* WhatsApp-style message list background: a very faint dot texture over a
+   background that is clearly distinct from the bubbles (--color-chat-bg), so
+   white inbound bubbles and green outbound bubbles read instantly. */
 .message-list-bg {
-  background-color: var(--color-bg);
+  background-color: var(--color-chat-bg);
   background-image: radial-gradient(
     circle at 1px 1px,
     color-mix(in srgb, var(--color-primary) 9%, transparent) 1px,

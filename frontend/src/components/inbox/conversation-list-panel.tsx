@@ -12,6 +12,8 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
+import { useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useConversationList } from "@/hooks/use-conversations";
 import { useWhatsappActions, useWhatsappStatus } from "@/hooks/use-whatsapp-connection";
@@ -19,6 +21,22 @@ import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
 import { useConversationFilters, type TabFilter } from "@/hooks/use-conversation-filters";
 import { ErrorState } from "@/components/ui/error-state";
 import { formatWhatsAppTime } from "@/lib/time-format";
+import { ApiError } from "@/lib/api-client";
+import { useToast } from "@/providers/toast-provider";
+import {
+  archiveConversation,
+  closeConversation,
+  deleteConversation,
+  exportConversationChat,
+  markConversationUnread,
+  muteConversation,
+  pinConversation,
+  reopenConversation,
+  unarchiveConversation,
+  unmuteConversation,
+  unpinConversation,
+  type Conversation,
+} from "@/lib/conversations-api";
 import { ConversationItem } from "./conversation-item";
 import { ActiveFilterChips } from "./active-filter-chips";
 import { ConversationFilterPopover } from "./conversation-filter-popover";
@@ -42,13 +60,94 @@ const FILTERS: FilterOption[] = [
 export function ConversationListPanel() {
   const params = useParams<{ conversationId?: string }>();
   const router = useRouter();
+  const activeConversationId = params?.conversationId ? Number(params.conversationId) : null;
   const { tabFilter, advancedFilters, apiFilters, setTab, setAdvanced, clearAdvanced } = useConversationFilters();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const { data: workspace } = useWorkspaceSettings();
   const { data: whatsappStatus } = useWhatsappStatus({ enabled: true });
   const whatsappActions = useWhatsappActions();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const invalidateConversations = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["conversations"] });
+  }, [queryClient]);
+
+  const handleTogglePin = useCallback(
+    (conversation: Conversation) => {
+      const action = conversation.pinned_at ? unpinConversation(conversation.id) : pinConversation(conversation.id);
+      void action.then(invalidateConversations).catch(() => toast("Unable to update pin.", "error"));
+    },
+    [invalidateConversations, toast]
+  );
+
+  const handleToggleArchive = useCallback(
+    (conversation: Conversation) => {
+      const action = conversation.archived_at
+        ? unarchiveConversation(conversation.id)
+        : archiveConversation(conversation.id);
+      void action.then(invalidateConversations).catch(() => toast("Unable to update archive.", "error"));
+    },
+    [invalidateConversations, toast]
+  );
+
+  const handleToggleMute = useCallback(
+    (conversation: Conversation) => {
+      const isMuted = Boolean(conversation.muted_until && new Date(conversation.muted_until) > new Date());
+      const action = isMuted ? unmuteConversation(conversation.id) : muteConversation(conversation.id);
+      void action.then(invalidateConversations).catch(() => toast("Unable to update mute.", "error"));
+    },
+    [invalidateConversations, toast]
+  );
+
+  const handleMarkUnread = useCallback(
+    (conversation: Conversation) => {
+      void markConversationUnread(conversation.id)
+        .then(invalidateConversations)
+        .catch(() => toast("Unable to mark as unread.", "error"));
+    },
+    [invalidateConversations, toast]
+  );
+
+  const handleToggleStatus = useCallback(
+    (conversation: Conversation) => {
+      const action =
+        conversation.status === "closed"
+          ? reopenConversation(conversation.id)
+          : closeConversation(conversation.id);
+      void action.then(invalidateConversations).catch(() => toast("Unable to update conversation status.", "error"));
+    },
+    [invalidateConversations, toast]
+  );
+
+  const handleDelete = useCallback(
+    (conversation: Conversation) => {
+      if (!window.confirm("Delete this conversation and all its messages? This cannot be undone.")) return;
+      void deleteConversation(conversation.id)
+        .then(() => {
+          if (activeConversationId === conversation.id) {
+            router.push("/inbox");
+          }
+          invalidateConversations();
+        })
+        .catch(() => toast("Unable to delete conversation.", "error"));
+    },
+    [activeConversationId, invalidateConversations, router, toast]
+  );
+
+  const handleExport = useCallback(
+    async (conversation: Conversation) => {
+      try {
+        await exportConversationChat(conversation);
+        toast("Chat exported.", "success");
+      } catch (error) {
+        toast(error instanceof ApiError ? error.message : "Unable to export chat.", "error");
+      }
+    },
+    [toast]
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
@@ -69,7 +168,6 @@ export function ConversationListPanel() {
     search: debouncedSearch || undefined,
   });
 
-  const activeConversationId = params?.conversationId ? Number(params.conversationId) : null;
   // Pagination + socket upserts can transiently duplicate (or, if a partial row
   // ever sneaks in, de-key) entries - dedupe by id so every rendered item has a
   // stable unique key.
@@ -240,6 +338,13 @@ export function ConversationListPanel() {
               isSelected={activeConversationId === conversation.id}
               onClick={() => router.push(`/inbox/${conversation.id}`)}
               formatTime={(date) => formatWhatsAppTime(date, workspace?.timezone)}
+              onTogglePin={() => handleTogglePin(conversation)}
+              onToggleArchive={() => handleToggleArchive(conversation)}
+              onToggleMute={() => handleToggleMute(conversation)}
+              onMarkUnread={() => handleMarkUnread(conversation)}
+              onToggleStatus={() => handleToggleStatus(conversation)}
+              onDelete={() => handleDelete(conversation)}
+              onExport={() => handleExport(conversation)}
             />
           ))}
         </div>

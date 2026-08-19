@@ -1,12 +1,16 @@
 "use client";
 
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useSocket } from "@/providers/socket-provider";
+import { useAuth } from "@/context/auth-context";
 import {
   archiveContact,
   createContact,
   fetchContact,
   fetchContacts,
   importContacts,
+  mergeDuplicateContacts,
   restoreContact,
   updateContact,
   type ContactFilters,
@@ -81,4 +85,64 @@ export function useImportContacts() {
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
     },
   });
+}
+
+/**
+ * Runs the duplicate-contact merge (dryRun=true previews without changing
+ * anything). Invalidates contact caches after a real merge so lists refresh.
+ */
+export function useMergeDuplicateContacts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dryRun: boolean) => mergeDuplicateContacts(dryRun),
+    onSuccess: (report) => {
+      if (report.merged > 0) {
+        queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      }
+    },
+  });
+}
+
+/**
+ * Subscribes to the gateway's `contact.created/updated/deleted` events (spec
+ * §17) and invalidates the contact list + any open detail query so the UI
+ * updates without a reload. Contacts are workspace-shared, so this joins the
+ * same inbox room the conversation list uses and lets the envelope wrapper
+ * filter out other workspaces.
+ */
+export function useContactRealtime() {
+  const { socket } = useSocket();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!socket || !user?.workspace_id) return;
+
+    const joinRoom = () => {
+      socket.emit("join", `workspace:${user.workspace_id}:inbox`);
+    };
+    joinRoom();
+    socket.on("connect", joinRoom);
+
+    const refresh = () => {
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+    };
+    const handlePayload = (payload: { contact_id?: number }) => {
+      refresh();
+      if (payload?.contact_id) {
+        queryClient.invalidateQueries({ queryKey: contactKey(payload.contact_id) });
+      }
+    };
+
+    socket.on("contact.created", handlePayload);
+    socket.on("contact.updated", handlePayload);
+    socket.on("contact.deleted", handlePayload);
+
+    return () => {
+      socket.off("connect", joinRoom);
+      socket.off("contact.created", handlePayload);
+      socket.off("contact.updated", handlePayload);
+      socket.off("contact.deleted", handlePayload);
+    };
+  }, [socket, user?.workspace_id, queryClient]);
 }

@@ -26,6 +26,7 @@ import {
   Wifi,
   ChevronDown,
   PanelLeftOpen,
+  Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
@@ -55,6 +56,12 @@ const permissionGatedNavItems = [
     href: "/leads",
     label: "Leads",
     icon: UserPlus,
+    permission: "leads.manage",
+  },
+  {
+    href: "/leads/board",
+    label: "Lead Board",
+    icon: Kanban,
     permission: "leads.manage",
   },
   {
@@ -165,6 +172,12 @@ const permissionGatedNavItems = [
     icon: Settings,
     permission: "workspace.settings.manage",
   },
+  {
+    href: "/settings/contacts",
+    label: "Duplicate Contacts",
+    icon: Copy,
+    permission: "contacts.delete",
+  },
 ];
 
 // Category membership for grouping visible modules under section headers.
@@ -174,6 +187,7 @@ const categoryHrefs: Record<string, string[]> = {
     "/inbox",
     "/contacts",
     "/leads",
+    "/leads/board",
     "/pipeline",
     "/tasks",
     "/calendar",
@@ -194,6 +208,7 @@ const categoryHrefs: Record<string, string[]> = {
     "/settings/failed-jobs",
     "/settings/whatsapp-health",
     "/settings/custom-fields",
+    "/settings/contacts",
   ],
 };
 
@@ -213,9 +228,11 @@ export function Sidebar() {
   const canViewRoles = usePermission("roles.view");
   const canViewAuditLog = usePermission("audit_logs.view");
   const canManageDlq = usePermission("dlq.manage");
+  const canDeleteContacts = usePermission("contacts.delete");
   const permissionByHref: Record<string, boolean> = {
     "/contacts": canViewContacts,
     "/leads": canManageLeads,
+    "/leads/board": canManageLeads,
     "/pipeline": canManageDeals,
     "/tasks": canManageTasks,
     "/calendar": canManageTasks,
@@ -232,9 +249,10 @@ export function Sidebar() {
     "/settings/failed-jobs": canManageDlq,
     "/settings/whatsapp-health": canManageWhatsapp,
     "/settings/custom-fields": canManageWorkspace,
+    "/settings/contacts": canDeleteContacts,
   };
 
-  const leadingHrefs = ["/contacts", "/leads", "/pipeline", "/tasks", "/calendar"];
+  const leadingHrefs = ["/contacts", "/leads", "/leads/board", "/pipeline", "/tasks", "/calendar"];
   const visibleGatedItems = permissionGatedNavItems.filter(
     (item) => permissionByHref[item.href]
   );
