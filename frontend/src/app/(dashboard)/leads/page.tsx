@@ -84,7 +84,7 @@ function LeadsTable() {
 
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [bulkMode, setBulkMode] = useState<"assign" | "stage" | null>(null);
+  const [bulkMode, setBulkMode] = useState<"assign" | "stage" | "tag" | null>(null);
 
   const filters: LeadFilters = {
     search: search || undefined,
@@ -107,6 +107,7 @@ function LeadsTable() {
 
   const bulkAssign = useBulkAssignLeads();
   const bulkStage = useBulkChangeStage();
+  const bulkTag = useBulkTagLeads();
 
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
@@ -129,7 +130,15 @@ function LeadsTable() {
     <div className="space-y-4">
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-text">Leads</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold text-text">Leads</h1>
+          <Link
+            href="/leads/board"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-2 text-sm text-muted hover:bg-primary-soft/30"
+          >
+            <Kanban className="h-4 w-4" /> Board
+          </Link>
+        </div>
         <button
           type="button"
           onClick={() => setShowNewLead(true)}
@@ -313,6 +322,13 @@ function LeadsTable() {
             >
               <ArrowUpDown className="h-3 w-3" /> Stage
             </button>
+            <button
+              type="button"
+              onClick={() => setBulkMode(bulkMode === "tag" ? null : "tag")}
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs font-medium hover:bg-primary-soft/30"
+            >
+              <Tag className="h-3 w-3" /> Tag
+            </button>
           </div>
           {bulkMode === "assign" && (
             <select
@@ -345,10 +361,29 @@ function LeadsTable() {
               className="rounded-md border border-border bg-surface px-2 py-1 text-xs"
             >
               <option value="">Select stage…</option>
-              {STAGE_OPTIONS.filter((s) => !["converted", "lost"].includes(s.value)).map((s) => (
+              {ACTIVE_STAGES.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
+          )}
+          {bulkMode === "tag" && (
+            <div className="flex flex-wrap gap-1">
+              {labels?.map((label: any) => (
+                <button
+                  key={label.id}
+                  type="button"
+                  onClick={() => {
+                    bulkTag.mutate(
+                      { leadIds: Array.from(selectedIds), labelIds: [label.id], action: "attach" },
+                      { onSuccess: () => setSelectedIds(new Set()) }
+                    );
+                  }}
+                  className="rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-medium hover:bg-primary-soft/30"
+                >
+                  + {label.name}
+                </button>
+              ))}
+            </div>
           )}
           <button
             type="button"
