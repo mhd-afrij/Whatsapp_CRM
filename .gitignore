@@ -25,6 +25,12 @@ bootstrap/cache/*.php
 # Logs
 *.log
 
+# Test artifacts
+e2e/test-results/
+
+# WhatsApp gateway runtime
+whatsapp-gateway/media-storage/
+
 # OS / editor
 .DS_Store
 Thumbs.db
