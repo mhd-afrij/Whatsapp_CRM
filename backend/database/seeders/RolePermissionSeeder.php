@@ -29,6 +29,8 @@ class RolePermissionSeeder extends Seeder
             'contacts.edit' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
             'contacts.delete' => ['Super Administrator', 'Administrator'],
             'contacts.export' => ['Super Administrator', 'Administrator', 'Manager'],
+            // Import is functionally a bulk create; grant to the same roles as contacts.create.
+            'contacts.import' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
 
             'conversations.view' => ['Super Administrator', 'Administrator', 'Manager', 'Agent', 'Viewer'],
             'conversations.view_all' => ['Super Administrator', 'Administrator'],

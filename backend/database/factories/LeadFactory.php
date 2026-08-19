@@ -20,7 +20,9 @@ class LeadFactory extends Factory
             'workspace_id' => Workspace::factory(),
             'contact_id' => Contact::factory(),
             'source' => fake()->randomElement(['whatsapp', 'manual', 'import', 'other']),
-            'status' => 'new',
+            'stage' => 'new',
+            'score' => fake()->numberBetween(0, 100),
+            'temperature' => fake()->randomElement(['cold', 'warm', 'hot']),
         ];
     }
 }

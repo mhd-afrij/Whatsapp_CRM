@@ -23,6 +23,11 @@ class PermissionSeeder extends Seeder
             ['name' => 'contacts.edit', 'group' => 'contacts'],
             ['name' => 'contacts.delete', 'group' => 'contacts'],
             ['name' => 'contacts.export', 'group' => 'contacts'],
+            // Kept in the catalog (so admins can grant/deny it in the Role Admin UI) but
+            // the import route itself is still gated on contacts.create - importing IS
+            // creating, and gating on a second permission would 403 every existing
+            // workspace until re-seeded (see docs/07-permission-matrix.md).
+            ['name' => 'contacts.import', 'group' => 'contacts'],
 
             ['name' => 'conversations.view', 'group' => 'conversations'],
             ['name' => 'conversations.view_all', 'group' => 'conversations'],

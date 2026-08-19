@@ -53,7 +53,7 @@ class LeadTest extends TestCase
             'id' => $response->json('data.id'),
             'contact_id' => $contact->id,
             'owner_user_id' => $agent->id,
-            'status' => 'new',
+            'stage' => 'new',
         ]);
     }
 
@@ -101,7 +101,7 @@ class LeadTest extends TestCase
         $otherAgent = $this->userWithRole('Agent');
         $lead = Lead::factory()->create(['workspace_id' => $agent->workspace_id, 'owner_user_id' => $otherAgent->id]);
 
-        $this->asUser($agent)->patchJson("/api/v1/leads/{$lead->id}", ['status' => 'contacted'])
+        $this->asUser($agent)->patchJson("/api/v1/leads/{$lead->id}", ['notes' => 'updated'])
             ->assertStatus(403);
     }
 
@@ -114,7 +114,7 @@ class LeadTest extends TestCase
 
         // Manager is not in the bypass list (users.manage/roles.manage) unless it has that
         // permission; assert current policy behavior: Manager must own it OR have those perms.
-        $response = $this->asUser($manager)->patchJson("/api/v1/leads/{$lead->id}", ['status' => 'contacted']);
+        $response = $this->asUser($manager)->patchJson("/api/v1/leads/{$lead->id}", ['notes' => 'updated by manager']);
         $this->assertContains($response->status(), [200, 403]);
     }
 
@@ -126,5 +126,101 @@ class LeadTest extends TestCase
         $foreign = Lead::factory()->create(['workspace_id' => $other->id]);
 
         $this->asUser($agent)->getJson("/api/v1/leads/{$foreign->id}")->assertStatus(404);
+    }
+
+    // ── New lifecycle tests ────────────────────────────────────────────
+
+    public function test_agent_can_change_lead_stage(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $lead = Lead::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'owner_user_id' => $agent->id,
+            'stage' => 'new',
+        ]);
+
+        $this->asUser($agent)->postJson("/api/v1/leads/{$lead->id}/stage", [
+            'stage' => 'contacted',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('leads', ['id' => $lead->id, 'stage' => 'contacted']);
+    }
+
+    public function test_agent_can_assign_a_lead(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $otherAgent = $this->userWithRole('Agent');
+        $lead = Lead::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'owner_user_id' => $agent->id,
+        ]);
+
+        $this->asUser($agent)->postJson("/api/v1/leads/{$lead->id}/assign", [
+            'owner_user_id' => $otherAgent->id,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('leads', ['id' => $lead->id, 'owner_user_id' => $otherAgent->id]);
+    }
+
+    public function test_agent_can_mark_lead_lost_with_reason(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $lead = Lead::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'owner_user_id' => $agent->id,
+            'stage' => 'new',
+        ]);
+
+        $this->asUser($agent)->postJson("/api/v1/leads/{$lead->id}/lost", [
+            'lost_reason' => 'not_interested',
+            'lost_notes' => 'Changed requirements',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('leads', [
+            'id' => $lead->id,
+            'stage' => 'lost',
+            'lost_reason' => 'not_interested',
+        ]);
+    }
+
+    public function test_activities_are_recorded_on_lead_creation(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $contact = Contact::factory()->create(['workspace_id' => $agent->workspace_id]);
+
+        $response = $this->asUser($agent)->postJson('/api/v1/leads', [
+            'contact_id' => $contact->id,
+            'source' => 'manual',
+        ])->assertStatus(201);
+
+        $leadId = $response->json('data.id');
+
+        $this->assertDatabaseHas('lead_activities', [
+            'lead_id' => $leadId,
+            'activity_type' => 'lead.created',
+        ]);
+    }
+
+    public function test_lead_list_supports_search(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $contact = Contact::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'full_name' => 'John Silva',
+        ]);
+        Lead::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'owner_user_id' => $agent->id,
+            'contact_id' => $contact->id,
+        ]);
+
+        $this->asUser($agent)->getJson('/api/v1/leads?search=John')
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
     }
 }
