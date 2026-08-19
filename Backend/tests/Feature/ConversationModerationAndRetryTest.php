@@ -41,7 +41,9 @@ class ConversationModerationAndRetryTest extends TestCase
         ]);
 
         Http::fake([
-            '*/internal/whatsapp/conversations/*/messages' => Http::response([
+            // The gateway receives DELETE params as query params (see GatewayClient::request),
+            // so the URL carries a trailing ?workspaceId=... that the pattern must swallow.
+            '*/internal/whatsapp/conversations/*/messages*' => Http::response([
                 'success' => true,
                 'message' => 'Conversation cleared',
                 'data' => ['conversationId' => $conversation->id, 'messagesDeleted' => 4],
@@ -54,9 +56,11 @@ class ConversationModerationAndRetryTest extends TestCase
         $response->assertJsonPath('data.messages_deleted', 4);
 
         Http::assertSent(function ($request) use ($conversation) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
             return $request->method() === 'DELETE'
                 && str_contains($request->url(), "/internal/whatsapp/conversations/{$conversation->id}/messages")
-                && $request['workspaceId'] == $conversation->workspace_id;
+                && (int) ($query['workspaceId'] ?? 0) === $conversation->workspace_id;
         });
     }
 
@@ -82,10 +86,87 @@ class ConversationModerationAndRetryTest extends TestCase
             ->assertJsonPath('data.conversation_id', $conversation->id);
 
         Http::assertSent(function ($request) use ($conversation) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
             return $request->method() === 'DELETE'
                 && str_contains($request->url(), "/internal/whatsapp/conversations/{$conversation->id}")
-                && $request['workspaceId'] == $conversation->workspace_id;
+                && (int) ($query['workspaceId'] ?? 0) === $conversation->workspace_id;
         });
+    }
+
+    public function test_agent_can_delete_message_for_me_via_gateway(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'assigned_user_id' => $agent->id,
+        ]);
+        $messageId = $this->insertMessage($conversation);
+
+        Http::fake([
+            '*/internal/whatsapp/conversations/*/messages/*/delete-for-me*' => Http::response([
+                'success' => true,
+                'message' => 'Message deleted for me',
+                'data' => ['messageId' => $messageId, 'deletedForMeAt' => now()->toISOString()],
+            ]),
+        ]);
+
+        $this->asUser($agent)->deleteJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/delete-for-me")
+            ->assertOk()
+            ->assertJsonPath('data.message_id', $messageId);
+
+        Http::assertSent(function ($request) use ($conversation, $messageId) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return $request->method() === 'DELETE'
+                && str_contains($request->url(), "/internal/whatsapp/conversations/{$conversation->id}/messages/{$messageId}/delete-for-me")
+                && (int) ($query['workspaceId'] ?? 0) === $conversation->workspace_id;
+        });
+    }
+
+    public function test_viewer_cannot_delete_messages_for_me(): void
+    {
+        $this->seedRbac();
+        $viewer = $this->userWithRole('Viewer');
+        $conversation = Conversation::factory()->create([
+            'workspace_id' => $viewer->workspace_id,
+            'assigned_user_id' => $viewer->id,
+        ]);
+        $messageId = $this->insertMessage($conversation);
+
+        Http::fake();
+
+        $this->asUser($viewer)->deleteJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/delete-for-me")
+            ->assertForbidden();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_deleted_for_me_messages_are_hidden_from_the_thread(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'assigned_user_id' => $agent->id,
+        ]);
+
+        $visibleId = $this->insertMessage($conversation, ['body' => 'still visible']);
+        $hiddenId = $this->insertMessage($conversation, [
+            'body' => 'hidden for me',
+            'deleted_for_me_at' => now(),
+        ]);
+
+        Http::fake();
+
+        $response = $this->asUser($agent)->getJson("/api/v1/conversations/{$conversation->id}/messages")
+            ->assertOk();
+
+        $ids = collect($response->json('data'))->pluck('id')->all();
+
+        $this->assertContains($visibleId, $ids);
+        $this->assertNotContains($hiddenId, $ids);
     }
 
     public function test_agent_can_block_and_unblock_a_conversation(): void

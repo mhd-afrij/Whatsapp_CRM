@@ -10,8 +10,12 @@ class SlaService
 {
     /**
      * Start an SLA timer for a conversation when a new inbound message is received.
+     *
+     * `startedAt` defaults to now(); scheduled callers (sla:check-breaches) pass the
+     * inbound message's created_at so a timer started by polling is anchored to when
+     * the customer actually wrote, not when the poll ran.
      */
-    public function startSla(int $workspaceId, int $conversationId, string $type = 'first_response'): ?SlaEvent
+    public function startSla(int $workspaceId, int $conversationId, string $type = 'first_response', ?\Carbon\CarbonInterface $startedAt = null): ?SlaEvent
     {
         $config = SlaConfig::query()
             ->where('workspace_id', $workspaceId)
@@ -37,7 +41,7 @@ class SlaService
             ? $config->first_response_minutes
             : $config->followup_response_minutes;
 
-        $startedAt = now();
+        $startedAt = $startedAt ?? now();
         $deadlineAt = $startedAt->copy()->addMinutes($minutes);
 
         // Check if we're within business hours
