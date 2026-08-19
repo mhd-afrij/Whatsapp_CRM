@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class WorkspaceSetting extends Model
 {
     protected $fillable = [
-        'workspace_id', 'business_hours', 'default_pipeline_id', 'notification_defaults', 'branding',
+        'workspace_id', 'business_hours', 'notification_defaults', 'branding',
         'away_message_enabled', 'away_message', 'away_message_trigger',
     ];
 
@@ -26,9 +26,5 @@ class WorkspaceSetting extends Model
     {
         return $this->belongsTo(Workspace::class);
     }
-
-    public function defaultPipeline(): BelongsTo
-    {
-        return $this->belongsTo(Pipeline::class, 'default_pipeline_id');
-    }
 }
+

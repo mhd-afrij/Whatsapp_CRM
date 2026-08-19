@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { usePermission } from "@/hooks/use-permission";
@@ -77,17 +76,17 @@ function DealDetail({ id }: { id: number }) {
     <div className="mx-auto max-w-3xl space-y-6">
       <button
         type="button"
-        onClick={() => router.push("/pipeline")}
+        onClick={() => router.push("/deals")}
         className="inline-flex items-center gap-1 text-sm text-muted hover:text-text"
       >
-        <ArrowLeft className="h-4 w-4" /> Back to pipeline
+        <ArrowLeft className="h-4 w-4" /> Back to deals
       </button>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-text">{deal.title}</h1>
           <p className="text-sm text-muted">
-            {deal.pipeline?.name} · {deal.stage?.name}
+            {deal.stage?.name ?? "No stage"}
           </p>
         </div>
         <span
@@ -224,11 +223,6 @@ function DealDetail({ id }: { id: number }) {
         )}
       </section>
 
-      {deal.lead_id && (
-        <Link href={`/leads/${deal.lead_id}`} className="text-sm text-primary hover:underline">
-          View originating lead
-        </Link>
-      )}
     </div>
   );
 }

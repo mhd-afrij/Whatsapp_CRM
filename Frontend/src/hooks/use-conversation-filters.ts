@@ -10,7 +10,6 @@ export interface AdvancedFilters {
   status?: string;
   priority?: string;
   label?: string;
-  leadStatus?: string;
   dealStage?: string;
   dateRange?: { from: Date; to: Date };
 }
@@ -36,7 +35,6 @@ export function useConversationFilters() {
     if (searchParams.has("status")) advanced.status = searchParams.get("status") ?? undefined;
     if (searchParams.has("priority")) advanced.priority = searchParams.get("priority") ?? undefined;
     if (searchParams.has("label")) advanced.label = searchParams.get("label") ?? undefined;
-    if (searchParams.has("leadStatus")) advanced.leadStatus = searchParams.get("leadStatus") ?? undefined;
     if (searchParams.has("dealStage")) advanced.dealStage = searchParams.get("dealStage") ?? undefined;
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
@@ -60,7 +58,6 @@ export function useConversationFilters() {
     if (filters.status) params.set("status", filters.status);
     if (filters.priority) params.set("priority", filters.priority);
     if (filters.label) params.set("label", filters.label);
-    if (filters.leadStatus) params.set("leadStatus", filters.leadStatus);
     if (filters.dealStage) params.set("dealStage", filters.dealStage);
     if (filters.dateRange) {
       params.set("dateFrom", filters.dateRange.from.toISOString());
@@ -92,7 +89,6 @@ export function useConversationFilters() {
     ...(advancedFilters.priority && { priority: advancedFilters.priority as any }),
     ...(advancedFilters.label && { label: advancedFilters.label }),
     ...(advancedFilters.team && { team_id: parseInt(advancedFilters.team) || undefined }),
-    ...(advancedFilters.leadStatus && { lead_status: advancedFilters.leadStatus }),
     ...(advancedFilters.dealStage && { deal_stage: advancedFilters.dealStage }),
     ...(advancedFilters.dateRange && {
       date_from: advancedFilters.dateRange.from.toISOString(),

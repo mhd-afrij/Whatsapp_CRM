@@ -15,7 +15,7 @@ class Deal extends Model
     use BelongsToWorkspace, HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'workspace_id', 'lead_id', 'contact_id', 'pipeline_id', 'pipeline_stage_id', 'title',
+        'workspace_id', 'contact_id', 'pipeline_id', 'pipeline_stage_id', 'title',
         'value_amount', 'value_currency', 'probability_percent', 'owner_user_id',
         'expected_close_date', 'status', 'lost_reason', 'closed_at',
     ];
@@ -29,24 +29,9 @@ class Deal extends Model
         ];
     }
 
-    public function lead(): BelongsTo
-    {
-        return $this->belongsTo(Lead::class);
-    }
-
     public function contact(): BelongsTo
     {
         return $this->belongsTo(Contact::class);
-    }
-
-    public function pipeline(): BelongsTo
-    {
-        return $this->belongsTo(Pipeline::class);
-    }
-
-    public function stage(): BelongsTo
-    {
-        return $this->belongsTo(PipelineStage::class, 'pipeline_stage_id');
     }
 
     public function owner(): BelongsTo

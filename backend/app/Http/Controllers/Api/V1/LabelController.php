@@ -76,7 +76,7 @@ class LabelController extends Controller
     /**
      * DELETE /api/v1/labels/{id}
      *
-     * The label_id column on every contact_label/conversation_label/lead_label/deal_label
+     * The label_id column on every contact_label/conversation_label/deal_label
      * pivot table is declared with ->cascadeOnDelete() (see
      * database/migrations/2026_07_31_080039_create_label_pivot_tables.php), so the database
      * itself removes every pivot row referencing this label as part of the same delete - no

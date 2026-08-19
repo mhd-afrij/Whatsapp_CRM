@@ -61,7 +61,7 @@ function LabelRow({ label }: { label: LabelSummary }) {
   };
 
   const onDelete = async () => {
-    if (!window.confirm(`Delete "${label.name}"? It will be removed from every contact, lead, deal, and conversation it's attached to.`)) {
+    if (!window.confirm(`Delete "${label.name}"? It will be removed from every contact, deal, and conversation it's attached to.`)) {
       return;
     }
     setError(null);
@@ -155,7 +155,7 @@ function LabelsManager() {
         <h1 className="text-2xl font-semibold text-text">Labels</h1>
         <p className="mt-1 text-sm text-muted">
           Create, recolor, and remove workspace labels. Labels can be attached to contacts,
-          leads, deals, and conversations to segment and filter them. Deleting a label here
+          deals, and conversations to segment and filter them. Deleting a label here
           removes it from every record it&apos;s attached to.
         </p>
       </div>

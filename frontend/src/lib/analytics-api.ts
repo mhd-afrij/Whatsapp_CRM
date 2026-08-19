@@ -20,7 +20,6 @@ export interface DashboardSummary {
     sample_size: number;
   };
   contacts: { new: number };
-  leads: { new: number; converted: number; conversion_rate_percent: number };
   deals: { pipeline_value: number; won_value: number; lost_count: number };
   tasks: { overdue: number };
   agent_workload: Array<{ user_id: number; name: string; open_conversations: number; open_tasks: number }>;
@@ -46,26 +45,6 @@ export interface ResponseTimePoint {
 
 export async function fetchResponseTimeTrend(filters: AnalyticsFilters): Promise<ResponseTimePoint[]> {
   return unwrap(apiClient.get("/analytics/response-time-trend", { params: filters }));
-}
-
-export interface LeadFunnelPoint {
-  status: string;
-  count: number;
-}
-
-export async function fetchLeadFunnel(filters: AnalyticsFilters): Promise<LeadFunnelPoint[]> {
-  return unwrap(apiClient.get("/analytics/lead-funnel", { params: filters }));
-}
-
-export interface PipelineStagePoint {
-  stage_id: number | null;
-  stage_name: string;
-  count: number;
-  value: number;
-}
-
-export async function fetchPipelineStageDistribution(filters: AnalyticsFilters): Promise<PipelineStagePoint[]> {
-  return unwrap(apiClient.get("/analytics/pipeline-stage-distribution", { params: filters }));
 }
 
 export interface WonVsLostPoint {
@@ -101,7 +80,7 @@ export async function fetchTaskCompletionRate(filters: AnalyticsFilters): Promis
   return unwrap(apiClient.get("/analytics/task-completion-rate", { params: filters }));
 }
 
-export type ReportExportType = "contacts" | "leads" | "deals" | "tasks";
+export type ReportExportType = "contacts" | "deals" | "tasks";
 
 export async function requestReportExport(
   type: ReportExportType,

@@ -36,7 +36,6 @@ export interface DealStageHistoryEntry {
 export interface Deal {
   id: number;
   workspace_id: number;
-  lead_id: number | null;
   contact_id: number;
   pipeline_id: number;
   pipeline_stage_id: number;
@@ -72,7 +71,6 @@ export interface DealFilters {
 
 export interface DealFormValues {
   contact_id?: number;
-  lead_id?: number | null;
   pipeline_id?: number;
   pipeline_stage_id?: number;
   title?: string;

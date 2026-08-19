@@ -27,7 +27,6 @@ import {
 import type { AdvancedFilters } from "@/hooks/use-conversation-filters";
 import { useUsers } from "@/hooks/use-users";
 import { useLabelList } from "@/hooks/use-labels";
-import { usePipelineList } from "@/hooks/use-pipelines";
 import { Input } from "@/components/ui/input";
 
 interface ConversationFilterPopoverProps {
@@ -48,14 +47,6 @@ const PRIORITY_OPTIONS = [
   { value: "urgent", label: "Urgent" },
 ];
 
-const LEAD_STATUS_OPTIONS = [
-  { value: "new", label: "New" },
-  { value: "contacted", label: "Contacted" },
-  { value: "qualified", label: "Qualified" },
-  { value: "disqualified", label: "Disqualified" },
-  { value: "converted", label: "Converted" },
-];
-
 export function ConversationFilterPopover({
   filters,
   onFiltersChange,
@@ -63,13 +54,6 @@ export function ConversationFilterPopover({
   const [open, setOpen] = useState(false);
   const { data: users } = useUsers();
   const { data: labels } = useLabelList();
-  const { data: pipelines } = usePipelineList();
-
-  // Flatten every pipeline's stages into one list of { id, name } so the
-  // filter can match deals by stage name regardless of which pipeline owns it.
-  const dealStages = pipelines?.flatMap((pipeline) =>
-    (pipeline.stages ?? []).map((stage) => ({ id: stage.id, name: stage.name }))
-  ) ?? [];
 
   const handleFilterChange = (key: keyof AdvancedFilters, value: string | null | undefined) => {
     onFiltersChange({
@@ -142,46 +126,6 @@ export function ConversationFilterPopover({
                 {PRIORITY_OPTIONS.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Lead Status Filter */}
-          <div className="space-y-2">
-            <Label className="text-xs font-medium">Lead Status</Label>
-            <Select
-              value={filters.leadStatus || ""}
-              onValueChange={(value) => handleFilterChange("leadStatus", value)}
-            >
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue placeholder="Select lead status..." />
-              </SelectTrigger>
-              <SelectContent>
-                {LEAD_STATUS_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Deal Stage Filter */}
-          <div className="space-y-2">
-            <Label className="text-xs font-medium">Deal Stage</Label>
-            <Select
-              value={filters.dealStage || ""}
-              onValueChange={(value) => handleFilterChange("dealStage", value)}
-            >
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue placeholder="Select deal stage..." />
-              </SelectTrigger>
-              <SelectContent>
-                {dealStages.map((stage) => (
-                  <SelectItem key={stage.id} value={stage.name}>
-                    {stage.name}
                   </SelectItem>
                 ))}
               </SelectContent>

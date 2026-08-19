@@ -35,7 +35,7 @@ function DuplicateContactsManager() {
     if (
       !window.confirm(
         `Merge ${total} duplicate contact(s) into ${report.details.length} primary contact(s)? ` +
-          "Every linked conversation, lead, deal, task, note, and label will be re-pointed to the " +
+          "Every linked conversation, deal, task, note, and label will be re-pointed to the " +
           "kept contact, and the duplicates will be permanently deleted. This cannot be undone."
       )
     ) {
@@ -56,7 +56,7 @@ function DuplicateContactsManager() {
           Contacts are matched by their normalized phone number. When a WhatsApp reply arrives
           from a number that was already saved, it should attach to the existing contact — but
           duplicates created before this dedup was in place can still exist. Scan to find them,
-          then merge: the manually-saved contact wins, and every conversation, lead, deal, task,
+          then merge: the manually-saved contact wins, and every conversation, deal, task,
           note, and label is re-pointed to it.
         </p>
       </div>

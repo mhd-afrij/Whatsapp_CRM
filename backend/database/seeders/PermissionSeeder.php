@@ -38,9 +38,7 @@ class PermissionSeeder extends Seeder
             ['name' => 'conversations.change_priority', 'group' => 'conversations'],
             ['name' => 'conversations.delete', 'group' => 'conversations'],
 
-            ['name' => 'leads.manage', 'group' => 'leads_deals'],
             ['name' => 'deals.manage', 'group' => 'leads_deals'],
-            ['name' => 'pipelines.manage', 'group' => 'leads_deals'],
             ['name' => 'reports.view', 'group' => 'leads_deals'],
 
             ['name' => 'tasks.manage', 'group' => 'tasks'],

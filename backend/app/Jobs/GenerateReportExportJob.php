@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Models\Contact;
 use App\Models\Deal;
-use App\Models\Lead;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\NotificationService;
@@ -79,16 +78,6 @@ class GenerateReportExportJob implements ShouldQueue
                         'phone_number' => $c->phone_number, 'created_at' => $c->created_at,
                     ])->all(),
                 ['id', 'full_name', 'email', 'phone_number', 'created_at'],
-            ],
-            'leads' => [
-                Lead::query()->where('workspace_id', $this->workspaceId)
-                    ->whereBetween('created_at', [$from, $to])
-                    ->get(['id', 'contact_id', 'source', 'status', 'owner_user_id', 'created_at'])
-                    ->map(fn ($l) => [
-                        'id' => $l->id, 'contact_id' => $l->contact_id, 'source' => $l->source,
-                        'status' => $l->status, 'owner_user_id' => $l->owner_user_id, 'created_at' => $l->created_at,
-                    ])->all(),
-                ['id', 'contact_id', 'source', 'status', 'owner_user_id', 'created_at'],
             ],
             'deals' => [
                 Deal::query()->where('workspace_id', $this->workspaceId)

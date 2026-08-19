@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Deal;
-use App\Models\Lead;
 use App\Models\Message;
 use App\Models\Task;
 use App\Models\User;
@@ -86,54 +85,6 @@ class AnalyticsController extends Controller
             }
 
             return $series;
-        });
-    }
-
-    /** GET /api/v1/analytics/lead-funnel - count of leads per stage in range. */
-    public function leadFunnel(Request $request)
-    {
-        [$from, $to] = $this->range($request);
-
-        return $this->cached($request, 'lead-funnel', $from, $to, function () use ($from, $to, $request) {
-            $query = Lead::query()->whereBetween('created_at', [$from, $to]);
-            $this->applyOwner($query, $request, 'owner_user_id');
-
-            $counts = $query->selectRaw('stage, count(*) as cnt')->groupBy('stage')->pluck('cnt', 'stage');
-
-            $stages = ['new', 'contacted', 'qualified', 'viewing', 'negotiation', 'converted', 'lost'];
-
-            return collect($stages)->map(fn ($stage) => [
-                'status' => $stage,
-                'count' => (int) ($counts[$stage] ?? 0),
-            ])->values()->all();
-        });
-    }
-
-    /** GET /api/v1/analytics/pipeline-stage-distribution - open deal count+value per stage. */
-    public function pipelineStageDistribution(Request $request)
-    {
-        [$from, $to] = $this->range($request);
-
-        return $this->cached($request, 'pipeline-stage-distribution', $from, $to, function () use ($request) {
-            $query = Deal::query()->with('stage')->where('status', 'open');
-            $this->applyOwner($query, $request, 'owner_user_id');
-
-            if ($request->filled('pipeline_id')) {
-                $query->where('pipeline_id', $request->integer('pipeline_id'));
-            }
-
-            $deals = $query->get(['pipeline_stage_id', 'value_amount']);
-
-            return $deals->groupBy('pipeline_stage_id')->map(function ($group) {
-                $stage = $group->first()->stage;
-
-                return [
-                    'stage_id' => $stage?->id,
-                    'stage_name' => $stage?->name ?? 'Unknown',
-                    'count' => $group->count(),
-                    'value' => (float) $group->sum('value_amount'),
-                ];
-            })->values()->all();
         });
     }
 

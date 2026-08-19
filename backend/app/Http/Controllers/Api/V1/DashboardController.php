@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Deal;
-use App\Models\Lead;
 use App\Models\Message;
 use App\Models\Task;
 use App\Models\User;
@@ -58,13 +57,6 @@ class DashboardController extends Controller
 
             $newContacts = Contact::query()->whereBetween('created_at', [$from, $to])->count();
 
-            $newLeads = Lead::query()->whereBetween('created_at', [$from, $to])->count();
-            $convertedLeads = Lead::query()
-                ->whereBetween('created_at', [$from, $to])
-                ->where('stage', 'converted')
-                ->count();
-            $leadConversionRate = $newLeads > 0 ? round(($convertedLeads / $newLeads) * 100, 2) : 0.0;
-
             $pipelineValue = (float) Deal::query()->where('status', 'open')->sum('value_amount');
             $wonDealValue = (float) Deal::query()
                 ->where('status', 'won')
@@ -93,11 +85,6 @@ class DashboardController extends Controller
                 ],
                 'response_time' => $responseTimes,
                 'contacts' => ['new' => $newContacts],
-                'leads' => [
-                    'new' => $newLeads,
-                    'converted' => $convertedLeads,
-                    'conversion_rate_percent' => $leadConversionRate,
-                ],
                 'deals' => [
                     'pipeline_value' => $pipelineValue,
                     'won_value' => $wonDealValue,

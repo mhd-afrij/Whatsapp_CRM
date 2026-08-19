@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
  * a WhatsApp push name without first matching the existing number).
  *
  * One row per group survives; every linked record (whatsapp_contacts,
- * conversations, leads, deals, tasks, notes, activities, labels) is re-pointed
+ * conversations, deals, tasks, notes, activities, labels) is re-pointed
  * to it and the victims are hard-deleted. The survivor is chosen as: a
  * non-WhatsApp-origin row first (a manually saved "Mr Blvck" beats an
  * auto-created "MOHAMED BATH..."), then the earliest created, then the lowest
@@ -87,7 +87,6 @@ class ContactDeduplicator
             $mappings = [
                 'whatsapp_contacts' => 'contact_id',
                 'conversations' => 'contact_id',
-                'leads' => 'contact_id',
                 'deals' => 'contact_id',
                 'tasks' => 'contact_id',
                 'internal_notes' => 'contact_id',

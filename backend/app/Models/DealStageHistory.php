@@ -23,16 +23,6 @@ class DealStageHistory extends Model
         return $this->belongsTo(Deal::class);
     }
 
-    public function fromStage(): BelongsTo
-    {
-        return $this->belongsTo(PipelineStage::class, 'from_stage_id');
-    }
-
-    public function toStage(): BelongsTo
-    {
-        return $this->belongsTo(PipelineStage::class, 'to_stage_id');
-    }
-
     public function movedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'moved_by');

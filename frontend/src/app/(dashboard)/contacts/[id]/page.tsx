@@ -37,7 +37,6 @@ import {
   useReopenTask,
   useDeleteTask,
 } from "@/hooks/use-tasks";
-import { useConvertContactToLead } from "@/hooks/use-leads";
 import { useCreateConversation } from "@/hooks/use-conversations";
 import { useUsers } from "@/hooks/use-users";
 import { useWhatsappStatus } from "@/hooks/use-whatsapp-connection";
@@ -323,7 +322,6 @@ function ContactProfile({ id }: { id: number }) {
   const updateMutation = useUpdateContact(id);
   const archiveMutation = useArchiveContact();
   const restoreMutation = useRestoreContact();
-  const convertMutation = useConvertContactToLead();
   const createConversationMutation = useCreateConversation();
   const { data: notes } = useNoteList({ contact_id: id });
   const createNote = useCreateNote({ contact_id: id });
@@ -342,7 +340,6 @@ function ContactProfile({ id }: { id: number }) {
   const isOwner = !!contact && contact.owner_user_id != null && Number(user?.id) === contact.owner_user_id;
   const canEdit = hasBlanketEdit || (isOwner && canCreate);
   const canDelete = usePermission("contacts.delete");
-  const canManageLeads = usePermission("leads.manage");
 
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [editing, setEditing] = useState(() => searchParams.get("edit") === "1");
@@ -414,17 +411,6 @@ function ContactProfile({ id }: { id: number }) {
       await restoreMutation.mutateAsync(contact.id);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : "Unable to restore contact.");
-    }
-  };
-
-  const onConvertToLead = async () => {
-    if (!contact) return;
-    setActionError(null);
-    try {
-      const lead = await convertMutation.mutateAsync(contact.id);
-      router.push(`/leads/${lead.id}`);
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : "Unable to convert contact to a lead.");
     }
   };
 
@@ -538,15 +524,6 @@ function ContactProfile({ id }: { id: number }) {
                 <MessageSquare />
                 {createConversationMutation.isPending ? "Starting…" : "Messages"}
               </Button>
-              {canManageLeads && (
-                <Button
-                  variant="outline"
-                  onClick={onConvertToLead}
-                  disabled={convertMutation.isPending}
-                >
-                  {convertMutation.isPending ? "Converting…" : "Convert to lead"}
-                </Button>
-              )}
               {canEdit && !editing && (
                 <Button variant="outline" onClick={() => setEditing(true)}>
                   Edit
@@ -758,60 +735,27 @@ function ContactProfile({ id }: { id: number }) {
                   )}
                 </Card>
 
-                <Card title="Leads &amp; deals">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <p className="mb-1.5 text-xs font-medium uppercase text-muted">Leads</p>
-                      {contact.leads && contact.leads.length > 0 ? (
-                        <ul className="space-y-1 text-sm">
-                          {contact.leads.map((l) => (
-                            <li key={l.id}>
-                              <Link href={`/leads/${l.id}`} className="text-primary hover:underline">
-                                #{l.id}
-                              </Link>{" "}
-                              — {l.status}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-muted">
-                          No leads yet.
-                          {canManageLeads && !archived && (
-                            <>
-                              {" "}
-                              <button type="button" onClick={onConvertToLead} className="text-primary hover:underline">
-                                Convert this contact now
-                              </button>
-                              .
-                            </>
-                          )}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="mb-1.5 text-xs font-medium uppercase text-muted">Deals</p>
-                      {contact.deals && contact.deals.length > 0 ? (
-                        <ul className="space-y-1 text-sm">
-                          {contact.deals.map((d) => (
-                            <li key={d.id}>
-                              <Link href={`/deals/${d.id}`} className="text-primary hover:underline">
-                                {d.title}
-                              </Link>{" "}
-                              — {d.status}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-muted">
-                          No deals yet.{" "}
-                          <Link href="/pipeline" className="text-primary hover:underline">
-                            Create one from the pipeline board
-                          </Link>
-                          .
-                        </p>
-                      )}
-                    </div>
-                  </div>
+                <Card title="Deals">
+                  {contact.deals && contact.deals.length > 0 ? (
+                    <ul className="space-y-1 text-sm">
+                      {contact.deals.map((d) => (
+                        <li key={d.id}>
+                          <Link href={`/deals/${d.id}`} className="text-primary hover:underline">
+                            {d.title}
+                          </Link>{" "}
+                          — {d.status}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted">
+                      No deals yet.{" "}
+                      <Link href="/pipeline" className="text-primary hover:underline">
+                        Create one from the pipeline board
+                      </Link>
+                      .
+                    </p>
+                  )}
                 </Card>
               </>
             )}

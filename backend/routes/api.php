@@ -13,13 +13,11 @@ use App\Http\Controllers\Api\V1\FailedJobController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\InternalNoteController;
 use App\Http\Controllers\Api\V1\LabelController;
-use App\Http\Controllers\Api\V1\LeadController;
 use App\Http\Controllers\Api\V1\MediaController;
 use App\Http\Controllers\Api\V1\MessageTemplateController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\PermissionController;
-use App\Http\Controllers\Api\V1\PipelineController;
 use App\Http\Controllers\Api\V1\ReportExportController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\SearchController;
@@ -228,40 +226,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/{id}/restore', [ContactController::class, 'restore'])
                 ->middleware('permission:contacts.delete')->name('restore');
 
-            Route::post('/{contact}/convert-to-lead', [LeadController::class, 'convertFromContact'])
-                ->middleware('permission:leads.manage')->name('convert-to-lead');
-
             Route::post('/{contact}/labels/{label}', [ContactController::class, 'attachLabel'])
                 ->middleware('permission:contacts.view')->name('labels.attach');
             Route::delete('/{contact}/labels/{label}', [ContactController::class, 'detachLabel'])
                 ->middleware('permission:contacts.view')->name('labels.detach');
-        });
-
-        Route::prefix('conversations')->name('conversations.leads.')->group(function () {
-            Route::post('/{conversation}/convert-to-lead', [LeadController::class, 'convertFromConversation'])
-                ->middleware('permission:leads.manage')->name('convert-to-lead');
-        });
-
-        Route::prefix('leads')->name('leads.')->middleware('permission:leads.manage')->group(function () {
-            Route::get('/', [LeadController::class, 'index'])->name('index');
-            Route::post('/', [LeadController::class, 'store'])->name('store');
-            Route::get('/{lead}', [LeadController::class, 'show'])->name('show');
-            Route::patch('/{lead}', [LeadController::class, 'update'])->name('update');
-            Route::delete('/{lead}', [LeadController::class, 'destroy'])->name('destroy');
-            Route::post('/{lead}/stage', [LeadController::class, 'changeStage'])->name('stage');
-            Route::post('/{lead}/assign', [LeadController::class, 'assign'])->name('assign');
-            Route::post('/{lead}/convert', [LeadController::class, 'convert'])->name('convert');
-            Route::post('/{lead}/lost', [LeadController::class, 'markLost'])->name('lost');
-            Route::get('/{lead}/activities', [LeadController::class, 'activities'])->name('activities');
-            Route::get('/{lead}/tasks', [LeadController::class, 'tasks'])->name('tasks');
-            Route::post('/{lead}/labels/{label}', [LeadController::class, 'attachLabel'])->name('labels.attach');
-            Route::delete('/{lead}/labels/{label}', [LeadController::class, 'detachLabel'])->name('labels.detach');
-        });
-
-        Route::prefix('leads/bulk')->name('leads.bulk.')->middleware('permission:leads.manage')->group(function () {
-            Route::post('/assign', [LeadController::class, 'bulkAssign'])->name('assign');
-            Route::post('/stage', [LeadController::class, 'bulkStage'])->name('stage');
-            Route::post('/tag', [LeadController::class, 'bulkTag'])->name('tag');
         });
 
         Route::prefix('deals')->name('deals.')->middleware('permission:deals.manage')->group(function () {
@@ -275,30 +243,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::delete('/{deal}', [DealController::class, 'destroy'])->name('destroy');
             Route::post('/{deal}/labels/{label}', [DealController::class, 'attachLabel'])->name('labels.attach');
             Route::delete('/{deal}/labels/{label}', [DealController::class, 'detachLabel'])->name('labels.detach');
-        });
-
-        Route::prefix('pipelines')->name('pipelines.')->group(function () {
-            // Read access follows deals.manage - anyone who can work deals can see the board.
-            Route::get('/', [PipelineController::class, 'index'])
-                ->middleware('permission:deals.manage')->name('index');
-            Route::get('/{pipeline}', [PipelineController::class, 'show'])
-                ->middleware('permission:deals.manage')->name('show');
-            Route::get('/{pipeline}/board', [PipelineController::class, 'board'])
-                ->middleware('permission:deals.manage')->name('board');
-
-            // Pipeline/stage configuration is an admin-only action.
-            Route::post('/', [PipelineController::class, 'store'])
-                ->middleware('permission:pipelines.manage')->name('store');
-            Route::patch('/{pipeline}', [PipelineController::class, 'update'])
-                ->middleware('permission:pipelines.manage')->name('update');
-            Route::delete('/{pipeline}', [PipelineController::class, 'destroy'])
-                ->middleware('permission:pipelines.manage')->name('destroy');
-            Route::post('/{pipeline}/stages', [PipelineController::class, 'storeStage'])
-                ->middleware('permission:pipelines.manage')->name('stages.store');
-            Route::patch('/{pipeline}/stages/{stage}', [PipelineController::class, 'updateStage'])
-                ->middleware('permission:pipelines.manage')->name('stages.update');
-            Route::delete('/{pipeline}/stages/{stage}', [PipelineController::class, 'destroyStage'])
-                ->middleware('permission:pipelines.manage')->name('stages.destroy');
         });
 
         Route::prefix('tasks')->name('tasks.')->group(function () {
@@ -393,8 +337,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::prefix('analytics')->name('analytics.')->middleware('permission:analytics.view')->group(function () {
             Route::get('/conversation-volume', [AnalyticsController::class, 'conversationVolume'])->name('conversation-volume');
             Route::get('/response-time-trend', [AnalyticsController::class, 'responseTimeTrend'])->name('response-time-trend');
-            Route::get('/lead-funnel', [AnalyticsController::class, 'leadFunnel'])->name('lead-funnel');
-            Route::get('/pipeline-stage-distribution', [AnalyticsController::class, 'pipelineStageDistribution'])->name('pipeline-stage-distribution');
             Route::get('/won-vs-lost', [AnalyticsController::class, 'wonVsLost'])->name('won-vs-lost');
             Route::get('/agent-performance', [AnalyticsController::class, 'agentPerformance'])->name('agent-performance');
             Route::get('/task-completion-rate', [AnalyticsController::class, 'taskCompletionRate'])->name('task-completion-rate');

@@ -1,6 +1,6 @@
 import { apiClient, unwrap } from "@/lib/api-client";
 
-export type SearchCategory = "contacts" | "conversations" | "leads" | "deals" | "tasks";
+export type SearchCategory = "contacts" | "conversations" | "deals" | "tasks";
 
 export interface SearchResultItem {
   id: number;
@@ -53,7 +53,6 @@ export async function fetchSearchCategory(
 export const SEARCH_CATEGORY_LABELS: Record<SearchCategory, string> = {
   contacts: "Contacts",
   conversations: "Conversations",
-  leads: "Leads",
   deals: "Deals",
   tasks: "Tasks",
 };

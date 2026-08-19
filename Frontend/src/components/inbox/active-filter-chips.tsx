@@ -92,36 +92,6 @@ export function ActiveFilterChips({ filters, onRemove, onClear }: ActiveFilterCh
         </Badge>
       )}
 
-      {filters.leadStatus && (
-        <Badge
-          variant="secondary"
-          className="flex items-center gap-1 pr-1"
-        >
-          <span>Lead: {filters.leadStatus}</span>
-          <button
-            onClick={() => onRemove("leadStatus")}
-            className="text-muted hover:text-text"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </Badge>
-      )}
-
-      {filters.dealStage && (
-        <Badge
-          variant="secondary"
-          className="flex items-center gap-1 pr-1"
-        >
-          <span>Stage: {filters.dealStage}</span>
-          <button
-            onClick={() => onRemove("dealStage")}
-            className="text-muted hover:text-text"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </Badge>
-      )}
-
       {filters.dateRange && (
         <Badge
           variant="secondary"

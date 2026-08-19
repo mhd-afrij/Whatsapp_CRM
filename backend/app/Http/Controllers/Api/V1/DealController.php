@@ -64,7 +64,7 @@ class DealController extends Controller
     {
         $this->authorize('view', $deal);
 
-        $deal->load(['contact', 'owner', 'pipeline', 'stage', 'lead', 'stageHistory.fromStage', 'stageHistory.toStage', 'stageHistory.movedBy', 'labels']);
+        $deal->load(['contact', 'owner', 'pipeline', 'stage', 'stageHistory.fromStage', 'stageHistory.toStage', 'stageHistory.movedBy', 'labels']);
 
         return $this->success($deal, 'OK');
     }
@@ -78,7 +78,6 @@ class DealController extends Controller
 
         $validator = Validator::make($request->all(), [
             'contact_id' => ['required', 'integer', Rule::exists('contacts', 'id')],
-            'lead_id' => ['sometimes', 'nullable', 'integer', Rule::exists('leads', 'id')],
             'pipeline_id' => ['required', 'integer', Rule::exists('pipelines', 'id')],
             'pipeline_stage_id' => ['required', 'integer', Rule::exists('pipeline_stages', 'id')],
             'title' => ['required', 'string', 'max:255'],

@@ -72,11 +72,6 @@ class Contact extends Model
         return $this->hasMany(Conversation::class);
     }
 
-    public function leads(): HasMany
-    {
-        return $this->hasMany(Lead::class);
-    }
-
     public function deals(): HasMany
     {
         return $this->hasMany(Deal::class);

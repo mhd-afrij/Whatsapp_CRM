@@ -28,13 +28,6 @@ export interface ContactActivity {
   created_by: number | null;
 }
 
-export interface LeadSummary {
-  id: number;
-  status: string;
-  source: string;
-  created_at: string;
-}
-
 export interface DealSummary {
   id: number;
   title: string;
@@ -74,7 +67,6 @@ export interface Contact {
   labels: LabelSummary[];
   conversations?: ConversationSummary[];
   activities?: ContactActivity[];
-  leads?: LeadSummary[];
   deals?: DealSummary[];
   created_at: string;
   updated_at: string;

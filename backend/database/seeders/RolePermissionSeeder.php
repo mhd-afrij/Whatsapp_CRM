@@ -41,9 +41,7 @@ class RolePermissionSeeder extends Seeder
             'conversations.change_priority' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
             'conversations.delete' => ['Super Administrator'],
 
-            'leads.manage' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
             'deals.manage' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
-            'pipelines.manage' => ['Super Administrator', 'Administrator'],
             'reports.view' => ['Super Administrator', 'Administrator', 'Manager', 'Agent', 'Viewer'],
 
             'tasks.manage' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
@@ -88,7 +86,7 @@ class RolePermissionSeeder extends Seeder
             'Super Administrator' => 'Full unrestricted access, including role/permission management and irreversible actions.',
             'Administrator' => 'Operational control over the whole workspace; cannot edit roles/permissions or hard-delete conversations.',
             'Manager' => 'Full visibility and management within their team(s); no workspace-admin or role-admin capability.',
-            'Agent' => 'Day-to-day operator; manages their own contacts/leads/deals/tasks and replies to assigned/team conversations.',
+            'Agent' => 'Day-to-day operator; manages their own contacts/deals/tasks and replies to assigned/team conversations.',
             'Viewer' => 'Read-only across contacts, conversations, dashboards, and reports.',
         ];
 

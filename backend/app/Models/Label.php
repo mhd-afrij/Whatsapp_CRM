@@ -23,11 +23,6 @@ class Label extends Model
         return $this->belongsToMany(Conversation::class, 'conversation_label')->withPivot('created_at');
     }
 
-    public function leads(): BelongsToMany
-    {
-        return $this->belongsToMany(Lead::class, 'lead_label')->withPivot('created_at');
-    }
-
     public function deals(): BelongsToMany
     {
         return $this->belongsToMany(Deal::class, 'deal_label')->withPivot('created_at');

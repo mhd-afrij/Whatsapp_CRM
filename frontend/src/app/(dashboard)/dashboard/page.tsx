@@ -7,12 +7,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -25,8 +22,6 @@ import {
   useAgentPerformance,
   useConversationVolume,
   useDashboardSummary,
-  useLeadFunnel,
-  usePipelineStageDistribution,
   useResponseTimeTrend,
   useTaskCompletionRate,
   useWonVsLost,
@@ -160,8 +155,6 @@ function DashboardContent() {
   const summary = useDashboardSummary(baseFilters);
   const volume = useConversationVolume(baseFilters);
   const responseTrend = useResponseTimeTrend(baseFilters);
-  const funnel = useLeadFunnel(agentFilters);
-  const stageDistribution = usePipelineStageDistribution(agentFilters);
   const wonVsLost = useWonVsLost(agentFilters);
   const agentPerformance = useAgentPerformance(agentFilters);
   const taskCompletion = useTaskCompletionRate(agentFilters);
@@ -236,7 +229,6 @@ function DashboardContent() {
               sub={s.response_time.sample_size > 0 ? `${s.response_time.sample_size} samples` : "No replies yet"}
             />
             <MetricCard label="New contacts" value={String(s.contacts.new)} />
-            <MetricCard label="New leads" value={String(s.leads.new)} sub={`${s.leads.conversion_rate_percent}% converted`} />
             <MetricCard label="Pipeline value" value={`$${s.deals.pipeline_value.toLocaleString()}`} />
             <MetricCard label="Won value" value={`$${s.deals.won_value.toLocaleString()}`} sub={`${s.deals.lost_count} lost`} />
             <MetricCard label="Overdue tasks" value={String(s.tasks.overdue)} />
@@ -271,50 +263,6 @@ function DashboardContent() {
               <Tooltip contentStyle={tooltipStyle} />
               <Line type="monotone" dataKey="avg_response_minutes" name="Avg response (min)" stroke={SERIES[1]} strokeWidth={2} dot={{ r: 3 }} connectNulls />
             </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        <ChartCard title="Lead funnel" isLoading={funnel.isLoading} isEmpty={!funnel.data?.some((d) => d.count > 0)} emptyLabel="leads">
-          <ResponsiveContainer width="100%" height={256}>
-            <BarChart data={funnel.data ?? []} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" horizontal={false} />
-              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "var(--color-muted)" }} />
-              <YAxis type="category" dataKey="status" tick={{ fontSize: 11, fill: "var(--color-muted)" }} width={90} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Bar dataKey="count" name="Leads" fill={SERIES[2]} radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        <ChartCard
-          title="Pipeline stage distribution"
-          isLoading={stageDistribution.isLoading}
-          isEmpty={!(stageDistribution.data && stageDistribution.data.length > 0)}
-          emptyLabel="open deals"
-        >
-          <ResponsiveContainer width="100%" height={256}>
-              <PieChart>
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(value, _name, item) => [
-                    `${value} deals ($${Number(item.payload.value).toLocaleString()})`,
-                    item.payload.stage_name,
-                  ]}
-                />
-                <Legend wrapperStyle={{ fontSize: 11, color: "var(--color-muted)", paddingTop: 4 }} />
-                <Pie
-                  data={stageDistribution.data ?? []}
-                  dataKey="count"
-                  nameKey="stage_name"
-                  cx="50%"
-                  cy="46%"
-                  outerRadius={84}
-                >
-                  {(stageDistribution.data ?? []).map((entry, i) => (
-                    <Cell key={entry.stage_id ?? i} fill={SERIES[i % SERIES.length]} />
-                  ))}
-                </Pie>
-              </PieChart>
           </ResponsiveContainer>
         </ChartCard>
 
@@ -375,7 +323,6 @@ function DashboardContent() {
         <h2 className="mb-3 text-sm font-semibold text-text">Export reports</h2>
         <div className="flex flex-wrap gap-2">
           <ExportButton type="contacts" label="contacts" from={from} to={to} />
-          <ExportButton type="leads" label="leads" from={from} to={to} />
           <ExportButton type="deals" label="deals" from={from} to={to} />
           <ExportButton type="tasks" label="tasks" from={from} to={to} />
         </div>

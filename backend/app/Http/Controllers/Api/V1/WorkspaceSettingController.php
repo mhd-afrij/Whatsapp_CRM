@@ -21,7 +21,7 @@ use Illuminate\Validation\Rule;
  *
  * Schema note: `workspaces` holds name/slug/whatsapp_number/timezone/logo_path
  * /is_active. `workspace_settings` (1:1) holds business_hours/
- * default_pipeline_id/notification_defaults/branding as the only structured
+ * notification_defaults/branding as the only structured
  * columns that actually exist (docs/04-database-design.md). There are no
  * password-policy, session-timeout, or data-retention columns anywhere in the
  * schema - rather than inventing them (and a migration) outside of the
@@ -36,7 +36,7 @@ class WorkspaceSettingController extends Controller
 
     public function show(Request $request)
     {
-        $workspace = Workspace::with('settings.defaultPipeline')->findOrFail($request->user()->workspace_id);
+        $workspace = Workspace::with('settings')->findOrFail($request->user()->workspace_id);
 
         return $this->success($this->payload($workspace), 'OK');
     }
@@ -50,10 +50,6 @@ class WorkspaceSettingController extends Controller
             'timezone' => ['sometimes', 'string', 'timezone'],
             'logo' => ['sometimes', 'nullable', 'image', 'max:2048'],
             'business_hours' => ['sometimes', 'array'],
-            'default_pipeline_id' => [
-                'sometimes', 'nullable',
-                Rule::exists('pipelines', 'id')->where('workspace_id', $workspace->id),
-            ],
             'notification_defaults' => ['sometimes', 'array'],
             'branding' => ['sometimes', 'array'],
             'away_message_enabled' => ['sometimes', 'boolean'],
@@ -63,7 +59,7 @@ class WorkspaceSettingController extends Controller
 
         $before = array_merge(
             $workspace->only(['name', 'timezone']),
-            $workspace->settings?->only(['business_hours', 'default_pipeline_id', 'notification_defaults', 'branding']) ?? []
+            $workspace->settings?->only(['business_hours', 'notification_defaults', 'branding']) ?? []
         );
 
         $workspace->fill($request->only(['name', 'timezone']));
@@ -80,7 +76,7 @@ class WorkspaceSettingController extends Controller
 
         $settings = $workspace->settings ?? $workspace->settings()->create(['workspace_id' => $workspace->id]);
         $settings->fill($request->only([
-            'business_hours', 'default_pipeline_id', 'notification_defaults', 'branding',
+            'business_hours', 'notification_defaults', 'branding',
             'away_message_enabled', 'away_message', 'away_message_trigger',
         ]));
         $settings->save();
@@ -90,7 +86,7 @@ class WorkspaceSettingController extends Controller
 
         AuditLogger::log('workspace.settings.updated', $request->user(), $workspace, $after, $request, $before);
 
-        return $this->success($this->payload($workspace->fresh(['settings.defaultPipeline'])), 'Workspace settings updated successfully.');
+        return $this->success($this->payload($workspace->fresh(['settings'])), 'Workspace settings updated successfully.');
     }
 
     protected function payload(Workspace $workspace): array
@@ -106,11 +102,6 @@ class WorkspaceSettingController extends Controller
             'logo_url' => $workspace->logo_path ? Storage::disk('public')->url($workspace->logo_path) : null,
             'is_active' => (bool) $workspace->is_active,
             'business_hours' => $settings?->business_hours,
-            'default_pipeline_id' => $settings?->default_pipeline_id,
-            'default_pipeline' => $settings?->defaultPipeline ? [
-                'id' => $settings->defaultPipeline->id,
-                'name' => $settings->defaultPipeline->name,
-            ] : null,
             'notification_defaults' => $settings?->notification_defaults,
             'branding' => $settings?->branding,
             'away_message_enabled' => (bool) ($settings?->away_message_enabled ?? false),

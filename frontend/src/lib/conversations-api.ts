@@ -161,7 +161,6 @@ export interface ConversationFilters {
   pinned?: boolean;
   groups?: boolean;
   sla_status?: "risk" | "breached";
-  lead_status?: string;
   deal_stage?: string;
   date_from?: string;
   date_to?: string;

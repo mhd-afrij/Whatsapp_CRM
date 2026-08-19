@@ -52,11 +52,6 @@ class Workspace extends Model
         return $this->hasMany(Conversation::class);
     }
 
-    public function pipelines(): HasMany
-    {
-        return $this->hasMany(Pipeline::class);
-    }
-
     public function whatsappSession(): HasOne
     {
         return $this->hasOne(WhatsappSession::class);

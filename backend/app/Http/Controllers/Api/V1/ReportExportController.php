@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Validator;
  */
 class ReportExportController extends Controller
 {
-    private const TYPES = ['contacts', 'leads', 'deals', 'tasks'];
+    private const TYPES = ['contacts', 'deals', 'tasks'];
 
     /** POST /api/v1/reports/export {type, from, to} */
     public function store(Request $request)

@@ -10,8 +10,6 @@ import {
   Settings,
   ShieldCheck,
   Smartphone,
-  UserPlus,
-  Kanban,
   CheckSquare,
   CalendarDays,
   Tag,
@@ -53,24 +51,6 @@ const permissionGatedNavItems = [
     permission: "contacts.view",
   },
   {
-    href: "/leads",
-    label: "Leads",
-    icon: UserPlus,
-    permission: "leads.manage",
-  },
-  {
-    href: "/leads/board",
-    label: "Lead Board",
-    icon: Kanban,
-    permission: "leads.manage",
-  },
-  {
-    href: "/pipeline",
-    label: "Pipeline",
-    icon: Kanban,
-    permission: "deals.manage",
-  },
-  {
     href: "/tasks",
     label: "Tasks",
     icon: CheckSquare,
@@ -105,12 +85,6 @@ const permissionGatedNavItems = [
     label: "WhatsApp Connection",
     icon: Smartphone,
     permission: "whatsapp.connection.manage",
-  },
-  {
-    href: "/settings/pipelines",
-    label: "Pipeline Settings",
-    icon: Kanban,
-    permission: "pipelines.manage",
   },
   {
     href: "/settings/labels",
@@ -186,9 +160,6 @@ const categoryHrefs: Record<string, string[]> = {
     "/dashboard",
     "/inbox",
     "/contacts",
-    "/leads",
-    "/leads/board",
-    "/pipeline",
     "/tasks",
     "/calendar",
     "/settings/notifications",
@@ -197,7 +168,6 @@ const categoryHrefs: Record<string, string[]> = {
   administration: [
     "/settings",
     "/settings/whatsapp",
-    "/settings/pipelines",
     "/settings/labels",
     "/settings/templates",
     "/settings/sla",
@@ -217,9 +187,6 @@ export function Sidebar() {
   const canManageUsers = usePermission("users.manage");
   const canManageWhatsapp = usePermission("whatsapp.connection.manage");
   const canViewContacts = usePermission("contacts.view");
-  const canManageLeads = usePermission("leads.manage");
-  const canManageDeals = usePermission("deals.manage");
-  const canManagePipelines = usePermission("pipelines.manage");
   const canManageTasks = usePermission("tasks.manage");
   const canManageLabels = usePermission("labels.manage");
   const canUseTemplates = usePermission("templates.use");
@@ -231,16 +198,12 @@ export function Sidebar() {
   const canDeleteContacts = usePermission("contacts.delete");
   const permissionByHref: Record<string, boolean> = {
     "/contacts": canViewContacts,
-    "/leads": canManageLeads,
-    "/leads/board": canManageLeads,
-    "/pipeline": canManageDeals,
     "/tasks": canManageTasks,
     "/calendar": canManageTasks,
     "/settings/users": canManageUsers,
     "/settings/teams": canViewTeams,
     "/settings/roles": canViewRoles,
     "/settings/whatsapp": canManageWhatsapp,
-    "/settings/pipelines": canManagePipelines,
     "/settings/labels": canManageLabels,
     "/settings/templates": canUseTemplates,
     "/settings/sla": canManageWorkspace,
@@ -252,7 +215,7 @@ export function Sidebar() {
     "/settings/contacts": canDeleteContacts,
   };
 
-  const leadingHrefs = ["/contacts", "/leads", "/leads/board", "/pipeline", "/tasks", "/calendar"];
+  const leadingHrefs = ["/contacts", "/tasks", "/calendar"];
   const visibleGatedItems = permissionGatedNavItems.filter(
     (item) => permissionByHref[item.href]
   );

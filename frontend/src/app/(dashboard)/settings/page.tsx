@@ -17,7 +17,6 @@ import {
   Tag,
   Users,
   Users2,
-  Workflow,
   Zap,
 } from "lucide-react";
 import { usePermission } from "@/hooks/use-permission";
@@ -38,7 +37,6 @@ const SETTINGS_LINKS: SettingsLink[] = [
   { href: "/settings/teams", label: "Teams", description: "Organize users into teams", icon: Users2, permission: "teams.view" },
   { href: "/settings/roles", label: "Roles & Permissions", description: "Configure access control", icon: KeyRound, permission: "roles.view" },
   { href: "/settings/whatsapp", label: "WhatsApp Connection", description: "Connect and manage WhatsApp", icon: Smartphone, permission: "whatsapp.connection.manage" },
-  { href: "/settings/pipelines", label: "Pipelines", description: "Customize deal pipelines", icon: Workflow, permission: "pipelines.manage" },
   { href: "/settings/labels", label: "Labels", description: "Manage conversation labels", icon: Tag, permission: "labels.manage" },
   { href: "/settings/templates", label: "Saved Replies", description: "Reusable message templates", icon: Zap, permission: "templates.use" },
   { href: "/settings/sla", label: "SLA Rules", description: "Set response time targets", icon: Clock, permission: "workspace.settings.manage" },
@@ -55,9 +53,7 @@ export default function SettingsRootPage() {
   const canManageUsers = usePermission("users.manage");
   const canManageWhatsapp = usePermission("whatsapp.connection.manage");
   const canViewContacts = usePermission("contacts.view");
-  const canManageLeads = usePermission("leads.manage");
   const canManageDeals = usePermission("deals.manage");
-  const canManagePipelines = usePermission("pipelines.manage");
   const canManageTasks = usePermission("tasks.manage");
   const canManageLabels = usePermission("labels.manage");
   const canUseTemplates = usePermission("templates.use");
@@ -72,9 +68,7 @@ export default function SettingsRootPage() {
     "users.manage": canManageUsers,
     "whatsapp.connection.manage": canManageWhatsapp,
     "contacts.view": canViewContacts,
-    "leads.manage": canManageLeads,
     "deals.manage": canManageDeals,
-    "pipelines.manage": canManagePipelines,
     "tasks.manage": canManageTasks,
     "labels.manage": canManageLabels,
     "templates.use": canUseTemplates,

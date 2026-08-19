@@ -106,7 +106,7 @@ class ContactController extends Controller
 
     /**
      * GET /api/v1/contacts/{id}
-     * Includes conversation history, activity timeline, and linked leads/deals.
+     * Includes conversation history, activity timeline, and linked deals.
      * Trashed (archived) contacts resolve too - the recreate/restore flow must
      * be able to view an archived contact before restoring it, so the lookup
      * uses withTrashed() + an explicit workspace check instead of route model
@@ -125,7 +125,6 @@ class ContactController extends Controller
             'labels',
             'conversations' => fn ($q) => $q->orderByDesc('last_message_at')->limit(20),
             'activities' => fn ($q) => $q->orderByDesc('occurred_at')->limit(50),
-            'leads',
             'deals',
         ]);
 

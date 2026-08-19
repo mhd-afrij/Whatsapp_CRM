@@ -1,13 +1,11 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarDays, CircleAlert, MessageSquareText, NotebookPen, StickyNote, UserRound } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
 import { useConversation, useConversationActions } from "@/hooks/use-conversations";
-import { useConvertConversationToLead } from "@/hooks/use-leads";
 import { useUsers } from "@/hooks/use-users";
 import { useContact } from "@/hooks/use-contacts";
 import { useCreateNote, useNoteList } from "@/hooks/use-notes";
@@ -15,7 +13,6 @@ import { useTaskList } from "@/hooks/use-tasks";
 import { useWhatsappStatus } from "@/hooks/use-whatsapp-connection";
 import { LabelPicker } from "@/components/labels/label-picker";
 import { Avatar } from "@/components/ui/avatar";
-import { ApiError } from "@/lib/api-client";
 import { ChatOverviewPanel } from "@/components/contacts/chat-overview-panel";
 
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
@@ -42,12 +39,8 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
   const canAssign = usePermission("conversations.assign");
   const canClose = usePermission("conversations.close");
   const canReopen = usePermission("conversations.reopen");
-  const canManageLeads = usePermission("leads.manage");
   const canManageLabels = usePermission("conversations.reply");
   const { data: users } = useUsers();
-  const convertMutation = useConvertConversationToLead();
-  const router = useRouter();
-  const [convertError, setConvertError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "chat" | "notes" | "tasks">("overview");
   const contactId = conversation?.contact?.id ?? null;
   const { data: contact } = useContact(contactId ?? 0);
@@ -203,25 +196,6 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
               {conversation.status}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {canManageLeads && (
-                <button
-                  type="button"
-                  disabled={convertMutation.isPending}
-                  onClick={async () => {
-                    setConvertError(null);
-                    try {
-                      const lead = await convertMutation.mutateAsync(conversationId);
-                      router.push(`/leads/${lead.id}`);
-                    } catch (error) {
-                      setConvertError(error instanceof ApiError ? error.message : "Unable to convert to a lead.");
-                    }
-                  }}
-                  className="rounded-full border border-border bg-bg px-3 py-1.5 text-xs font-medium text-text hover:bg-primary-soft/40 disabled:opacity-50"
-                >
-                  {convertMutation.isPending ? "Converting..." : "Convert to lead"}
-                </button>
-              )}
-
               {conversation.status === "closed" ? (
                 canReopen && (
                   <button
@@ -246,7 +220,6 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
                 )
               )}
             </div>
-            {convertError && <p className="mt-2 text-xs text-danger">{convertError}</p>}
           </SectionCard>
             </>
           )}

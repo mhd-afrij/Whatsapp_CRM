@@ -7,7 +7,6 @@ use App\Models\Conversation;
 use App\Models\Deal;
 use App\Models\Invitation;
 use App\Models\Label;
-use App\Models\Lead;
 use App\Models\Role;
 use App\Models\Task;
 use App\Models\Team;
@@ -17,7 +16,6 @@ use App\Policies\ConversationPolicy;
 use App\Policies\DealPolicy;
 use App\Policies\InvitationPolicy;
 use App\Policies\LabelPolicy;
-use App\Policies\LeadPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\TaskPolicy;
 use App\Policies\TeamPolicy;
@@ -45,7 +43,6 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::policy(Conversation::class, ConversationPolicy::class);
         Gate::policy(Contact::class, ContactPolicy::class);
-        Gate::policy(Lead::class, LeadPolicy::class);
         Gate::policy(Deal::class, DealPolicy::class);
         Gate::policy(Task::class, TaskPolicy::class);
         Gate::policy(User::class, UserPolicy::class);
