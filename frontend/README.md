@@ -1,27 +1,36 @@
-# WhatsApp CRM — Frontend
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-Next.js 15+ (App Router, TypeScript, Tailwind, ShadCN) frontend for the WhatsApp CRM & Team Collaboration Platform.
+## Getting Started
 
-This repo was split out of the original `whatsapp-crm` monorepo (see the sibling `CRM` repo for the full product specification, architecture docs, and `docker-compose.yml` that runs this repo alongside `CRM-Backend`). Read `CLAUDE.md` and `docs/` there before making architectural changes.
-
-## Local development
+First, run the development server:
 
 ```bash
-npm install
-cp .env.example .env.local   # or reuse the working local .env.local already in this repo
-npm run dev   # http://localhost:3000
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-Expects the Backend API at `NEXT_PUBLIC_API_BASE_URL` (default `http://localhost:8000/api/v1`) — see the sibling `CRM-Backend` repo.
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-## Checks
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-```bash
-npx tsc --noEmit
-npm run lint
-npm run build
-```
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Current status
+## Learn More
 
-Auth (login/logout, route guard, silent refresh) is fully wired to the real API. `/team`, `/audit-log`, `/settings/roles` are wired to real data. `/inbox`, `/customers`, `/leads`, `/pipeline`, `/tasks`, `/calendar`, `/search`, `/analytics`, `/notifications`, `/settings`, `/settings/whatsapp` are static UI previews awaiting their backend modules — each page says so. See the `CRM` repo's `docs/IMPLEMENTATION_STATUS.md` for full detail; that document has not yet been split per-repo.
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

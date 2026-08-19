@@ -27,8 +27,8 @@ return new class extends Migration
             $table->foreignId('sla_config_id')->nullable()->constrained()->nullOnDelete();
             $table->string('type'); // first_response, followup_response
             $table->string('status'); // pending, within_sla, at_risk, breached, resolved
-            $table->timestamp('started_at')->nullable();
-            $table->timestamp('deadline_at')->nullable();
+            $table->timestamp('started_at');
+            $table->timestamp('deadline_at');
             $table->timestamp('resolved_at')->nullable();
             $table->timestamps();
 
