@@ -12,7 +12,7 @@ export const contactSchema = z.object({
   company: z.string().max(255).optional().or(z.literal("")).or(z.null()),
   job_title: z.string().max(150).optional().or(z.literal("")).or(z.null()),
   phone_number: z.string().max(32).optional().or(z.literal("")).or(z.null()),
-  custom_fields: z.record(z.unknown()).optional(),
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type ContactSchemaValues = z.infer<typeof contactSchema>;
