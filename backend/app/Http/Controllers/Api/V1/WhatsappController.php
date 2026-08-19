@@ -29,6 +29,22 @@ class WhatsappController extends Controller
         return $this->success($result['data'] ?? null, $result['message'] ?? 'OK');
     }
 
+    /**
+     * GET /api/v1/whatsapp/health
+     * Proxies the gateway's public /whatsapp/health endpoint (socket status +
+     * infrastructure checks), used by the WhatsApp health settings page.
+     */
+    public function health(Request $request)
+    {
+        try {
+            $result = $this->gateway->health();
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        return $this->success($result, 'OK');
+    }
+
     public function qr(Request $request)
     {
         try {

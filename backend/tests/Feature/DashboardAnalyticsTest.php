@@ -100,9 +100,9 @@ class DashboardAnalyticsTest extends TestCase
         Conversation::factory()->create(['workspace_id' => $workspaceId, 'status' => 'closed', 'closed_at' => now()->subDay()]);
 
         // Leads: 3 new, 1 converted.
-        Lead::factory()->create(['workspace_id' => $workspaceId, 'status' => 'new']);
-        Lead::factory()->create(['workspace_id' => $workspaceId, 'status' => 'contacted']);
-        Lead::factory()->create(['workspace_id' => $workspaceId, 'status' => 'converted']);
+        Lead::factory()->create(['workspace_id' => $workspaceId, 'stage' => 'new']);
+        Lead::factory()->create(['workspace_id' => $workspaceId, 'stage' => 'contacted']);
+        Lead::factory()->create(['workspace_id' => $workspaceId, 'stage' => 'converted']);
 
         // Deals: 1 open (value 1000), 1 won in range (value 500), 1 lost in range.
         $pipeline = Pipeline::factory()->create(['workspace_id' => $workspaceId]);

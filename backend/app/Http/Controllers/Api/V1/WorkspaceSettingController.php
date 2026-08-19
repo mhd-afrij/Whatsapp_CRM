@@ -56,6 +56,9 @@ class WorkspaceSettingController extends Controller
             ],
             'notification_defaults' => ['sometimes', 'array'],
             'branding' => ['sometimes', 'array'],
+            'away_message_enabled' => ['sometimes', 'boolean'],
+            'away_message' => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'away_message_trigger' => ['sometimes', Rule::in(['outside_hours', 'once_per_conversation'])],
         ]);
 
         $before = array_merge(
@@ -76,7 +79,10 @@ class WorkspaceSettingController extends Controller
         $workspace->save();
 
         $settings = $workspace->settings ?? $workspace->settings()->create(['workspace_id' => $workspace->id]);
-        $settings->fill($request->only(['business_hours', 'default_pipeline_id', 'notification_defaults', 'branding']));
+        $settings->fill($request->only([
+            'business_hours', 'default_pipeline_id', 'notification_defaults', 'branding',
+            'away_message_enabled', 'away_message', 'away_message_trigger',
+        ]));
         $settings->save();
 
         $after = collect($data)->except('logo')->all();
@@ -107,6 +113,9 @@ class WorkspaceSettingController extends Controller
             ] : null,
             'notification_defaults' => $settings?->notification_defaults,
             'branding' => $settings?->branding,
+            'away_message_enabled' => (bool) ($settings?->away_message_enabled ?? false),
+            'away_message' => $settings?->away_message,
+            'away_message_trigger' => $settings?->away_message_trigger ?? 'outside_hours',
             'storage' => $this->storageInfo(),
             'security' => $this->securityInfo(),
         ];

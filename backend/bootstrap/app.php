@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\Authenticate;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\RequirePermission;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -27,7 +28,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // as session-based, which enforces CSRF and breaks Bearer-token
         // requests from the Next.js dev server. Do not re-add these unless
         // the frontend auth strategy changes to cookie-based SPA auth.
+        // Override the default Authenticate middleware so unauthenticated API
+        // requests return a 401 JSON envelope instead of trying to redirect
+        // to a 'login' route that doesn't exist (which causes a 500).
         $middleware->alias([
+            'auth' => Authenticate::class,
             'active' => EnsureUserIsActive::class,
             'permission' => RequirePermission::class,
         ]);

@@ -89,7 +89,7 @@ class AnalyticsController extends Controller
         });
     }
 
-    /** GET /api/v1/analytics/lead-funnel - count of leads per status in range. */
+    /** GET /api/v1/analytics/lead-funnel - count of leads per stage in range. */
     public function leadFunnel(Request $request)
     {
         [$from, $to] = $this->range($request);
@@ -98,13 +98,13 @@ class AnalyticsController extends Controller
             $query = Lead::query()->whereBetween('created_at', [$from, $to]);
             $this->applyOwner($query, $request, 'owner_user_id');
 
-            $counts = $query->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
+            $counts = $query->selectRaw('stage, count(*) as cnt')->groupBy('stage')->pluck('cnt', 'stage');
 
-            $statuses = ['new', 'contacted', 'qualified', 'disqualified', 'converted'];
+            $stages = ['new', 'contacted', 'qualified', 'viewing', 'negotiation', 'converted', 'lost'];
 
-            return collect($statuses)->map(fn ($status) => [
-                'status' => $status,
-                'count' => (int) ($counts[$status] ?? 0),
+            return collect($stages)->map(fn ($stage) => [
+                'status' => $stage,
+                'count' => (int) ($counts[$stage] ?? 0),
             ])->values()->all();
         });
     }

@@ -61,7 +61,7 @@ class DashboardController extends Controller
             $newLeads = Lead::query()->whereBetween('created_at', [$from, $to])->count();
             $convertedLeads = Lead::query()
                 ->whereBetween('created_at', [$from, $to])
-                ->where('status', 'converted')
+                ->where('stage', 'converted')
                 ->count();
             $leadConversionRate = $newLeads > 0 ? round(($convertedLeads / $newLeads) * 100, 2) : 0.0;
 

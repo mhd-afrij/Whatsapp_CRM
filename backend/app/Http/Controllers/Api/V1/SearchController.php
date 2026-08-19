@@ -133,18 +133,14 @@ class SearchController extends Controller
         $useFt = $this->useFulltext();
 
         return match ($category) {
-            'contacts' => $useFt
-                ? Contact::query()
-                    ->whereRaw('MATCH(full_name, email, company) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)])
-                    ->orderByDesc('id')
-                : Contact::query()
-                    ->where(function ($query) use ($q) {
-                        $query->where('full_name', 'like', "%{$q}%")
-                            ->orWhere('email', 'like', "%{$q}%")
-                            ->orWhere('phone_number', 'like', "%{$q}%")
-                            ->orWhere('company', 'like', "%{$q}%");
-                    })
-                    ->orderByDesc('id'),
+            // Contacts use the model's search scope (LIKE + normalized-phone
+            // matching, spec §14) on every driver rather than FULLTEXT: the
+            // normalized-phone requirement can't be expressed with MATCH, and
+            // InnoDB FULLTEXT cannot see rows inserted inside an uncommitted
+            // transaction (which broke the insert-then-search tests).
+            'contacts' => Contact::query()
+                ->search($q)
+                ->orderByDesc('id'),
 
             'conversations' => $useFt
                 ? Conversation::query()
@@ -152,7 +148,9 @@ class SearchController extends Controller
                     ->where(function ($query) use ($q) {
                         $query->whereHas('contact', fn ($c) => $c->whereRaw('MATCH(full_name, email, company) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)]))
                             ->orWhereHas('whatsappContact', fn ($c) => $c->where('push_name', 'like', "%{$q}%"))
-                            ->orWhereHas('messages', fn ($m) => $m->whereRaw('MATCH(body) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)]));
+                            ->orWhereHas('messages', fn ($m) => $m
+                                ->whereNull('deleted_for_me_at')
+                                ->whereRaw('MATCH(body) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)]));
                     })
                     ->orderByDesc('last_message_at')
                 : Conversation::query()
@@ -160,7 +158,9 @@ class SearchController extends Controller
                     ->where(function ($query) use ($q) {
                         $query->whereHas('contact', fn ($c) => $c->where('full_name', 'like', "%{$q}%"))
                             ->orWhereHas('whatsappContact', fn ($c) => $c->where('push_name', 'like', "%{$q}%"))
-                            ->orWhereHas('messages', fn ($m) => $m->where('body', 'like', "%{$q}%"));
+                            ->orWhereHas('messages', fn ($m) => $m
+                                ->whereNull('deleted_for_me_at')
+                                ->where('body', 'like', "%{$q}%"));
                     })
                     ->orderByDesc('last_message_at'),
 
@@ -170,7 +170,7 @@ class SearchController extends Controller
                     $query->whereHas('contact', fn ($c) => $c->where('full_name', 'like', "%{$q}%")
                         ->orWhere('email', 'like', "%{$q}%")
                         ->orWhere('phone_number', 'like', "%{$q}%"))
-                        ->orWhere('status', 'like', "%{$q}%");
+                        ->orWhere('stage', 'like', "%{$q}%");
                 })
                 ->orderByDesc('created_at'),
 
