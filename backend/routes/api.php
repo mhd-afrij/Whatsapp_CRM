@@ -162,12 +162,16 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:conversations.view')->name('unstar');
             Route::patch('/{conversation}/read', [ConversationController::class, 'markRead'])
                 ->middleware('permission:conversations.view')->name('read');
+            Route::patch('/{conversation}/unread', [ConversationController::class, 'markUnread'])
+                ->middleware('permission:conversations.view')->name('unread');
             Route::post('/{conversation}/typing', [ConversationController::class, 'typing'])
                 ->middleware('permission:conversations.view')->name('typing');
             Route::get('/{conversation}/assignment-history', [ConversationController::class, 'assignmentHistory'])
                 ->middleware('permission:conversations.view')->name('assignment-history');
             Route::get('/{conversation}/messages/{message}/media/{media}/url', [MediaController::class, 'url'])
                 ->middleware('permission:conversations.view')->name('messages.media.url');
+            Route::get('/{conversation}/messages/{message}/media/{media}/content', [MediaController::class, 'content'])
+                ->middleware('permission:conversations.view')->name('messages.media.content');
             Route::get('/{conversation}/messages/{message}/status-events', [ConversationController::class, 'messageStatusEvents'])
                 ->middleware('permission:conversations.view')->name('messages.status-events');
             Route::get('/{conversation}/messages/{message}/reactions', [ConversationController::class, 'messageReactions'])
@@ -182,6 +186,12 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:conversations.reply')->name('messages.revoke');
             Route::post('/{conversation}/messages/{message}/retry', [ConversationController::class, 'retryMessage'])
                 ->middleware('permission:conversations.reply')->name('messages.retry');
+            Route::post('/{conversation}/messages/{message}/forward', [ConversationController::class, 'forwardMessage'])
+                ->middleware('permission:conversations.reply')->name('messages.forward');
+            Route::patch('/{conversation}/messages/{message}/star', [ConversationController::class, 'starMessage'])
+                ->middleware('permission:conversations.view')->name('messages.star');
+            Route::delete('/{conversation}/messages/{message}/delete-for-me', [ConversationController::class, 'deleteMessageForMe'])
+                ->middleware('permission:conversations.reply')->name('messages.delete-for-me');
             Route::delete('/{conversation}/messages', [ConversationController::class, 'clearMessages'])
                 ->middleware('permission:conversations.close')->name('messages.clear');
             Route::delete('/{conversation}', [ConversationController::class, 'deleteConversation'])
@@ -205,6 +215,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware(['permission:contacts.export', 'throttle:export'])->name('export');
             Route::post('/import', [ContactController::class, 'import'])
                 ->middleware('permission:contacts.create')->name('import');
+            Route::post('/merge-duplicates', [ContactController::class, 'mergeDuplicates'])
+                ->middleware('permission:contacts.delete')->name('merge-duplicates');
             Route::post('/', [ContactController::class, 'store'])
                 ->middleware('permission:contacts.create')->name('store');
             Route::get('/{contact}', [ContactController::class, 'show'])
@@ -236,8 +248,20 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('/{lead}', [LeadController::class, 'show'])->name('show');
             Route::patch('/{lead}', [LeadController::class, 'update'])->name('update');
             Route::delete('/{lead}', [LeadController::class, 'destroy'])->name('destroy');
+            Route::post('/{lead}/stage', [LeadController::class, 'changeStage'])->name('stage');
+            Route::post('/{lead}/assign', [LeadController::class, 'assign'])->name('assign');
+            Route::post('/{lead}/convert', [LeadController::class, 'convert'])->name('convert');
+            Route::post('/{lead}/lost', [LeadController::class, 'markLost'])->name('lost');
+            Route::get('/{lead}/activities', [LeadController::class, 'activities'])->name('activities');
+            Route::get('/{lead}/tasks', [LeadController::class, 'tasks'])->name('tasks');
             Route::post('/{lead}/labels/{label}', [LeadController::class, 'attachLabel'])->name('labels.attach');
             Route::delete('/{lead}/labels/{label}', [LeadController::class, 'detachLabel'])->name('labels.detach');
+        });
+
+        Route::prefix('leads/bulk')->name('leads.bulk.')->middleware('permission:leads.manage')->group(function () {
+            Route::post('/assign', [LeadController::class, 'bulkAssign'])->name('assign');
+            Route::post('/stage', [LeadController::class, 'bulkStage'])->name('stage');
+            Route::post('/tag', [LeadController::class, 'bulkTag'])->name('tag');
         });
 
         Route::prefix('deals')->name('deals.')->middleware('permission:deals.manage')->group(function () {

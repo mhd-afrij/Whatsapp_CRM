@@ -153,6 +153,25 @@ export function emitConversationEvent(
 }
 
 /**
+ * Broadcasts a CRM contact lifecycle event (created/updated/deleted/restored)
+ * decided on the Laravel side (ContactController) to the workspace rooms, so
+ * open contact lists/details refresh without a page reload. Contacts are
+ * workspace-shared (not per-agent), so the inbox room + workspace room both
+ * receive it - the same rooms the contacts page's realtime hook joins.
+ */
+export function emitContactEvent(
+  event: 'contact.created' | 'contact.updated' | 'contact.deleted',
+  workspaceId: number,
+  payload: Record<string, unknown>,
+): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}`)
+    .to(`workspace:${workspaceId}:inbox`)
+    .emit(event, envelope(event, workspaceId, payload));
+}
+
+/**
  * Delivers a backend-created `notifications` row to the one user it belongs
  * to. Reuses the already-wired `/gateway` namespace and the same
  * `workspace:{id}:user:{userId}` room convention `emitMessageFailed` already

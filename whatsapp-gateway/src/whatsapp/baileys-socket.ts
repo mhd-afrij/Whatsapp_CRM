@@ -17,6 +17,10 @@ export interface IBaileysSocket {
     on(event: 'messages.upsert', listener: (payload: BaileysMessagesUpsert) => void): void;
     on(event: 'messages.update', listener: (payload: BaileysMessageUpdate[]) => void): void;
     on(event: 'contacts.upsert', listener: (payload: BaileysContactsUpsert) => void): void;
+    on(
+      event: 'chats.phoneNumberShare',
+      listener: (payload: BaileysPhoneNumberShare) => void,
+    ): void;
   };
   readonly user?: Contact;
   end(error: Error | undefined): void;
@@ -51,6 +55,14 @@ export interface BaileysMessageUpdate {
  *  saved (display) name for each contact. `name` is the name the user saved
  *  for this number; `notify` is the contact's self-set profile (push) name. */
 export type BaileysContactsUpsert = Contact[];
+
+/** Baileys' `chats.phoneNumberShare` event - WhatsApp shares the real phone
+ *  number (jid) behind a contact's LID (Linked ID) alias. `lid` is the opaque
+ *  @lid jid used in inbound remoteJids; `jid` is the canonical phone jid. */
+export interface BaileysPhoneNumberShare {
+  lid: string;
+  jid: string;
+}
 
 export interface BaileysConnectionUpdate {
   connection?: 'connecting' | 'open' | 'close';

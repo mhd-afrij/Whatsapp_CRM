@@ -3,7 +3,12 @@ import { SessionLockRepository } from './session-lock-repository';
 import { env } from '../config/env';
 import { emitConnectionUpdated } from '../lib/socket-server';
 import { logger } from '../lib/logger';
-import type { BaileysContactsUpsert, BaileysMessagesUpsert, BaileysMessageUpdate } from './baileys-socket';
+import type {
+  BaileysContactsUpsert,
+  BaileysMessagesUpsert,
+  BaileysMessageUpdate,
+  BaileysPhoneNumberShare,
+} from './baileys-socket';
 
 /**
  * Process-wide singleton ConnectionManager. Emits every internal
@@ -64,5 +69,14 @@ connectionManager.on(
     void import('./contacts-pipeline')
       .then(({ handleContactsUpsert }) => handleContactsUpsert(workspaceId, payload))
       .catch((err) => logger.error({ err }, 'Unhandled error in contacts upsert pipeline'));
+  },
+);
+
+connectionManager.on(
+  'chats.phoneNumberShare',
+  ({ workspaceId, payload }: { workspaceId: number; payload: BaileysPhoneNumberShare }) => {
+    void import('./contacts-pipeline')
+      .then(({ handlePhoneNumberShare }) => handlePhoneNumberShare(workspaceId, payload))
+      .catch((err) => logger.error({ err }, 'Unhandled error in phone-number-share pipeline'));
   },
 );

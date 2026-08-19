@@ -13,10 +13,12 @@ use App\Models\MessageDispatchQueue;
 use App\Models\MessageStatusEvent;
 use App\Models\User;
 use App\Models\UserPresence;
+use App\Services\ContactAutoLinker;
 use App\Services\GatewayClient;
 use App\Services\NotificationService;
 use App\Support\AuditLogger;
 use App\Traits\ApiResponse;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -28,7 +30,10 @@ class ConversationController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(protected GatewayClient $gateway) {}
+    public function __construct(
+        protected GatewayClient $gateway,
+        protected ContactAutoLinker $contactAutoLinker,
+    ) {}
 
     /**
      * GET /api/v1/conversations
@@ -104,6 +109,33 @@ class ConversationController extends Controller
             $query->whereHas('whatsappContact', fn ($q) => $q->where('wa_jid', 'like', '%@g.us'));
         }
 
+        // SLA list filter: `sla_status=risk|breached` narrows to conversations with an
+        // active (unresolved) SLA timer, computing risk/breach from the live deadline
+        // rather than the stored status column — so the filter is correct even before
+        // the `sla:check-breaches` scheduled command has flipped statuses. Mirrors the
+        // 5-minute at-risk window used by SlaService::checkBreaches().
+        if ($request->filled('sla_status')) {
+            $slaStatus = $request->string('sla_status')->toString();
+
+            if (! in_array($slaStatus, ['risk', 'breached'], true)) {
+                return $this->error('The given data was invalid.', [
+                    'sla_status' => ['sla_status must be one of: risk, breached.'],
+                ]);
+            }
+
+            $now = now();
+
+            $query->whereHas('slaEvents', function ($sla) use ($slaStatus, $now) {
+                $sla->whereIn('status', ['pending', 'at_risk'])
+                    ->when($slaStatus === 'breached', function ($q) use ($now) {
+                        $q->where('deadline_at', '<=', $now);
+                    }, function ($q) use ($now) {
+                        $q->where('deadline_at', '>', $now)
+                            ->where('deadline_at', '<=', $now->copy()->addMinutes(5));
+                    });
+            });
+        }
+
         // Multi-label filter, any-match (OR) - see ContactController::index for rationale.
         // Kept alongside the pre-existing single-name `label` filter above for compatibility.
         if ($request->filled('labels')) {
@@ -111,9 +143,55 @@ class ConversationController extends Controller
             $query->whereHas('labels', fn ($q) => $q->whereIn('labels.id', $labelIds));
         }
 
+        // Advanced filters: lead status / deal stage via the conversation's CRM
+        // contact, and a last-activity date window on the gateway-owned
+        // last_message_at summary column.
+        if ($request->filled('lead_status')) {
+            $leadStatus = $request->string('lead_status')->toString();
+
+            if (! in_array($leadStatus, ['new', 'contacted', 'qualified', 'viewing', 'negotiation', 'converted', 'lost'], true)) {
+                return $this->error('The given data was invalid.', [
+                    'lead_status' => ['lead_status must be one of: new, contacted, qualified, viewing, negotiation, converted, lost.'],
+                ]);
+            }
+
+            $query->whereHas('contact', fn ($contact) => $contact->whereHas('leads', fn ($lead) => $lead->where('stage', $leadStatus)));
+        }
+
+        if ($request->filled('deal_stage')) {
+            $dealStage = $request->string('deal_stage')->toString();
+
+            $query->whereHas('contact', fn ($contact) => $contact->whereHas('deals', fn ($deal) => $deal->whereHas('stage', fn ($stage) => $stage->where('name', $dealStage))));
+        }
+
+        if ($request->filled('date_from') || $request->filled('date_to')) {
+            $dateFrom = $request->date('date_from');
+            $dateTo = $request->date('date_to');
+
+            if ($dateFrom && $dateTo && $dateFrom->gt($dateTo)) {
+                return $this->error('The given data was invalid.', [
+                    'date_from' => ['date_from must not be after date_to.'],
+                ]);
+            }
+
+            $query->where(function ($dateQuery) use ($dateFrom, $dateTo) {
+                if ($dateFrom) {
+                    $dateQuery->where('last_message_at', '>=', $dateFrom->startOfDay());
+                }
+                if ($dateTo) {
+                    $dateQuery->where('last_message_at', '<=', $dateTo->endOfDay());
+                }
+            });
+        }
+
         $perPage = min(max((int) $request->integer('per_page', 15), 1), 100);
 
         $paginator = $query->orderByDesc('last_message_at')->orderByDesc('id')->paginate($perPage);
+
+        // Spec §5: a previously unknown WhatsApp number that messaged the
+        // business must surface as a CRM Contact without an agent creating it
+        // manually. Provision any unlinked whatsapp_contacts on this page now.
+        $this->contactAutoLinker->ensureForConversations($paginator->getCollection());
 
         return $this->success($paginator->items(), 'OK', [
             'page' => $paginator->currentPage(),
@@ -131,7 +209,11 @@ class ConversationController extends Controller
         $this->authorize('view', $conversation);
         $conversation->load(['whatsappContact', 'contact', 'assignedUser', 'assignedTeam', 'labels']);
 
-        return $this->success($conversation, 'OK');
+        // Same lazy auto-provisioning as index - opening a thread from a
+        // WhatsApp-only identity creates its CRM contact on first read.
+        $this->contactAutoLinker->ensureForConversations(new Collection([$conversation]));
+
+        return $this->success($conversation->load('whatsappContact'), 'OK');
     }
 
     /**
@@ -170,6 +252,12 @@ class ConversationController extends Controller
                 ->first();
 
             if ($existingConversation) {
+                // Backend-owned CRM column (see Conversation docblock): link the
+                // thread to the CRM contact so the inbox/chat render the contact's
+                // name instead of falling back to the raw WhatsApp number.
+                if (! $existingConversation->contact_id) {
+                    $existingConversation->update(['contact_id' => $contact->id]);
+                }
                 $existingConversation->load(['whatsappContact', 'contact', 'assignedUser', 'assignedTeam', 'labels']);
                 return $this->success($existingConversation, 'OK');
             }
@@ -190,6 +278,14 @@ class ConversationController extends Controller
 
             if (! $conversation) {
                 throw new RuntimeException('Created conversation not found');
+            }
+
+            // Backend-owned CRM column (see Conversation docblock): link the
+            // thread to the CRM contact so the inbox/chat render the contact's
+            // name instead of falling back to the raw WhatsApp number.
+            if (! $conversation->contact_id) {
+                $conversation->update(['contact_id' => $contact->id]);
+                $conversation->load('contact');
             }
 
             if (! $conversation->assigned_user_id) {
@@ -215,6 +311,9 @@ class ConversationController extends Controller
 
         $paginator = Message::query()
             ->where('conversation_id', $conversation->id)
+            // Messages hidden via WhatsApp-style "Delete for me" never appear
+            // in the thread (they still exist for the contact, just not here).
+            ->whereNull('deleted_for_me_at')
             ->with(['media', 'reactions', 'sender'])
             ->orderByDesc('id')
             ->cursorPaginate($perPage);
@@ -346,7 +445,32 @@ class ConversationController extends Controller
             );
         }
 
+        $this->touchContactLastContacted($conversation);
+
         return $this->success($message->load(['media', 'sender']), 'Message sent', null, 201);
+    }
+
+    /**
+     * Bumps the CRM contact's last_contacted_at when an agent sends a message
+     * to the conversation (outbound contact = contact). Best-effort: the send
+     * already succeeded; a failure here only means the timestamp lags.
+     */
+    protected function touchContactLastContacted(Conversation $conversation): void
+    {
+        try {
+            $contact = $conversation->contact;
+            if (! $contact && $conversation->whatsappContact?->contact_id) {
+                $contact = $conversation->whatsappContact->contact;
+            }
+            if ($contact) {
+                $contact->forceFill(['last_contacted_at' => now()])->save();
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to touch contact last_contacted_at', [
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -642,10 +766,10 @@ class ConversationController extends Controller
     /**
      * PATCH /api/v1/conversations/{id}/read
      * Marks the conversation read for the current user (backend-owned
-     * conversation_participants row). `unread_count` itself is gateway-owned
-     * (see docs/04-database-design.md); resetting it is out of scope here since no
-     * internal gateway endpoint for that is documented in 05-api-contract.md §22 —
-     * only the per-user read-state is recorded on the backend side.
+     * conversation_participants row) and asks the gateway to reset the
+     * gateway-owned `unread_count` counter (the inbox badge). The gateway
+     * reset is best-effort - a gateway outage must never fail the local read
+     * state write, so failures are logged, not thrown.
      */
     public function markRead(Request $request, Conversation $conversation)
     {
@@ -660,11 +784,42 @@ class ConversationController extends Controller
             ['last_read_message_id' => $lastMessageId, 'last_read_at' => now()]
         );
 
+        try {
+            $this->gateway->markConversationRead($conversation->id, $conversation->workspace_id);
+        } catch (RuntimeException $e) {
+            Log::warning('Failed to reset gateway unread counter', [
+                'conversation_id' => $conversation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return $this->success([
             'conversation_id' => $conversation->id,
             'last_read_message_id' => $lastMessageId,
             'last_read_at' => now()->toIso8601String(),
+            'unread_count' => 0,
         ], 'Conversation marked as read');
+    }
+
+    /**
+     * PATCH /api/v1/conversations/{id}/unread
+     * "Mark as unread" (mirrors WhatsApp Web): asks the gateway to bump the
+     * unread_count back to at least 1 so the inbox badge returns.
+     */
+    public function markUnread(Request $request, Conversation $conversation)
+    {
+        $this->authorize('view', $conversation);
+
+        try {
+            $result = $this->gateway->markConversationUnread($conversation->id, $conversation->workspace_id);
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        return $this->success([
+            'conversation_id' => $conversation->id,
+            'unread_count' => $result['data']['unreadCount'] ?? 1,
+        ], 'Conversation marked as unread');
     }
 
     /**
@@ -983,6 +1138,7 @@ class ConversationController extends Controller
 
         $query = $conversation->messages()
             ->where('body', 'like', "%{$validated['q']}%")
+            ->whereNull('deleted_for_me_at')
             ->with(['media', 'reactions', 'statusEvents'])
             ->orderBy('created_at', 'desc');
 
@@ -1044,6 +1200,116 @@ class ConversationController extends Controller
             ->values();
 
         return $this->success($reactions, 'Message reactions retrieved');
+    }
+
+    /**
+     * PATCH /api/v1/conversations/{conversation}/messages/{message}/star
+     * Stars/unstars a message (mirrors WhatsApp's starred messages). The
+     * messages table is gateway-owned, so the toggle is delegated to the
+     * gateway, which also fans a message.updated event out.
+     */
+    public function starMessage(Request $request, Conversation $conversation, Message $message)
+    {
+        $this->authorize('view', $conversation);
+
+        $validated = Validator::make($request->all(), [
+            'starred' => 'required|boolean',
+        ])->validate();
+
+        if ($message->conversation_id !== $conversation->id) {
+            return $this->error('Message not found in this conversation', null, 404);
+        }
+
+        $starred = (bool) $validated['starred'];
+
+        try {
+            $this->gateway->setMessageStarred($conversation->workspace_id, $conversation->id, $message->id, $starred);
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        return $this->success([
+            'message_id' => $message->id,
+            'starred_at' => $starred ? now()->toIso8601String() : null,
+        ], $starred ? 'Message starred' : 'Message unstarred');
+    }
+
+    /**
+     * DELETE /api/v1/conversations/{conversation}/messages/{message}/delete-for-me
+     * WhatsApp-style "Delete for me" (mirrors WhatsApp's per-message delete):
+     * asks the gateway to stamp the message's `deleted_for_me_at` so it is
+     * hidden from the workspace's inbox. Nothing is sent to WhatsApp (the
+     * contact keeps their copy) and the row is preserved - the message can
+     * never be shown again. Distinct from revoke, which deletes for everyone.
+     */
+    public function deleteMessageForMe(Request $request, Conversation $conversation, Message $message)
+    {
+        $this->authorize('reply', $conversation);
+
+        if ($message->conversation_id !== $conversation->id) {
+            return $this->error('Message not found in this conversation', null, 404);
+        }
+
+        try {
+            $this->gateway->deleteMessageForMe(
+                $conversation->workspace_id,
+                $conversation->id,
+                $message->id,
+                $request->user()->id,
+            );
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        return $this->success(['message_id' => $message->id], 'Message deleted for me');
+    }
+
+    /**
+     * POST /api/v1/conversations/{conversation}/messages/{message}/forward
+     * Forwards a message into another conversation the user can see (mirrors
+     * WhatsApp's forward). The gateway reconstructs the source content and
+     * sends it with an isForwarded marker.
+     */
+    public function forwardMessage(Request $request, Conversation $conversation, Message $message)
+    {
+        $this->authorize('reply', $conversation);
+
+        $validated = Validator::make($request->all(), [
+            'target_conversation_id' => 'required|integer|exists:conversations,id',
+        ])->validate();
+
+        if ($message->conversation_id !== $conversation->id) {
+            return $this->error('Message not found in this conversation', null, 404);
+        }
+
+        $target = Conversation::query()
+            ->visibleTo($request->user())
+            ->find($validated['target_conversation_id']);
+
+        if (! $target) {
+            return $this->error('Target conversation not found', null, 404);
+        }
+
+        if ($target->id === $conversation->id) {
+            return $this->error('Cannot forward a message to the same conversation', null, 422);
+        }
+
+        try {
+            $result = $this->gateway->forwardMessage(
+                $conversation->workspace_id,
+                $target->id,
+                $message->id,
+                $request->user()->id
+            );
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        return $this->success([
+            'message_id' => $result['data']['messageId'] ?? null,
+            'whatsapp_message_id' => $result['data']['whatsappMessageId'] ?? null,
+            'target_conversation_id' => $target->id,
+        ], 'Message forwarded', null, 201);
     }
 
     /**

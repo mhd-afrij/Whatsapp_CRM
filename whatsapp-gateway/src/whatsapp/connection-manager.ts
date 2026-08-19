@@ -12,6 +12,7 @@ import {
   createBaileysSocket,
   loadAuthState,
   type BaileysConnectionUpdate,
+  type BaileysPhoneNumberShare,
   type BaileysSocketFactory,
   type IBaileysSocket,
 } from './baileys-socket';
@@ -257,6 +258,10 @@ export class ConnectionManager extends EventEmitter {
 
     this.socket.ev.on('contacts.upsert', (payload) => {
       this.emit('contacts.upsert', { workspaceId: this.workspaceId, payload });
+    });
+
+    this.socket.ev.on('chats.phoneNumberShare', (payload: BaileysPhoneNumberShare) => {
+      this.emit('chats.phoneNumberShare', { workspaceId: this.workspaceId, payload });
     });
 
     this.socket.ev.on('messages.upsert', (payload) => {

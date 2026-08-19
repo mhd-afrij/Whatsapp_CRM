@@ -137,6 +137,56 @@ class WhatsappConnectionTest extends TestCase
             ->assertJsonPath('success', false);
     }
 
+    public function test_admin_can_fetch_health_and_it_proxies_the_gateway(): void
+    {
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+
+        Http::fake([
+            '*/whatsapp/health' => Http::response([
+                'status' => 'ok',
+                'whatsapp' => ['status' => 'connected', 'phoneNumber' => '15551234567', 'qrPending' => false],
+                'socket' => ['connected' => true, 'clients' => 3],
+                'redis' => ['healthy' => true],
+                'mysql' => ['healthy' => true],
+            ], 200),
+        ]);
+
+        $this->asUser($admin)->getJson('/api/v1/whatsapp/health')
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'ok')
+            ->assertJsonPath('data.whatsapp.status', 'connected')
+            ->assertJsonPath('data.mysql.healthy', true);
+
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/whatsapp/health')
+            && $request->hasHeader('X-Internal-Gateway-Token'));
+    }
+
+    public function test_health_gateway_unreachable_returns_502(): void
+    {
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+
+        Http::fake([
+            '*/whatsapp/health' => Http::response(null, 500),
+        ]);
+
+        $this->asUser($admin)->getJson('/api/v1/whatsapp/health')
+            ->assertStatus(502)
+            ->assertJsonPath('success', false);
+    }
+
+    public function test_agent_without_permission_is_forbidden_from_health(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+
+        $this->asUser($agent)->getJson('/api/v1/whatsapp/health')
+            ->assertStatus(403)
+            ->assertJsonPath('success', false);
+    }
+
     public function test_connection_history_reads_from_database_scoped_to_workspace(): void
     {
         $this->seedRbac();
