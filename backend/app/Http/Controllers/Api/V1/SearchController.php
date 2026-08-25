@@ -7,12 +7,13 @@ use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Deal;
 use App\Models\Task;
+use App\Models\Lead;
 use Illuminate\Http\Request;
 
 class SearchController extends Controller
 {
     /** Categories this endpoint knows how to search, in display order. */
-    private const CATEGORIES = ['contacts', 'conversations', 'deals', 'tasks'];
+    private const CATEGORIES = ['contacts', 'conversations', 'leads', 'deals', 'tasks'];
 
     /**
      * GET /api/v1/search?q=...&category=&page=&per_page=
@@ -103,6 +104,9 @@ class SearchController extends Controller
         if ($user->hasPermission('deals.manage')) {
             $allowed[] = 'deals';
         }
+        if ($user->hasPermission('leads.manage')) {
+            $allowed[] = 'leads';
+        }
         if ($user->hasAnyPermission(['tasks.manage', 'tasks.view_team'])) {
             $allowed[] = 'tasks';
         }
@@ -165,6 +169,15 @@ class SearchController extends Controller
                 ->where(function ($query) use ($q) {
                     $query->where('title', 'like', "%{$q}%")
                         ->orWhereHas('contact', fn ($c) => $c->where('full_name', 'like', "%{$q}%"));
+                })
+                ->orderByDesc('created_at'),
+
+            'leads' => Lead::query()
+                ->with(['contact', 'owner'])
+                ->where(function ($query) use ($q) {
+                    $query->where('stage', 'like', "%{$q}%")
+                        ->orWhere('source', 'like', "%{$q}%")
+                        ->orWhereHas('contact', fn ($c) => $c->where('full_name', 'like', "%{$q}%")->orWhere('phone_number', 'like', "%{$q}%"));
                 })
                 ->orderByDesc('created_at'),
 

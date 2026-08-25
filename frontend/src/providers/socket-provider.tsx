@@ -30,7 +30,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     const token = getToken();
 
     const client = io(`${socketUrl}/gateway`, {
-      transports: ["websocket"],
+      transports: ["polling", "websocket"],
       auth: token ? { token } : undefined,
     });
 
@@ -82,3 +82,4 @@ export function useSocket(): SocketContextValue {
   }
   return ctx;
 }
+

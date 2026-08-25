@@ -19,3 +19,4 @@ process.env.GATEWAY_INSTANCE_ID = 'test-instance';
 process.env.SESSION_LEASE_MS = '30000';
 process.env.SESSION_HEARTBEAT_INTERVAL_MS = '10000';
 process.env.LOG_LEVEL = 'silent';
+process.env.AZURE_STORAGE_URL_EXPIRY_SECONDS = '300';

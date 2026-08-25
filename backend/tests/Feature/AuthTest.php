@@ -29,7 +29,8 @@ class AuthTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.user.email', $user->email)
-            ->assertJsonStructure(['data' => ['token', 'user' => ['id', 'email', 'roles', 'permissions']]]);
+            ->assertJsonStructure(['data' => ['token', 'access_token', 'user' => ['id', 'email', 'roles', 'role_keys', 'permissions']]])
+            ->assertJsonPath('data.user.role_keys.0', 'user');
 
         $this->assertDatabaseHas('audit_logs', ['action' => 'auth.login', 'user_id' => $user->id]);
     }
@@ -103,6 +104,7 @@ class AuthTest extends TestCase
             ->assertJsonPath('data.email', $user->email)
             ->assertJsonPath('data.roles.0', 'Agent');
 
+        $this->assertSame(['user'], $response->json('data.role_keys'));
         $this->assertContains('contacts.create', $response->json('data.permissions'));
         $this->assertNotContains('contacts.delete', $response->json('data.permissions'));
     }
@@ -164,6 +166,35 @@ class AuthTest extends TestCase
             ->postJson('/api/v1/auth/invitations', ['email' => 'x@example.com', 'role_id' => $role->id])
             ->assertStatus(403);
     }
+
+    public function test_admin_cannot_invite_a_super_admin(): void
+    {
+        Notification::fake();
+
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+        $superAdminRole = Role::query()->where('name', 'Super Administrator')->firstOrFail();
+
+        $this->asUser($admin)
+            ->postJson('/api/v1/auth/invitations', [
+                'email' => 'future-super@example.com',
+                'role_id' => $superAdminRole->id,
+            ])
+            ->assertStatus(403)
+            ->assertJsonPath('success', false);
+    }
+
+    public function test_standard_user_cannot_escalate_their_own_role_through_user_admin_endpoint(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $adminRole = Role::query()->where('name', 'Administrator')->firstOrFail();
+
+        $this->asUser($agent)
+            ->patchJson("/api/v1/users/{$agent->id}", ['role_id' => $adminRole->id])
+            ->assertStatus(403);
+    }
+
 
     public function test_users_manage_permission_can_suspend_and_reactivate_a_user(): void
     {

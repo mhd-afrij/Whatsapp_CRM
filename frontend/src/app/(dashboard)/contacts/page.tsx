@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { LabelFilterChips } from "@/components/labels/label-filter-chips";
 import { LabelBadge } from "@/components/labels/label-badge";
 import { ErrorState } from "@/components/ui/error-state";
+import { ContactDetailDrawer } from "@/components/contacts/contact-detail-drawer";
 
 type SortField = NonNullable<ContactFilters["sort"]>;
 
@@ -117,6 +118,7 @@ function ContactsTable() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [selectedContactId, setSelectedContactId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filters: ContactFilters = {
@@ -382,9 +384,9 @@ function ContactsTable() {
               {contacts.map((contact) => (
                 <tr key={contact.id} className="border-b border-border last:border-0 hover:bg-primary-soft/30">
                   <td className="px-4 py-3">
-                    <Link href={`/contacts/${contact.id}`} className="font-medium text-primary hover:underline">
+                    <button type="button" onClick={() => setSelectedContactId(contact.id)} className="font-medium text-primary hover:underline">
                       {contact.full_name || "(no name)"}
-                    </Link>
+                    </button>
                     {contact.deleted_at && (
                       <span className="ml-2 rounded-full border border-border bg-bg px-2 py-0.5 text-[10px] text-muted">
                         Archived {new Date(contact.deleted_at).toLocaleDateString()}
@@ -495,6 +497,14 @@ function ContactsTable() {
           </div>
         </div>
       )}
+
+      <ContactDetailDrawer
+        contactId={selectedContactId}
+        open={selectedContactId !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedContactId(null);
+        }}
+      />
     </div>
   );
 }

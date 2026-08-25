@@ -119,7 +119,11 @@ async function processMediaDownload(job: Job<MediaDownloadJobData>): Promise<voi
   await repository.insertMessageMedia(messageId, {
     mimeType,
     fileSizeBytes: buffer.length,
+    fileSize: buffer.length,
     storagePath,
+    blobName: storagePath,
+    mediaUrl: null,
+    storageProvider: 'azure_blob',
     checksumSha256: checksum,
   });
 }

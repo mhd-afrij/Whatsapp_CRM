@@ -40,7 +40,9 @@ function ResetPasswordForm() {
         ...values,
         token,
       });
-      if (!data.success) throw data;
+      // Interceptor already rejects explicit failure envelopes; reaching here
+      // with a 2xx body means the reset succeeded.
+      void data;
       toast("Password reset successfully. Please sign in.", "success");
       router.push("/login");
     } catch (error) {

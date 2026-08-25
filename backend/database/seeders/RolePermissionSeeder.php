@@ -42,6 +42,7 @@ class RolePermissionSeeder extends Seeder
             'conversations.delete' => ['Super Administrator'],
 
             'deals.manage' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
+            'leads.manage' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
             'reports.view' => ['Super Administrator', 'Administrator', 'Manager', 'Agent', 'Viewer'],
 
             'tasks.manage' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
@@ -80,6 +81,21 @@ class RolePermissionSeeder extends Seeder
             'analytics.export' => ['Super Administrator', 'Administrator', 'Manager'],
 
             'dlq.manage' => ['Super Administrator', 'Administrator'],
+
+            // Campaigns module - per docs/07-permission-matrix.md: managers have
+            // read-only visibility, only admins compose/send.
+            'campaigns.view' => ['Super Administrator', 'Administrator', 'Manager'],
+            'campaigns.create' => ['Super Administrator', 'Administrator'],
+            'campaigns.update' => ['Super Administrator', 'Administrator'],
+            'campaigns.delete' => ['Super Administrator', 'Administrator'],
+            'campaigns.send' => ['Super Administrator', 'Administrator'],
+
+            // Phantom-permission fixes (see PermissionSeeder) - these were always
+            // enforced by routes/policies but never seeded, so grant them to the
+            // roles that were already relying on them in practice (agents use
+            // saved replies from the inbox composer).
+            'templates.use' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
+            'templates.manage' => ['Super Administrator', 'Administrator'],
         ];
 
         $roles = [

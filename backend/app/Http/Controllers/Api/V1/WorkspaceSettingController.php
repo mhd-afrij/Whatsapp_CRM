@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Workspace;
+use App\Services\AzureBlobService;
 use App\Support\AuditLogger;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
@@ -33,6 +34,8 @@ use Illuminate\Validation\Rule;
 class WorkspaceSettingController extends Controller
 {
     use ApiResponse;
+
+    public function __construct(protected AzureBlobService $azureBlob) {}
 
     public function show(Request $request)
     {
@@ -66,10 +69,10 @@ class WorkspaceSettingController extends Controller
 
         if ($request->hasFile('logo')) {
             if ($workspace->logo_path) {
-                Storage::disk('public')->delete($workspace->logo_path);
+                $this->azureBlob->delete($workspace->logo_path);
             }
-            $path = $request->file('logo')->store('workspace-logos/'.$workspace->id, 'public');
-            $workspace->logo_path = $path;
+            $upload = $this->azureBlob->upload($request->file('logo'), 'workspace-logos/'.$workspace->id);
+            $workspace->logo_path = $upload['file_path'];
         }
 
         $workspace->save();
@@ -99,7 +102,7 @@ class WorkspaceSettingController extends Controller
             'slug' => $workspace->slug,
             'whatsapp_number' => $workspace->whatsapp_number,
             'timezone' => $workspace->timezone,
-            'logo_url' => $workspace->logo_path ? Storage::disk('public')->url($workspace->logo_path) : null,
+            'logo_url' => $workspace->logo_path ? $this->azureBlob->getUrl($workspace->logo_path) : null,
             'is_active' => (bool) $workspace->is_active,
             'business_hours' => $settings?->business_hours,
             'notification_defaults' => $settings?->notification_defaults,
@@ -142,3 +145,7 @@ class WorkspaceSettingController extends Controller
         ];
     }
 }
+
+
+
+

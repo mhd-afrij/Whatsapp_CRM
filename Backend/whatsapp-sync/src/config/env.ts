@@ -19,7 +19,7 @@ const envSchema = z.object({
   SYNC_STATE_PATH: z.string().default("storage/sync-session.json"),
   STRICT_MYSQL_ONLY: z.coerce.boolean().default(false),
   WHATSAPP_AUTH_DIR: z.string().default("storage/wa-auth"),
-  CORS_ORIGIN: z.string().default("http://localhost:5173"),
+  CORS_ORIGIN: z.string().default("http://localhost:3000"),
   LARAVEL_API_BASE_URL: z.string().default("http://localhost:8000/api/v1"),
 });
 

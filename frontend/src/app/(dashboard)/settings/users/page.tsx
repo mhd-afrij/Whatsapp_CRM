@@ -4,6 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { usePermission } from "@/hooks/use-permission";
+import { useAuth } from "@/context/auth-context";
 import {
   useAdminUsers,
   useInviteUser,
@@ -17,8 +18,15 @@ import { ApiError } from "@/lib/api-client";
 import type { AdminUser } from "@/lib/admin-api";
 import { ErrorState } from "@/components/ui/error-state";
 
+function isSuperAdminRole(role: { name: string; slug: string }) {
+  return role.slug === "super_admin" || role.slug === "super-administrator" || role.name === "Super Administrator";
+}
+
 function InviteUserForm() {
   const { data: roles } = useRoles();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role_keys?.includes("super_admin") ?? false;
+  const assignableRoles = roles?.filter((role) => isSuperAdmin || !isSuperAdminRole(role)) ?? [];
   const inviteMutation = useInviteUser();
   const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState<number | "">("");
@@ -56,7 +64,7 @@ function InviteUserForm() {
           className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-text"
         >
           <option value="">Select role…</option>
-          {roles?.map((role) => (
+          {assignableRoles.map((role) => (
             <option key={role.id} value={role.id}>
               {role.name}
             </option>
@@ -79,6 +87,9 @@ function InviteUserForm() {
 
 function EditUserRow({ user }: { user: AdminUser }) {
   const { data: roles } = useRoles();
+  const { user: currentUser } = useAuth();
+  const isSuperAdmin = currentUser?.role_keys?.includes("super_admin") ?? false;
+  const assignableRoles = roles?.filter((role) => isSuperAdmin || !isSuperAdminRole(role)) ?? [];
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user.name);
   const [roleId, setRoleId] = useState<number | "">(user.roles[0]?.id ?? "");
@@ -89,6 +100,10 @@ function EditUserRow({ user }: { user: AdminUser }) {
   const reactivateMutation = useReactivateUser();
   const resendMutation = useResendInvitation();
   const canManage = usePermission("users.manage");
+  const isProtectedSuperAdmin = (user.role_keys?.includes("super_admin") ?? false) && !isSuperAdmin;
+  const isSelf = String(currentUser?.id) === String(user.id);
+  const canEditUser = canManage && !isProtectedSuperAdmin;
+  const canToggleActive = canEditUser && !isSelf;
 
   const onSave = async () => {
     setError(null);
@@ -140,7 +155,7 @@ function EditUserRow({ user }: { user: AdminUser }) {
             onChange={(e) => setRoleId(e.target.value ? Number(e.target.value) : "")}
             className="rounded-md border border-border bg-bg px-2 py-1 text-sm text-text"
           >
-            {roles?.map((role) => (
+            {assignableRoles.map((role) => (
               <option key={role.id} value={role.id}>
                 {role.name}
               </option>
@@ -164,7 +179,7 @@ function EditUserRow({ user }: { user: AdminUser }) {
       </td>
       <td className="px-3 py-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          {canManage && editing && (
+          {canEditUser && editing && (
             <>
               <button
                 type="button"
@@ -179,7 +194,7 @@ function EditUserRow({ user }: { user: AdminUser }) {
               </button>
             </>
           )}
-          {canManage && !editing && (
+          {canEditUser && !editing && (
             <button
               type="button"
               onClick={() => setEditing(true)}
@@ -188,7 +203,7 @@ function EditUserRow({ user }: { user: AdminUser }) {
               Edit
             </button>
           )}
-          {canManage && (
+          {canToggleActive && (
             <button
               type="button"
               onClick={onToggleActive}

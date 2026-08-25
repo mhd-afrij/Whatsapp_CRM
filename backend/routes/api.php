@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BusinessHoursController;
 use App\Http\Controllers\Api\V1\CalendarEventController;
+use App\Http\Controllers\Api\V1\CampaignController;
 use App\Http\Controllers\Api\V1\ContactController;
 use App\Http\Controllers\Api\V1\ConversationController;
 use App\Http\Controllers\Api\V1\DashboardController;
@@ -13,6 +14,7 @@ use App\Http\Controllers\Api\V1\FailedJobController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\InternalNoteController;
 use App\Http\Controllers\Api\V1\LabelController;
+use App\Http\Controllers\Api\V1\LeadController;
 use App\Http\Controllers\Api\V1\MediaController;
 use App\Http\Controllers\Api\V1\MessageTemplateController;
 use App\Http\Controllers\Api\V1\NotificationController;
@@ -245,6 +247,17 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::delete('/{deal}/labels/{label}', [DealController::class, 'detachLabel'])->name('labels.detach');
         });
 
+        Route::prefix('leads')->name('leads.')->middleware('permission:leads.manage')->group(function () {
+            Route::get('/', [LeadController::class, 'index'])->name('index');
+            Route::post('/', [LeadController::class, 'store'])->name('store');
+            Route::get('/{lead}', [LeadController::class, 'show'])->name('show');
+            Route::patch('/{lead}', [LeadController::class, 'update'])->name('update');
+            Route::delete('/{lead}', [LeadController::class, 'destroy'])->name('destroy');
+            Route::post('/{lead}/convert', [LeadController::class, 'convert'])->name('convert');
+            Route::post('/{lead}/labels/{label}', [LeadController::class, 'attachLabel'])->name('labels.attach');
+            Route::delete('/{lead}/labels/{label}', [LeadController::class, 'detachLabel'])->name('labels.detach');
+        });
+
         Route::prefix('tasks')->name('tasks.')->group(function () {
             Route::get('/', [TaskController::class, 'index'])->name('index');
             Route::post('/', [TaskController::class, 'store'])->name('store');
@@ -307,6 +320,31 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:templates.manage')->name('destroy');
             Route::post('/preview', [MessageTemplateController::class, 'preview'])
                 ->middleware('permission:templates.use')->name('preview');
+        });
+
+        // Campaigns (bulk WhatsApp messaging). Send/cancel share campaigns.send;
+        // everything read-only sits behind campaigns.view.
+        Route::prefix('campaigns')->name('campaigns.')->group(function () {
+            Route::get('/', [CampaignController::class, 'index'])
+                ->middleware('permission:campaigns.view')->name('index');
+            Route::post('/preview-audience', [CampaignController::class, 'previewAudience'])
+                ->middleware('permission:campaigns.view')->name('preview-audience');
+            Route::post('/', [CampaignController::class, 'store'])
+                ->middleware('permission:campaigns.create')->name('store');
+            Route::get('/{campaign}', [CampaignController::class, 'show'])
+                ->middleware('permission:campaigns.view')->name('show');
+            Route::patch('/{campaign}', [CampaignController::class, 'update'])
+                ->middleware('permission:campaigns.update')->name('update');
+            Route::delete('/{campaign}', [CampaignController::class, 'destroy'])
+                ->middleware('permission:campaigns.delete')->name('destroy');
+            Route::post('/{campaign}/send', [CampaignController::class, 'send'])
+                ->middleware(['permission:campaigns.send'])->name('send');
+            Route::post('/{campaign}/cancel', [CampaignController::class, 'cancel'])
+                ->middleware('permission:campaigns.send')->name('cancel');
+            Route::get('/{campaign}/analytics', [CampaignController::class, 'analytics'])
+                ->middleware('permission:campaigns.view')->name('analytics');
+            Route::get('/{campaign}/messages', [CampaignController::class, 'messages'])
+                ->middleware('permission:campaigns.view')->name('messages.index');
         });
 
         // search.global is granted to every seeded role; the SearchController itself narrows

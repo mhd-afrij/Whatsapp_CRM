@@ -77,6 +77,11 @@ class Contact extends Model
         return $this->hasMany(Deal::class);
     }
 
+    public function leads(): HasMany
+    {
+        return $this->hasMany(Lead::class);
+    }
+
     public function activities(): HasMany
     {
         return $this->hasMany(ContactActivity::class);

@@ -24,25 +24,14 @@ const envSchema = z.object({
 
   SOCKET_CORS_ORIGIN: z.string().min(1, 'SOCKET_CORS_ORIGIN is required'),
   WHATSAPP_SESSION_DIR: z.string().min(1, 'WHATSAPP_SESSION_DIR is required'),
-
-  // Used to authenticate requests from Laravel's internal API client
-  // (GatewayClient) hitting /internal/whatsapp/* routes.
   INTERNAL_GATEWAY_TOKEN: z.string().min(1, 'INTERNAL_GATEWAY_TOKEN is required'),
 
-  // AES-256-GCM key (hex, 64 chars / 32 bytes) used to encrypt Baileys auth
-  // credentials before they are persisted to whatsapp_session_credentials.
   CREDENTIALS_ENCRYPTION_KEY: z
     .string()
     .regex(/^[0-9a-fA-F]{64}$/, 'CREDENTIALS_ENCRYPTION_KEY must be a 64-char hex string (32 bytes)'),
 
-  // MVP: this gateway process manages a single WhatsApp session tied to one
-  // workspace. Multi-workspace/multi-session support is a Phase 5+ concern.
   WHATSAPP_WORKSPACE_ID: z.coerce.number().int().positive().default(1),
 
-  // --- Session lock (workspace_sync_assignments) ---
-  // Off by default: a single gateway instance is the current deployment shape
-  // and needs no lock. Enable only when two gateway replicas could race for
-  // the same workspace's Baileys session (docs/04-database-design.md §2).
   SESSION_LOCK_ENABLED: z
     .string()
     .transform((v) => ['1', 'true', 'yes'].includes(v.toLowerCase()))
@@ -50,29 +39,20 @@ const envSchema = z.object({
   GATEWAY_INSTANCE_ID: z.string().default(() => `${os.hostname()}:${process.env.PORT ?? '3000'}`),
   SESSION_LEASE_MS: z.coerce.number().int().positive().default(30_000),
   SESSION_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
-
-  // Baileys closes the WebSocket when a keep-alive pong is missed inside this
-  // window (default 30s). Optional; set to tune the reconnect loop once the
-  // enriched disconnect events identify whether it's network throttling or a
-  // server-side drop (docs: what killed the connection).
   WHATSAPP_KEEPALIVE_INTERVAL_MS: z.coerce.number().int().positive().optional(),
-
-  // Dialing country code (no leading +) applied to local-format phone numbers
-  // when building WhatsApp JIDs (see src/whatsapp/jid.ts). Matches the account
-  // number this session pairs with (e.g. "94788198996" -> "94").
   WHATSAPP_COUNTRY_CODE: z.string().default('94'),
 
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
 
-  // --- Phase 5: media storage & validation ---
   MEDIA_MAX_SIZE_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
   MEDIA_ALLOWED_MIME_TYPES: z
     .string()
     .default(
       'image/jpeg,image/png,image/webp,image/gif,video/mp4,video/3gpp,audio/ogg,audio/mpeg,audio/mp4,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     ),
+
   MEDIA_LOCAL_STORAGE_DIR: z.string().default('./media-storage'),
 
   // Optional MinIO/S3-compatible object storage. If S3_BUCKET is unset, the
@@ -84,8 +64,6 @@ const envSchema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
 
-  // Outbound send throttling: WhatsApp flags/bans numbers that send too fast.
-  // Defaults to 1 message/second, a conservative rate for an unofficial client.
   SEND_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(1),
   SEND_RATE_LIMIT_DURATION_MS: z.coerce.number().int().positive().default(1000),
 });

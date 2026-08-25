@@ -13,3 +13,6 @@ Schedule::command('tasks:notify-overdue')->everyFiveMinutes()->withoutOverlappin
 Schedule::command('conversations:notify-new-messages')->everyMinute()->withoutOverlapping();
 Schedule::command('whatsapp:notify-connection-events')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('sla:check-breaches')->everyMinute()->withoutOverlapping();
+// Starts campaigns whose scheduled_at has arrived and finalizes sending
+// campaigns whose recipients are all dispatched (campaigns module).
+Schedule::command('campaigns:dispatch-scheduled')->everyMinute()->withoutOverlapping();

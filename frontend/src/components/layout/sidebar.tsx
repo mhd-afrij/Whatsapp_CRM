@@ -25,6 +25,8 @@ import {
   ChevronDown,
   PanelLeftOpen,
   Copy,
+  UserRoundPlus,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
@@ -49,6 +51,18 @@ const permissionGatedNavItems = [
     label: "Contacts",
     icon: Users,
     permission: "contacts.view",
+  },
+  {
+    href: "/leads",
+    label: "Leads",
+    icon: UserRoundPlus,
+    permission: "leads.manage",
+  },
+  {
+    href: "/campaigns",
+    label: "Campaigns",
+    icon: Megaphone,
+    permission: "campaigns.view",
   },
   {
     href: "/tasks",
@@ -160,6 +174,8 @@ const categoryHrefs: Record<string, string[]> = {
     "/dashboard",
     "/inbox",
     "/contacts",
+    "/leads",
+    "/campaigns",
     "/tasks",
     "/calendar",
     "/settings/notifications",
@@ -187,6 +203,7 @@ export function Sidebar() {
   const canManageUsers = usePermission("users.manage");
   const canManageWhatsapp = usePermission("whatsapp.connection.manage");
   const canViewContacts = usePermission("contacts.view");
+  const canManageLeads = usePermission("leads.manage");
   const canManageTasks = usePermission("tasks.manage");
   const canManageLabels = usePermission("labels.manage");
   const canUseTemplates = usePermission("templates.use");
@@ -196,8 +213,11 @@ export function Sidebar() {
   const canViewAuditLog = usePermission("audit_logs.view");
   const canManageDlq = usePermission("dlq.manage");
   const canDeleteContacts = usePermission("contacts.delete");
+  const canViewCampaigns = usePermission("campaigns.view");
   const permissionByHref: Record<string, boolean> = {
     "/contacts": canViewContacts,
+    "/leads": canManageLeads,
+    "/campaigns": canViewCampaigns,
     "/tasks": canManageTasks,
     "/calendar": canManageTasks,
     "/settings/users": canManageUsers,
@@ -215,7 +235,7 @@ export function Sidebar() {
     "/settings/contacts": canDeleteContacts,
   };
 
-  const leadingHrefs = ["/contacts", "/tasks", "/calendar"];
+  const leadingHrefs = ["/contacts", "/leads", "/campaigns", "/tasks", "/calendar"];
   const visibleGatedItems = permissionGatedNavItems.filter(
     (item) => permissionByHref[item.href]
   );

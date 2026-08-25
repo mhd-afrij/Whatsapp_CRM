@@ -408,9 +408,31 @@ export class MessageRepository {
     },
   ): Promise<void> {
     await execute(
-      `INSERT INTO message_media (message_id, mime_type, file_size_bytes, storage_path, checksum_sha256, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-      [messageId, media.mimeType, media.fileSizeBytes, media.storagePath, media.checksumSha256],
+      `INSERT INTO message_media (
+         message_id,
+         mime_type,
+         file_size_bytes,
+         file_size,
+         storage_path,
+         blob_name,
+         media_url,
+         storage_provider,
+         checksum_sha256,
+         created_at,
+         updated_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [
+        messageId,
+        media.mimeType,
+        media.fileSizeBytes,
+        media.fileSize ?? media.fileSizeBytes,
+        media.storagePath,
+        media.blobName ?? media.storagePath,
+        media.mediaUrl ?? null,
+        media.storageProvider ?? 'azure_blob',
+        media.checksumSha256,
+      ],
     );
   }
 

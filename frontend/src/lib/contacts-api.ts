@@ -118,7 +118,8 @@ async function unwrapPaginated<T>(
   promise: Promise<{ data: PaginatedApiResponse<T> }>
 ): Promise<Paginated<T>> {
   const { data: body } = await promise;
-  if (!body.success) {
+  // Backend omits `success` on 2xx bodies — only an explicit false is a failure.
+  if (body.success === false || !body.data) {
     throw new Error(body.message ?? "Request failed");
   }
   return { data: body.data, meta: body.meta ?? { per_page: 0, has_more: false } };

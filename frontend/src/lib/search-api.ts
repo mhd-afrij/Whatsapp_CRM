@@ -44,10 +44,12 @@ export async function fetchSearchCategory(
   const { data } = await apiClient.get("/search", {
     params: { q, category, page, per_page: perPage },
   });
-  if (!data.success) {
-    throw new Error(data.message ?? "Search failed");
+  // Backend omits `success` on 2xx bodies — only an explicit false is a failure.
+  const envelope = data as { success?: boolean; message?: string; data?: SearchCategoryPage; meta?: SearchCategoryPage["meta"] };
+  if (envelope.success === false || !envelope.data) {
+    throw new Error(envelope.message ?? "Search failed");
   }
-  return { ...data.data, meta: data.meta };
+  return { ...envelope.data, meta: envelope.meta ?? envelope.data.meta };
 }
 
 export const SEARCH_CATEGORY_LABELS: Record<SearchCategory, string> = {
