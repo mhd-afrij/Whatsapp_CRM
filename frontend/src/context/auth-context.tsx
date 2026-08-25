@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { apiClient, ApiError, type ApiResponse } from "@/lib/api-client";
+import { apiClient, ApiError, type ApiFailure, type ApiSuccess, type ApiResponse } from "@/lib/api-client";
 import { clearToken, getToken, markAuthPresence, setToken } from "@/lib/token-store";
 import { useToast } from "@/providers/toast-provider";
 
@@ -20,13 +20,18 @@ export interface AuthUser {
   workspace_id?: string;
   is_active?: boolean;
   roles: string[];
+  role_keys?: Array<"super_admin" | "admin" | "user">;
   permissions: string[];
 }
 
 interface LoginResponseData {
   user: AuthUser;
-  token: string;
+  access_token: string;
+  refresh_token?: string;
 }
+
+/** Tolerant view of the envelope: the backend may omit `success` on 2xx. */
+type AuthEnvelope<T> = Partial<ApiSuccess<T>> & Partial<ApiFailure>;
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -55,8 +60,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const { data } = await apiClient.get<ApiResponse<AuthUser>>("/auth/me");
-      if (data.success) {
-        setUser(data.data);
+      const payload = (data as { data?: AuthUser }).data;
+      if (payload) {
+        setUser(payload);
         markAuthPresence(true);
       }
     } catch {
@@ -81,13 +87,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password,
       });
 
-      if (!data.success) {
-        throw new ApiError(data.message, { code: data.code ?? null, errors: data.errors ?? null });
+      // The Laravel API returns a bare `{data: {...}}` body on success — no
+      // `success` flag — so only an explicit failure envelope is an error.
+      const envelope = data as AuthEnvelope<LoginResponseData>;
+      if (envelope.success === false || !envelope.data?.access_token) {
+        throw new ApiError(envelope.message ?? "Unable to sign in.", {
+          code: envelope.code ?? null,
+          errors: envelope.errors ?? null,
+        });
       }
 
-      setToken(data.data.token);
+      setToken(envelope.data.access_token);
       markAuthPresence(true);
-      setUser(data.data.user);
+      setUser(envelope.data.user);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError("Unable to sign in. Please try again.");

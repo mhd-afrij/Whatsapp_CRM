@@ -1,4 +1,4 @@
-version: "3.9"
+﻿version: "3.9"
 
 x-logging: &default-logging
   driver: json-file
@@ -92,6 +92,12 @@ services:
       # non-docker local dev, so it is overridden explicitly here.
       WHATSAPP_GATEWAY_URL: http://whatsapp-gateway:4000
       WHATSAPP_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:-change-me-to-a-long-random-secret}
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:-}
+      AZURE_STORAGE_CONTAINER_NAME: ${AZURE_STORAGE_CONTAINER_NAME:-whatsapp-media}
+      AZURE_STORAGE_URL: ${AZURE_STORAGE_URL:-}
+      AZURE_STORAGE_TIMEOUT: ${AZURE_STORAGE_TIMEOUT:-30}
     env_file:
       - path: ./backend/.env
         required: false
@@ -140,6 +146,10 @@ services:
       INTERNAL_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:-change-me-to-a-long-random-secret}
       CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       WHATSAPP_WORKSPACE_ID: ${WHATSAPP_WORKSPACE_ID:-1}
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
+      AZURE_STORAGE_CONTAINER_NAME: ${AZURE_STORAGE_CONTAINER_NAME:-whatsapp-media}
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_URL_EXPIRY_SECONDS: ${AZURE_STORAGE_URL_EXPIRY_SECONDS:-300}
     env_file:
       - path: ./whatsapp-gateway/.env
         required: false
@@ -201,3 +211,4 @@ volumes:
   redis_data:
   minio_data:
   gateway_sessions:
+

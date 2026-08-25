@@ -27,7 +27,9 @@ export default function ForgotPasswordPage() {
     setFormError(null);
     try {
       const { data } = await apiClient.post<ApiResponse<null>>("/auth/forgot-password", values);
-      if (!data.success) throw data;
+      // Interceptor already rejects explicit failure envelopes; reaching here
+      // with a 2xx body means the request was accepted.
+      void data;
       setSubmitted(true);
     } catch (error) {
       const message = applyApiErrorsToForm<ForgotPasswordSchemaValues>(error, setError);

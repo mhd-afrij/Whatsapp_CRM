@@ -21,6 +21,12 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use BelongsToWorkspace, HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
+    public const ROLE_SUPER_ADMIN = 'super_admin';
+
+    public const ROLE_ADMIN = 'admin';
+
+    public const ROLE_USER = 'user';
+
     /**
      * The attributes that are mass assignable.
      *
@@ -114,7 +120,54 @@ class User extends Authenticatable
 
     public function isSuperAdmin(): bool
     {
-        return $this->roles()->where('slug', 'super-administrator')->exists();
+        return $this->hasRoleKey(self::ROLE_SUPER_ADMIN);
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->isSuperAdmin() || $this->hasRoleKey(self::ROLE_ADMIN);
+    }
+
+    /**
+     * Stable product-level RBAC keys exposed to the frontend/API consumers.
+     * Existing seeded role names remain intact; Manager/Agent/Viewer collapse
+     * to the standard user tier for the fixed 3-role access model.
+     *
+     * @return array<int, string>
+     */
+    public function roleKeys(): array
+    {
+        $roles = $this->roles()->get(['name', 'slug']);
+
+        if ($roles->contains(fn (Role $role) => $this->roleMatches($role, self::ROLE_SUPER_ADMIN))) {
+            return [self::ROLE_SUPER_ADMIN];
+        }
+
+        if ($roles->contains(fn (Role $role) => $this->roleMatches($role, self::ROLE_ADMIN))) {
+            return [self::ROLE_ADMIN];
+        }
+
+        return [self::ROLE_USER];
+    }
+
+    public function hasRoleKey(string $roleKey): bool
+    {
+        return $this->roles()
+            ->get(['name', 'slug'])
+            ->contains(fn (Role $role) => $this->roleMatches($role, $roleKey));
+    }
+
+    protected function roleMatches(Role $role, string $roleKey): bool
+    {
+        return match ($roleKey) {
+            self::ROLE_SUPER_ADMIN => in_array($role->slug, ['super_admin', 'super-administrator'], true)
+                || $role->name === 'Super Administrator',
+            self::ROLE_ADMIN => in_array($role->slug, ['admin', 'administrator'], true)
+                || $role->name === 'Administrator',
+            self::ROLE_USER => ! $this->roleMatches($role, self::ROLE_SUPER_ADMIN)
+                && ! $this->roleMatches($role, self::ROLE_ADMIN),
+            default => false,
+        };
     }
 
     public function sendPasswordResetNotification($token): void

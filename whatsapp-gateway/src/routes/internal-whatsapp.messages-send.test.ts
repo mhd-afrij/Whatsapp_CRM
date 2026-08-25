@@ -8,10 +8,11 @@ vi.mock('../whatsapp/manager-instance', () => ({
   },
 }));
 
-const { findByIdempotencyKey, createPending, setBullmqJobId } = vi.hoisted(() => ({
+const { findByIdempotencyKey, createPending, setBullmqJobId, markFailed } = vi.hoisted(() => ({
   findByIdempotencyKey: vi.fn(),
   createPending: vi.fn(),
   setBullmqJobId: vi.fn().mockResolvedValue(undefined),
+  markFailed: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../whatsapp/dispatch-repository', () => ({
   DispatchRepository: vi.fn().mockImplementation(function FakeDispatchRepository() {
@@ -19,6 +20,7 @@ vi.mock('../whatsapp/dispatch-repository', () => ({
       findByIdempotencyKey: (...args: unknown[]) => findByIdempotencyKey(...args),
       createPending: (...args: unknown[]) => createPending(...args),
       setBullmqJobId,
+      markFailed,
     };
   }),
 }));
@@ -141,5 +143,18 @@ describe('POST /internal/whatsapp/messages/send', () => {
 
     const createPendingPayload = createPending.mock.calls[0][3] as { mediaRef: string | null };
     expect(createPendingPayload.mediaRef).toBe('1/outbound/abc.jpg');
+  });
+
+  it('marks the dispatch failed and returns the queue error when BullMQ cannot enqueue', async () => {
+    findByIdempotencyKey.mockResolvedValueOnce(null);
+    createPending.mockResolvedValueOnce({ id: 44, status: 'pending', message_id: null, bullmq_job_id: null });
+    queueAdd.mockRejectedValueOnce(new Error('Redis version needs to be greater or equal than 5.0.0'));
+
+    const res = await post({ ...requestBody, idempotencyKey: 'idem-queue-failure' });
+    const body = (await res.json()) as { message: string };
+
+    expect(res.status).toBe(500);
+    expect(body.message).toContain('Redis version needs to be greater or equal than 5.0.0');
+    expect(markFailed).toHaveBeenCalledWith(44);
   });
 });

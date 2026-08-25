@@ -26,6 +26,41 @@ function makeUserWithRole(string $roleSlug = 'agent', array $userAttributes = []
     return [$workspace, $user];
 }
 
+it('logs in without specifying a workspace when the email resolves to one active account', function () {
+    [$workspace, $user] = makeUserWithRole();
+
+    $response = $this->postJson('/api/v1/auth/login', [
+        'email' => $user->email,
+        'password' => 'a-very-strong-password',
+    ]);
+
+    $response->assertStatus(200)
+        ->assertJsonStructure([
+            'data' => ['access_token', 'refresh_token', 'token_type', 'expires_in', 'user' => ['id', 'email']],
+        ]);
+
+    expect($response->json('data.user.email'))->toBe($user->email);
+});
+
+it('rejects login without a workspace when the email is ambiguous across workspaces', function () {
+    makeUserWithRole(userAttributes: ['email' => 'shared@demo.test']);
+    [$secondWorkspace] = makeUserWithRole(userAttributes: ['email' => 'shared@demo.test']);
+
+    $response = $this->postJson('/api/v1/auth/login', [
+        'email' => 'shared@demo.test',
+        'password' => 'a-very-strong-password',
+    ]);
+
+    $response->assertStatus(409)->assertJson(['code' => 'WORKSPACE_REQUIRED']);
+
+    // Explicitly naming either workspace still works.
+    $this->postJson('/api/v1/auth/login', [
+        'workspace' => $secondWorkspace->slug,
+        'email' => 'shared@demo.test',
+        'password' => 'a-very-strong-password',
+    ])->assertStatus(200);
+});
+
 it('logs in with valid credentials and returns access + refresh tokens', function () {
     [$workspace, $user] = makeUserWithRole();
 

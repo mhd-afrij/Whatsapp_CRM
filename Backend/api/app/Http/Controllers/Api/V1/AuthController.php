@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RefreshRequest;
+use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Resources\UserResource;
 use App\Models\PasswordResetToken;
+use App\Models\Role;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Notifications\ResetPasswordNotification;
@@ -18,6 +20,7 @@ use App\Services\RefreshTokenReuseException;
 use App\Services\RefreshTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -31,7 +34,7 @@ class AuthController extends Controller
 
     public function login(LoginRequest $request): JsonResponse
     {
-        $workspaceSlug = (string) $request->input('workspace');
+        $workspaceSlug = trim((string) $request->input('workspace'));
         $email = (string) $request->input('email');
         $password = (string) $request->input('password');
 
@@ -45,20 +48,48 @@ class AuthController extends Controller
             );
         }
 
-        $workspace = Workspace::where('slug', $workspaceSlug)
-            ->where('status', 'active')
-            ->first();
+        if ($workspaceSlug !== '') {
+            $workspace = Workspace::where('slug', $workspaceSlug)
+                ->where('status', 'active')
+                ->first();
 
-        $user = $workspace
-            ? User::where('workspace_id', $workspace->id)
-                ->where('email', $email)
-                ->first()
-            : null;
+            $user = $workspace
+                ? User::where('workspace_id', $workspace->id)
+                    ->where('email', $email)
+                    ->first()
+                : null;
 
-        if (! $workspace || ! $user || ! Hash::check($password, $user->password)) {
-            RateLimiter::hit($key, 60);
+            if (! $workspace || ! $user || ! Hash::check($password, $user->password)) {
+                RateLimiter::hit($key, 60);
 
-            return $this->errorResponse('Invalid credentials.', 'INVALID_CREDENTIALS', 401);
+                return $this->errorResponse('Invalid credentials.', 'INVALID_CREDENTIALS', 401);
+            }
+        } else {
+            // No workspace supplied: verify the password against every active
+            // workspace account with this email first, so ambiguity is only
+            // ever revealed to a caller who has proven they know the password.
+            $candidates = User::where('email', $email)
+                ->whereHas('workspace', fn ($query) => $query->where('status', 'active'))
+                ->with('workspace')
+                ->get()
+                ->filter(fn (User $candidate) => Hash::check($password, $candidate->password));
+
+            if ($candidates->isEmpty()) {
+                RateLimiter::hit($key, 60);
+
+                return $this->errorResponse('Invalid credentials.', 'INVALID_CREDENTIALS', 401);
+            }
+
+            if ($candidates->count() > 1) {
+                return $this->errorResponse(
+                    'This account belongs to multiple workspaces. Please specify your workspace.',
+                    'WORKSPACE_REQUIRED',
+                    409,
+                );
+            }
+
+            $user = $candidates->first();
+            $workspace = $user->workspace;
         }
 
         if ($user->status === 'suspended') {
@@ -79,6 +110,68 @@ class AuthController extends Controller
         $this->auditLogger->log($workspace->id, $user, 'auth.login', 'User', $user->id);
 
         return $this->tokenResponse($user, $accessToken->plainTextToken, $refresh['token']);
+    }
+
+    /**
+     * Self-serve registration: creates a fresh workspace plus its owner
+     * account and signs the new owner in. Emails are unique per workspace,
+     * so the same person may own several workspaces with one address.
+     */
+    public function register(RegisterRequest $request): JsonResponse
+    {
+        $validated = $request->validated();
+
+        [$workspace, $user] = DB::transaction(function () use ($validated): array {
+            $workspace = Workspace::create([
+                'name' => $validated['workspace_name'],
+                'slug' => $this->generateWorkspaceSlug($validated['workspace_name']),
+                'timezone' => 'UTC',
+                'status' => 'active',
+            ]);
+
+            $user = User::create([
+                'workspace_id' => $workspace->id,
+                'name' => $validated['name'],
+                'email' => strtolower($validated['email']),
+                'password' => $validated['password'],
+                'status' => 'active',
+                'email_verified_at' => now(),
+            ]);
+
+            $ownerRole = Role::whereNull('workspace_id')->where('slug', 'owner')->first();
+
+            if ($ownerRole) {
+                $user->roles()->sync([$ownerRole->id]);
+            }
+
+            return [$workspace, $user];
+        });
+
+        $accessToken = $user->createToken('access', ['*'], now()->addMinutes(15));
+        $refresh = $this->refreshTokens->issue($user);
+
+        $this->auditLogger->log($workspace->id, $user, 'auth.registered', 'User', $user->id);
+
+        return $this->tokenResponse($user, $accessToken->plainTextToken, $refresh['token']);
+    }
+
+    /**
+     * Derives a URL-safe unique slug from the workspace name. Soft-deleted
+     * workspaces are included because the slug column has a plain unique
+     * index that deleted rows still occupy.
+     */
+    private function generateWorkspaceSlug(string $name): string
+    {
+        $base = Str::slug($name) ?: 'workspace';
+        $slug = $base;
+        $suffix = 0;
+
+        while (Workspace::withTrashed()->where('slug', $slug)->exists()) {
+            $suffix++;
+            $slug = "{$base}-{$suffix}";
+        }
+
+        return $slug;
     }
 
     public function refresh(RefreshRequest $request): JsonResponse
@@ -146,11 +239,18 @@ class AuthController extends Controller
 
     public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
     {
-        $workspace = Workspace::where('slug', (string) $request->input('workspace'))->first();
+        $workspaceSlug = trim((string) $request->input('workspace'));
 
-        $user = $workspace
-            ? User::where('workspace_id', $workspace->id)->where('email', (string) $request->input('email'))->first()
-            : null;
+        $userQuery = User::where('email', (string) $request->input('email'));
+
+        if ($workspaceSlug !== '') {
+            $userQuery->whereHas('workspace', fn ($query) => $query->where('slug', $workspaceSlug));
+        }
+
+        // Only send a reset when the request resolves to exactly one account;
+        // otherwise stay silent to avoid leaking account existence.
+        $users = $userQuery->get();
+        $user = $users->count() === 1 ? $users->first() : null;
 
         // Always return a generic success response, whether or not the
         // account exists, to avoid leaking account existence.

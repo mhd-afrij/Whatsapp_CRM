@@ -104,6 +104,14 @@ class UserController extends Controller
             ],
         ]);
 
+        if (array_key_exists('role_id', $data)) {
+            $role = Role::query()->whereKey($data['role_id'])->firstOrFail();
+
+            if ($this->roleIsSuperAdmin($role) && ! $request->user()->isSuperAdmin()) {
+                return $this->error('Only a super admin can assign the super admin role.', null, 403);
+            }
+        }
+
         $before = array_intersect_key(
             array_merge($user->only(['name', 'email']), [
                 'role_id' => $user->roles()->value('roles.id'),
@@ -151,6 +159,10 @@ class UserController extends Controller
 
     public function suspend(Request $request, User $user)
     {
+        if ($request->user()->is($user)) {
+            return $this->error('You cannot suspend your own account.', null, 422);
+        }
+
         $this->authorize('suspend', $user);
 
         $user->forceFill(['is_active' => false])->save();
@@ -172,6 +184,12 @@ class UserController extends Controller
         return $this->success(['id' => $user->id, 'is_active' => $user->is_active], 'User reactivated successfully.');
     }
 
+    protected function roleIsSuperAdmin(Role $role): bool
+    {
+        return in_array($role->slug, ['super_admin', 'super-administrator'], true)
+            || $role->name === 'Super Administrator';
+    }
+
     protected function adminUserPayload(User $user): array
     {
         return [
@@ -182,6 +200,7 @@ class UserController extends Controller
             'is_active' => $user->is_active,
             'last_login_at' => $user->last_login_at,
             'roles' => $user->roles->map(fn (Role $r) => ['id' => $r->id, 'name' => $r->name, 'slug' => $r->slug]),
+            'role_keys' => $user->roleKeys(),
             'teams' => $user->teams->map(fn ($t) => ['id' => $t->id, 'name' => $t->name, 'is_lead' => (bool) $t->pivot->is_lead]),
             'created_at' => $user->created_at,
         ];

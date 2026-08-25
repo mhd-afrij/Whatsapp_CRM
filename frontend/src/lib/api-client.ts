@@ -135,13 +135,20 @@ apiClient.interceptors.response.use(
  * Unwraps the `data` field of a successful ApiResponse. Use this in
  * react-query fetchers so callers work with plain domain types instead of
  * the envelope.
+ *
+ * The Laravel backend returns a bare `{data: ...}` body on success and only
+ * sets `success: false` on failures, so a missing flag means success.
  */
 export async function unwrap<T>(promise: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   const { data: body } = await promise;
-  if (!body.success) {
-    throw new ApiError(body.message, { code: body.code ?? null, errors: body.errors ?? null });
+  const envelope = body as Partial<ApiSuccess<T>> & Partial<ApiFailure>;
+  if (envelope.success === false || !envelope.data) {
+    throw new ApiError(envelope.message ?? "Request failed", {
+      code: envelope.code ?? null,
+      errors: envelope.errors ?? null,
+    });
   }
-  return body.data;
+  return envelope.data;
 }
 
 export default apiClient;

@@ -6,6 +6,7 @@ use App\Models\Contact;
 use App\Models\Deal;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\AzureBlobService;
 use App\Services\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -23,7 +24,7 @@ use Illuminate\Support\Str;
  * in local/test environments makes it execute inline - the structure is queue-ready for a
  * real worker in staging/production (QUEUE_CONNECTION=redis, see config/queue.php).
  *
- * Writes to the `local` disk under `exports/{workspace_id}/...csv` (not `public` - exports
+ * Writes to Azure Blob Storage under `exports/{workspace_id}/...csv` - exports
  * may contain PII like contact phone numbers/emails, so they are downloaded through an
  * authenticated, workspace-scoped controller action rather than a public URL).
  */
@@ -39,7 +40,7 @@ class GenerateReportExportJob implements ShouldQueue
         public readonly ?string $to,
     ) {}
 
-    public function handle(): void
+    public function handle(AzureBlobService $azureBlob): void
     {
         $user = User::query()->find($this->userId);
         if (! $user) {
@@ -51,11 +52,13 @@ class GenerateReportExportJob implements ShouldQueue
         $filename = 'exports/'.$this->workspaceId.'/'.$this->type.'-'.now()->format('YmdHis').'-'.Str::random(8).'.csv';
 
         $csv = $this->toCsv($headers, $rows);
-        Storage::disk('local')->put($filename, $csv);
+        $upload = $azureBlob->uploadContent($csv, $filename, 'text/csv');
 
         NotificationService::notify($user, 'report.export_ready', [
             'type' => $this->type,
-            'file' => $filename,
+            'file' => $upload['file_path'],
+            'file_url' => $upload['file_url'],
+            'storage_provider' => $upload['storage_provider'],
             'row_count' => count($rows),
         ]);
     }
@@ -119,3 +122,7 @@ class GenerateReportExportJob implements ShouldQueue
         return $content;
     }
 }
+
+
+
+

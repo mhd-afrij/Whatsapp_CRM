@@ -10,6 +10,7 @@ use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Models\Invitation;
 use App\Models\Permission;
+use App\Models\Role;
 use App\Models\User;
 use App\Notifications\InvitationNotification;
 use App\Support\AuditLogger;
@@ -55,6 +56,7 @@ class AuthController extends Controller
 
         return $this->success([
             'token' => $token,
+            'access_token' => $token,
             'user' => $this->userPayload($user),
         ], 'Logged in successfully.');
     }
@@ -130,6 +132,12 @@ class AuthController extends Controller
         $actor = $request->user();
         $data = $request->validated();
 
+        $role = Role::query()->whereKey($data['role_id'])->firstOrFail();
+
+        if ((in_array($role->slug, ['super_admin', 'super-administrator'], true) || $role->name === 'Super Administrator') && ! $actor->isSuperAdmin()) {
+            return $this->error('Only a super admin can invite another super admin.', null, 403);
+        }
+
         $invitation = Invitation::create([
             'workspace_id' => $actor->workspace_id,
             'email' => $data['email'],
@@ -186,6 +194,7 @@ class AuthController extends Controller
 
         return $this->success([
             'token' => $token,
+            'access_token' => $token,
             'user' => $this->userPayload($user),
         ], 'Invitation accepted. Welcome!', null, 201);
     }
@@ -200,6 +209,7 @@ class AuthController extends Controller
             'workspace_id' => $user->workspace_id,
             'is_active' => $user->is_active,
             'roles' => $user->roles()->pluck('name'),
+            'role_keys' => $user->roleKeys(),
             'permissions' => $user->isSuperAdmin()
                 ? Permission::pluck('name')
                 : $user->permissionNames(),

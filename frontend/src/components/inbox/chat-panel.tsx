@@ -1360,7 +1360,11 @@ function Composer({
       </div>
 
       {sendMutation.isError && !isNoteMode && (
-        <p className="mt-2 text-xs text-danger">Unable to send message. Please try again.</p>
+        <p className="mt-2 text-xs text-danger">
+          {sendMutation.error instanceof ApiError
+            ? sendMutation.error.message
+            : "Unable to send message. Please try again."}
+        </p>
       )}
       {noteError && isNoteMode && <p className="mt-2 text-xs text-danger">{noteError}</p>}
     </form>

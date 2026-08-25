@@ -42,7 +42,7 @@ describe("LoginPage", () => {
     render(<LoginPage />);
 
     await user.type(screen.getByLabelText(/email/i), "not-an-email");
-    await user.type(screen.getByLabelText(/password/i), "somepassword");
+    await user.type(screen.getByLabelText(/^password$/i), "somepassword");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(await screen.findByText(/enter a valid email address/i)).toBeInTheDocument();
@@ -55,7 +55,7 @@ describe("LoginPage", () => {
     render(<LoginPage />);
 
     await user.type(screen.getByLabelText(/email/i), "agent@example.com");
-    await user.type(screen.getByLabelText(/password/i), "Password123!");
+    await user.type(screen.getByLabelText(/^password$/i), "Password123!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => expect(login).toHaveBeenCalledWith("agent@example.com", "Password123!"));
@@ -69,7 +69,7 @@ describe("LoginPage", () => {
     render(<LoginPage />);
 
     await user.type(screen.getByLabelText(/email/i), "agent@example.com");
-    await user.type(screen.getByLabelText(/password/i), "WrongPassword1");
+    await user.type(screen.getByLabelText(/^password$/i), "WrongPassword1");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     expect(

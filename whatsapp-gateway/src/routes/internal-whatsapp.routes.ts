@@ -259,6 +259,8 @@ export function createInternalWhatsappRouter(): Router {
       mediaChecksumSha256,
     } = parsed.data;
 
+    let dispatchId: number | null = null;
+
     try {
       const existing = await dispatchRepository.findByIdempotencyKey(workspaceId, idempotencyKey);
       if (existing) {
@@ -292,6 +294,7 @@ export function createInternalWhatsappRouter(): Router {
           replyToWhatsappMessageId,
         },
       );
+      dispatchId = dispatchRow.id;
 
       const job = await sendMessageQueue.add('send', {
         dispatchId: dispatchRow.id,
@@ -318,8 +321,14 @@ export function createInternalWhatsappRouter(): Router {
         data: { dispatchId: dispatchRow.id, status: 'pending', bullmqJobId: job.id ?? null },
       });
     } catch (err) {
-      logger.error({ err }, 'Failed to enqueue outbound WhatsApp message');
-      res.status(500).json({ success: false, message: 'Failed to enqueue message', data: null });
+      if (dispatchId !== null) {
+        await dispatchRepository.markFailed(dispatchId).catch((markErr) => {
+          logger.error({ err: markErr, dispatchId }, 'Failed to mark outbound dispatch as failed');
+        });
+      }
+      const reason = err instanceof Error ? err.message : 'Unknown queue error';
+      logger.error({ err, dispatchId }, 'Failed to enqueue outbound WhatsApp message');
+      res.status(500).json({ success: false, message: `Failed to enqueue message: ${reason}`, data: null });
     }
   });
 

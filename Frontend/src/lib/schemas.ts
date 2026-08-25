@@ -64,6 +64,21 @@ export const loginSchema = z.object({
 
 export type LoginSchemaValues = z.infer<typeof loginSchema>;
 
+export const signupSchema = z
+  .object({
+    name: z.string().min(1, "Your name is required").max(255),
+    email: z.string().min(1, "Email is required").email("Enter a valid email address"),
+    workspace_name: z.string().min(1, "Workspace name is required").max(255),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    password_confirmation: z.string().min(1, "Please confirm your password"),
+  })
+  .refine((data) => data.password === data.password_confirmation, {
+    message: "Passwords do not match",
+    path: ["password_confirmation"],
+  });
+
+export type SignupSchemaValues = z.infer<typeof signupSchema>;
+
 export const forgotPasswordSchema = z.object({
   email: z.string().min(1, "Email is required").email("Enter a valid email address"),
 });

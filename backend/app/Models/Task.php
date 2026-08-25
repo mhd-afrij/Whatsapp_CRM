@@ -15,7 +15,7 @@ class Task extends Model
 
     protected $fillable = [
         'workspace_id', 'title', 'description', 'assignee_id', 'created_by', 'contact_id',
-        'deal_id', 'conversation_id', 'due_at', 'priority', 'status', 'completed_at',
+        'lead_id', 'deal_id', 'conversation_id', 'due_at', 'priority', 'status', 'completed_at',
     ];
 
     protected function casts(): array
@@ -44,6 +44,11 @@ class Task extends Model
     public function deal(): BelongsTo
     {
         return $this->belongsTo(Deal::class);
+    }
+
+    public function lead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class);
     }
 
     public function conversation(): BelongsTo

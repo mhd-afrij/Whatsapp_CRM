@@ -19,6 +19,7 @@ export interface AdminUser {
   is_active: boolean;
   last_login_at: string | null;
   roles: RoleRef[];
+  role_keys?: Array<"super_admin" | "admin" | "user">;
   teams: TeamMembership[];
   created_at: string;
 }
