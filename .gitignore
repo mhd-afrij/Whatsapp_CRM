@@ -1,13 +1,36 @@
 # Root repository ignores
-Backend/api/vendor/
-Backend/node_modules/
-Backend/api/storage/logs/
-Backend/api/storage/framework/cache/
-Backend/api/storage/framework/sessions/
-Backend/api/storage/framework/views/
-Backend/api/bootstrap/cache/*.php
-Frontend/node_modules/
-Frontend/dist/
+# NOTE: repo directories are `backend/`/`frontend/` (lowercase) on disk, but
+# legacy `Backend/`/`Frontend/` paths are still tracked. Patterns below match
+# at any depth and are case-insensitive on Windows, so they cover both.
+
+# Dependencies (Cline/IDE indexing: exclude these in the tool's settings too)
+node_modules/
+vendor/
+
+# Build / generated output
+dist/
+build/
+coverage/
+.next/
+out/
+.venv/
+
+# Laravel runtime artifacts (git keeps the dirs via their own .gitignore)
+storage/logs/
+storage/framework/cache/
+storage/framework/sessions/
+storage/framework/views/
+bootstrap/cache/*.php
+
+# Logs
 *.log
+
+# Test artifacts
+e2e/test-results/
+
+# WhatsApp gateway runtime
+whatsapp-gateway/media-storage/
+
+# OS / editor
 .DS_Store
 Thumbs.db

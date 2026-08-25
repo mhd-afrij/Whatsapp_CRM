@@ -27,6 +27,7 @@ import {
 import type { AdvancedFilters } from "@/hooks/use-conversation-filters";
 import { useUsers } from "@/hooks/use-users";
 import { useLabelList } from "@/hooks/use-labels";
+import { Input } from "@/components/ui/input";
 
 interface ConversationFilterPopoverProps {
   filters: AdvancedFilters;
@@ -46,14 +47,6 @@ const PRIORITY_OPTIONS = [
   { value: "urgent", label: "Urgent" },
 ];
 
-const LEAD_STATUS_OPTIONS = [
-  { value: "new", label: "New" },
-  { value: "contacted", label: "Contacted" },
-  { value: "qualified", label: "Qualified" },
-  { value: "disqualified", label: "Disqualified" },
-  { value: "converted", label: "Converted" },
-];
-
 export function ConversationFilterPopover({
   filters,
   onFiltersChange,
@@ -62,7 +55,7 @@ export function ConversationFilterPopover({
   const { data: users } = useUsers();
   const { data: labels } = useLabelList();
 
-  const handleFilterChange = (key: keyof AdvancedFilters, value: any) => {
+  const handleFilterChange = (key: keyof AdvancedFilters, value: string | null | undefined) => {
     onFiltersChange({
       ...filters,
       [key]: value || undefined,
@@ -139,24 +132,47 @@ export function ConversationFilterPopover({
             </Select>
           </div>
 
-          {/* Lead Status Filter */}
+          {/* Date Range Filter */}
           <div className="space-y-2">
-            <Label className="text-xs font-medium">Lead Status</Label>
-            <Select
-              value={filters.leadStatus || ""}
-              onValueChange={(value) => handleFilterChange("leadStatus", value)}
-            >
-              <SelectTrigger className="h-8 text-sm">
-                <SelectValue placeholder="Select lead status..." />
-              </SelectTrigger>
-              <SelectContent>
-                {LEAD_STATUS_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label className="text-xs font-medium">Last activity</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Input
+                  type="date"
+                  value={filters.dateRange?.from ? toDateInputValue(filters.dateRange.from) : ""}
+                  onChange={(e) => {
+                    const from = e.target.value ? new Date(`${e.target.value}T00:00:00`) : undefined;
+                    onFiltersChange({
+                      ...filters,
+                      dateRange:
+                        from || filters.dateRange?.to
+                          ? { from: from ?? filters.dateRange!.from, to: filters.dateRange?.to ?? new Date() }
+                          : undefined,
+                    });
+                  }}
+                  aria-label="From date"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Input
+                  type="date"
+                  value={filters.dateRange?.to ? toDateInputValue(filters.dateRange.to) : ""}
+                  onChange={(e) => {
+                    const to = e.target.value ? new Date(`${e.target.value}T00:00:00`) : undefined;
+                    onFiltersChange({
+                      ...filters,
+                      dateRange:
+                        to || filters.dateRange?.from
+                          ? { from: filters.dateRange?.from ?? new Date(0), to: to ?? filters.dateRange!.to }
+                          : undefined,
+                    });
+                  }}
+                  aria-label="To date"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Label Filter */}
@@ -196,4 +212,11 @@ export function ConversationFilterPopover({
       </PopoverContent>
     </Popover>
   );
+}
+
+function toDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }

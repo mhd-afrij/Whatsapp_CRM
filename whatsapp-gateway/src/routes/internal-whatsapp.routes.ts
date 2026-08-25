@@ -1,13 +1,14 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import { createReadStream } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
 import crypto from 'node:crypto';
 import multer from 'multer';
 import { z } from 'zod';
-import type { ResultSetHeader } from 'mysql2/promise';
+import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { getStorageClient } from '../lib/storage';
-import { execute, transaction } from '../lib/mysql';
+import { execute, query, transaction } from '../lib/mysql';
 import { normalizePhoneToJid } from '../whatsapp/jid';
 import { connectionManager } from '../whatsapp/manager-instance';
 import { SessionRepository } from '../whatsapp/session-repository';
@@ -17,14 +18,21 @@ import { sendMessageQueue } from '../queues/send-message.queue';
 import { validateMedia } from '../queues/media-download.queue';
 import { resolveMediaAccess } from '../lib/media-access';
 import {
+  emitContactEvent,
   emitConversationEvent,
   emitConversationsReset,
   emitNotificationCreated,
   emitTypingUpdated,
   emitMessageRevoked,
+  emitMessageCreated,
+  emitMessageUpdated,
   getSocketServer,
 } from '../lib/socket-server';
-import { emitConversationEvent, emitNotificationCreated, emitTypingUpdated, emitMessageRevoked, getSocketServer } from '../lib/socket-server';
+import {
+  resolveMessageType,
+  buildBaileysMediaContent,
+  type OutboundMediaInfo,
+} from '../whatsapp/outbound-media';
 
 const repository = new SessionRepository();
 const dispatchRepository = new DispatchRepository();
@@ -525,6 +533,55 @@ export function createInternalWhatsappRouter(): Router {
   });
 
   /**
+   * GET /internal/whatsapp/media/:mediaId/content?workspaceId=
+   * Local-disk dev mode only: streams the raw bytes of a message_media row so
+   * the Laravel backend (and through it the browser) can preview/download
+   * media that has no public URL. In S3/MinIO mode the frontend uses the
+   * signed URL from /media/:mediaId/url instead, so this returns 400 there.
+   * Same authorization contract as the url route: reachable only via the
+   * shared internal gateway token, with workspace scoping the Laravel caller
+   * has already verified.
+   */
+  router.get('/media/:mediaId/content', async (req: Request, res: Response) => {
+    const mediaId = z.coerce.number().int().positive().safeParse(req.params.mediaId);
+    const workspaceId = z.coerce.number().int().positive().safeParse(req.query.workspaceId);
+
+    if (!mediaId.success || !workspaceId.success) {
+      res.status(400).json({ success: false, message: 'Invalid mediaId or workspaceId', data: null });
+      return;
+    }
+
+    try {
+      const media = await messageRepository.findMessageMediaById(workspaceId.data, mediaId.data);
+      if (!media) {
+        res.status(404).json({ success: false, message: 'Media not found', data: null });
+        return;
+      }
+
+      const access = await resolveMediaAccess(media.storage_path);
+      if (access.kind !== 'local_file') {
+        res.status(400).json({
+          success: false,
+          message: 'Media is served via a signed URL; use /media/:mediaId/url instead',
+          data: null,
+        });
+        return;
+      }
+
+      res.setHeader('Content-Type', media.mime_type);
+      const stream = createReadStream(access.filePath);
+      stream.on('error', (err) => {
+        logger.error({ err, mediaId: mediaId.data }, 'Failed to read local media file');
+        res.status(404).end();
+      });
+      stream.pipe(res);
+    } catch (err) {
+      logger.error({ err, mediaId: mediaId.data }, 'Failed to stream media content');
+      res.status(500).json({ success: false, message: 'Failed to stream media content', data: null });
+    }
+  });
+
+  /**
    * POST /internal/whatsapp/typing
    * Send a typing indicator to a WhatsApp contact and broadcast the event to the frontend.
    */
@@ -591,8 +648,13 @@ export function createInternalWhatsappRouter(): Router {
     const { conversationId, workspaceId, waJid, whatsappMessageId, userId } = parsed.data;
 
     try {
-      // Send revoke to WhatsApp via Baileys
-      const jid = waJid.includes('@') ? waJid : `${waJid}@s.whatsapp.net`;
+      // Send revoke to WhatsApp via Baileys. Resolve the conversation's
+      // canonical outbound jid (LID-preferred, same as messages/send) so a
+      // revoke targets the same identity the original message was addressed
+      // to - otherwise revokes of LID-addressed messages silently no-op.
+      const resolvedJid =
+        (await messageRepository.getConversationJid(conversationId, workspaceId)) ?? waJid;
+      const jid = resolvedJid.includes('@') ? resolvedJid : `${resolvedJid}@s.whatsapp.net`;
       await connectionManager.sendContent(jid, {
         protocolMessage: {
           type: 0, // REVOKE
@@ -645,8 +707,12 @@ export function createInternalWhatsappRouter(): Router {
     const { conversationId, workspaceId, waJid, whatsappMessageId, emoji, remove, userId, name } = parsed.data;
 
     try {
-      // Send reaction to WhatsApp via Baileys
-      const jid = waJid.includes('@') ? waJid : `${waJid}@s.whatsapp.net`;
+      // Send reaction to WhatsApp via Baileys. Resolve the conversation's
+      // canonical outbound jid (LID-preferred, same as messages/send) so the
+      // reaction is addressed to the same identity as the message it targets.
+      const resolvedJid =
+        (await messageRepository.getConversationJid(conversationId, workspaceId)) ?? waJid;
+      const jid = resolvedJid.includes('@') ? resolvedJid : `${resolvedJid}@s.whatsapp.net`;
       
       if (remove) {
         // Remove reaction by sending empty emoji
@@ -720,6 +786,9 @@ export function createInternalWhatsappRouter(): Router {
       'conversation.priority_changed',
       'conversation.cleared',
       'conversation.deleted',
+      'contact.created',
+      'contact.updated',
+      'contact.deleted',
       'notification.created',
       'typing.updated',
     ]),
@@ -772,6 +841,12 @@ export function createInternalWhatsappRouter(): Router {
       return;
     }
 
+    if (event === 'contact.created' || event === 'contact.updated' || event === 'contact.deleted') {
+      emitContactEvent(event, workspaceId, payload);
+      res.status(200).json({ success: true, message: 'Event emitted', data: null });
+      return;
+    }
+
     emitConversationEvent(event, workspaceId, conversationId ?? null, payload);
     res.status(200).json({ success: true, message: 'Event emitted', data: null });
   });
@@ -793,7 +868,7 @@ export function createInternalWhatsappRouter(): Router {
     }
 
     try {
-      const [rows] = await execute<Array<{ id: number }>>(
+      const [rows] = await query<RowDataPacket[]>(
         'SELECT id FROM conversations WHERE id = ? AND workspace_id = ? LIMIT 1',
         [conversationId.data, workspaceId.data],
       );
@@ -802,7 +877,7 @@ export function createInternalWhatsappRouter(): Router {
         return;
       }
 
-      const [deleted] = await execute<ResultSetHeader>(
+      const deleted = await execute(
         'DELETE FROM messages WHERE conversation_id = ? AND workspace_id = ?',
         [conversationId.data, workspaceId.data],
       );
@@ -844,7 +919,7 @@ export function createInternalWhatsappRouter(): Router {
     }
 
     try {
-      const [deleted] = await execute<ResultSetHeader>(
+      const deleted = await execute(
         'DELETE FROM conversations WHERE id = ? AND workspace_id = ?',
         [conversationId.data, workspaceId.data],
       );
@@ -866,6 +941,294 @@ export function createInternalWhatsappRouter(): Router {
     } catch (err) {
       logger.error({ err, conversationId: conversationId.data }, 'Failed to delete conversation');
       res.status(500).json({ success: false, message: 'Failed to delete conversation', data: null });
+    }
+  });
+
+  const unreadBodySchema = z.object({
+    workspaceId: z.coerce.number().int().positive(),
+  });
+
+  /**
+   * POST /internal/whatsapp/conversations/:conversationId/mark-unread
+   * "Mark as unread" (mirrors WhatsApp Web): bumps the gateway-owned
+   * unread_count to at least 1 and fans a conversation.updated out so the
+   * inbox list shows the unread dot again.
+   */
+  router.post('/conversations/:conversationId/mark-unread', async (req: Request, res: Response) => {
+    const conversationId = z.coerce.number().int().positive().safeParse(req.params.conversationId);
+    const parsed = unreadBodySchema.safeParse(req.body);
+    if (!conversationId.success || !parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid conversationId or workspaceId', data: null });
+      return;
+    }
+
+    try {
+      const result = await messageRepository.markConversationUnread(conversationId.data, parsed.data.workspaceId);
+      if (!result) {
+        res.status(404).json({ success: false, message: 'Conversation not found', data: null });
+        return;
+      }
+
+      emitConversationEvent('conversation.updated', parsed.data.workspaceId, conversationId.data, {
+        unreadCount: result.unreadCount,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Conversation marked as unread',
+        data: { conversationId: conversationId.data, unreadCount: result.unreadCount },
+      });
+    } catch (err) {
+      logger.error({ err, conversationId: conversationId.data }, 'Failed to mark conversation unread');
+      res.status(500).json({ success: false, message: 'Failed to mark conversation unread', data: null });
+    }
+  });
+
+  /**
+   * POST /internal/whatsapp/conversations/:conversationId/read
+   * Resets the gateway-owned unread_count to 0 when an agent opens/reads the
+   * thread (the Laravel markRead endpoint only records the per-user
+   * last_read_message_id and delegates the counter reset here).
+   */
+  router.post('/conversations/:conversationId/read', async (req: Request, res: Response) => {
+    const conversationId = z.coerce.number().int().positive().safeParse(req.params.conversationId);
+    const parsed = unreadBodySchema.safeParse(req.body);
+    if (!conversationId.success || !parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid conversationId or workspaceId', data: null });
+      return;
+    }
+
+    try {
+      const result = await messageRepository.resetConversationUnread(conversationId.data, parsed.data.workspaceId);
+      if (!result) {
+        res.status(404).json({ success: false, message: 'Conversation not found', data: null });
+        return;
+      }
+
+      emitConversationEvent('conversation.updated', parsed.data.workspaceId, conversationId.data, {
+        unreadCount: 0,
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Conversation marked as read',
+        data: { conversationId: conversationId.data, unreadCount: result.unreadCount },
+      });
+    } catch (err) {
+      logger.error({ err, conversationId: conversationId.data }, 'Failed to mark conversation read');
+      res.status(500).json({ success: false, message: 'Failed to mark conversation read', data: null });
+    }
+  });
+
+  const starBodySchema = z.object({
+    workspaceId: z.coerce.number().int().positive(),
+    starred: z.boolean(),
+  });
+
+  /**
+   * PATCH /internal/whatsapp/conversations/:conversationId/messages/:messageId/star
+   * Stars/unstars a message (mirrors WhatsApp's starred messages). The
+   * messages table is gateway-owned, so the toggle lives here and the
+   * Laravel caller only forwards the intent.
+   */
+  router.patch('/conversations/:conversationId/messages/:messageId/star', async (req: Request, res: Response) => {
+    const conversationId = z.coerce.number().int().positive().safeParse(req.params.conversationId);
+    const messageId = z.coerce.number().int().positive().safeParse(req.params.messageId);
+    const parsed = starBodySchema.safeParse(req.body);
+    if (!conversationId.success || !messageId.success || !parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid conversationId, messageId or body', data: null });
+      return;
+    }
+
+    try {
+      const message = await messageRepository.findMessageById(messageId.data);
+      if (!message || message.conversation_id !== conversationId.data || message.workspace_id !== parsed.data.workspaceId) {
+        res.status(404).json({ success: false, message: 'Message not found in conversation', data: null });
+        return;
+      }
+
+      const result = await messageRepository.setMessageStarred(messageId.data, parsed.data.workspaceId, parsed.data.starred);
+      if (!result) {
+        res.status(404).json({ success: false, message: 'Message not found', data: null });
+        return;
+      }
+
+      emitMessageUpdated(parsed.data.workspaceId, conversationId.data, {
+        messageId: messageId.data,
+        changes: { starredAt: result.starredAt },
+      });
+
+      res.status(200).json({
+        success: true,
+        message: parsed.data.starred ? 'Message starred' : 'Message unstarred',
+        data: { messageId: messageId.data, starredAt: result.starredAt },
+      });
+    } catch (err) {
+      logger.error({ err, messageId: messageId.data }, 'Failed to toggle message star');
+      res.status(500).json({ success: false, message: 'Failed to toggle message star', data: null });
+    }
+  });
+
+  /**
+   * DELETE /internal/whatsapp/conversations/:conversationId/messages/:messageId/delete-for-me
+   * WhatsApp-style "Delete for me": stamps the message's `deleted_for_me_at`
+   * so it disappears from the workspace's inbox for every agent. Nothing is
+   * sent to WhatsApp (the contact keeps their copy) and the row is preserved.
+   * Like the other DELETE routes here, workspaceId arrives as a query param
+   * (see GatewayClient::request on the Laravel side).
+   */
+  router.delete('/conversations/:conversationId/messages/:messageId/delete-for-me', async (req: Request, res: Response) => {
+    const conversationId = z.coerce.number().int().positive().safeParse(req.params.conversationId);
+    const messageId = z.coerce.number().int().positive().safeParse(req.params.messageId);
+    const workspaceId = z.coerce.number().int().positive().safeParse(req.query.workspaceId);
+    if (!conversationId.success || !messageId.success || !workspaceId.success) {
+      res.status(400).json({ success: false, message: 'Invalid conversationId, messageId or workspaceId', data: null });
+      return;
+    }
+
+    try {
+      const message = await messageRepository.findMessageById(messageId.data);
+      if (!message || message.conversation_id !== conversationId.data || message.workspace_id !== workspaceId.data) {
+        res.status(404).json({ success: false, message: 'Message not found in conversation', data: null });
+        return;
+      }
+
+      const result = await messageRepository.markMessageDeletedForMe(messageId.data, workspaceId.data);
+      if (!result) {
+        res.status(404).json({ success: false, message: 'Message not found', data: null });
+        return;
+      }
+
+      emitMessageUpdated(workspaceId.data, conversationId.data, {
+        messageId: messageId.data,
+        changes: { deletedForMeAt: result.deletedForMeAt },
+      });
+
+      res.status(200).json({
+        success: true,
+        message: 'Message deleted for me',
+        data: { messageId: messageId.data, deletedForMeAt: result.deletedForMeAt },
+      });
+    } catch (err) {
+      logger.error({ err, messageId: messageId.data }, 'Failed to delete message for me');
+      res.status(500).json({ success: false, message: 'Failed to delete message for me', data: null });
+    }
+  });
+
+  const forwardBodySchema = z.object({
+    workspaceId: z.coerce.number().int().positive(),
+    sourceMessageId: z.coerce.number().int().positive(),
+    requestedByUserId: z.coerce.number().int().positive().nullish(),
+  });
+
+  /**
+   * POST /internal/whatsapp/conversations/:conversationId/messages/forward
+   * Forwards a message from any conversation in the workspace into
+   * :conversationId (mirrors WhatsApp's forward). The source message's text
+   * (or stored media bytes) is reconstructed and sent with a WhatsApp
+   * `isForwarded` contextInfo marker, then persisted as a normal outbound
+   * message row in the target conversation. Direct send (no dispatch queue)
+   * - same pattern as revoke/reaction.
+   */
+  router.post('/conversations/:conversationId/messages/forward', async (req: Request, res: Response) => {
+    const conversationId = z.coerce.number().int().positive().safeParse(req.params.conversationId);
+    const parsed = forwardBodySchema.safeParse(req.body);
+    if (!conversationId.success || !parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid conversationId or body', data: null });
+      return;
+    }
+
+    const { workspaceId, sourceMessageId, requestedByUserId } = parsed.data;
+
+    try {
+      const targetJid = await messageRepository.getConversationJid(conversationId.data, workspaceId);
+      if (!targetJid) {
+        res.status(404).json({ success: false, message: 'Target conversation not found', data: null });
+        return;
+      }
+
+      const source = await messageRepository.findMessageById(sourceMessageId);
+      if (!source || source.workspace_id !== workspaceId) {
+        res.status(404).json({ success: false, message: 'Source message not found', data: null });
+        return;
+      }
+
+      const media = await messageRepository.findMessageMediaByMessageId(sourceMessageId);
+      const forwardContextInfo = { isForwarded: true, forwardingScore: 1 };
+      let sendContent: { text: string } | Record<string, unknown>;
+      let messageType: string = source.message_type;
+
+      if (media) {
+        const buffer = await getStorageClient().getObject(media.storage_path);
+        const resolvedType = resolveMessageType(media.mime_type);
+        messageType = resolvedType;
+        const mediaInfo: OutboundMediaInfo = {
+          storagePath: media.storage_path,
+          mimeType: media.mime_type,
+          fileName: null,
+          sizeBytes: media.file_size_bytes,
+          checksumSha256: media.checksum_sha256,
+        };
+        sendContent = buildBaileysMediaContent(resolvedType, buffer, mediaInfo, source.body ?? null);
+        sendContent.contextInfo = forwardContextInfo;
+      } else if (source.body) {
+        sendContent = { text: source.body, contextInfo: forwardContextInfo };
+      } else {
+        res.status(422).json({
+          success: false,
+          message: 'Message has no forwardable content',
+          data: null,
+        });
+        return;
+      }
+
+      const sendResult = await connectionManager.sendContent(targetJid, sendContent);
+      const whatsappMessageId = sendResult.id;
+      if (!whatsappMessageId) {
+        throw new Error('Baileys did not return a message id for the forward');
+      }
+
+      const inserted = await messageRepository.insertOutboundMessage(workspaceId, conversationId.data, {
+        whatsappMessageId,
+        body: source.body,
+        messageType,
+        status: 'sent',
+      });
+      if (!inserted) {
+        throw new Error('Failed to persist forwarded message row');
+      }
+
+      if (media) {
+        await messageRepository.insertMessageMedia(inserted.messageId, {
+          mimeType: media.mime_type,
+          fileSizeBytes: media.file_size_bytes,
+          storagePath: media.storage_path,
+          checksumSha256: media.checksum_sha256,
+        });
+      }
+
+      emitMessageCreated(workspaceId, conversationId.data, {
+        message: {
+          id: inserted.messageId,
+          conversationId: conversationId.data,
+          direction: 'outbound',
+          messageType,
+          body: source.body,
+          status: 'sent',
+          senderType: 'user',
+          sentAt: new Date().toISOString(),
+        },
+        conversation: { id: conversationId.data },
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Message forwarded',
+        data: { messageId: inserted.messageId, whatsappMessageId, requestedByUserId: requestedByUserId ?? null },
+      });
+    } catch (err) {
+      logger.error({ err, conversationId: conversationId.data }, 'Failed to forward message');
+      res.status(500).json({ success: false, message: 'Failed to forward message', data: null });
     }
   });
 

@@ -11,6 +11,10 @@ export const contactSchema = z.object({
     .or(z.null()),
   company: z.string().max(255).optional().or(z.literal("")).or(z.null()),
   job_title: z.string().max(150).optional().or(z.literal("")).or(z.null()),
+  address: z.string().max(255).optional().or(z.literal("")).or(z.null()),
+  city: z.string().max(100).optional().or(z.literal("")).or(z.null()),
+  country: z.string().max(100).optional().or(z.literal("")).or(z.null()),
+  timezone: z.string().max(64).optional().or(z.literal("")).or(z.null()),
   phone_number: z.string().max(32).optional().or(z.literal("")).or(z.null()),
   custom_fields: z.record(z.string(), z.unknown()).optional(),
 });

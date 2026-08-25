@@ -51,11 +51,6 @@ export function createBaileysLoggerFrom(
   baseLogger: BaileysBaseLogger,
   options: BaileysLoggerOptions = {},
 ): BaileysBaseLogger {
-export function createBaileysLogger(): BaileysBaseLogger {
-  return createBaileysLoggerFrom(logger.child({ module: 'baileys' }).child({}, { level: 'warn' }) as BaileysBaseLogger);
-}
-
-export function createBaileysLoggerFrom(baseLogger: BaileysBaseLogger): BaileysBaseLogger {
   return {
     warn: (...args: unknown[]) => {
       if (shouldSuppressWarning(args)) {
@@ -82,7 +77,6 @@ export function createBaileysLoggerFrom(baseLogger: BaileysBaseLogger): BaileysB
       baseLogger.trace(...args);
     },
     child: (...args: unknown[]) => createBaileysLoggerFrom(baseLogger.child(...args), options),
-    child: (...args: unknown[]) => createBaileysLoggerFrom(baseLogger.child(...args)),
   };
 }
 

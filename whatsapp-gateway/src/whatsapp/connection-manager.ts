@@ -12,6 +12,7 @@ import {
   createBaileysSocket,
   loadAuthState,
   type BaileysConnectionUpdate,
+  type BaileysPhoneNumberShare,
   type BaileysSocketFactory,
   type IBaileysSocket,
 } from './baileys-socket';
@@ -201,23 +202,6 @@ export class ConnectionManager extends EventEmitter {
       this.socket = null;
     }
 
-    }
-
-    await this.startFreshPairing();
-  }
-
-  /**
-   * Clears any saved WhatsApp auth material and starts a fresh QR pairing flow.
-   * This is the manual path exposed by the UI's Connect button.
-   */
-  async startFreshPairing(): Promise<void> {
-    if (this.socket) {
-      this.manualStop = true;
-      this.clearReconnectTimer();
-      this.socket.end(undefined);
-      this.socket = null;
-    }
-
     await this.clearStoredCredentials();
     await this.start();
   }
@@ -274,6 +258,10 @@ export class ConnectionManager extends EventEmitter {
 
     this.socket.ev.on('contacts.upsert', (payload) => {
       this.emit('contacts.upsert', { workspaceId: this.workspaceId, payload });
+    });
+
+    this.socket.ev.on('chats.phoneNumberShare', (payload: BaileysPhoneNumberShare) => {
+      this.emit('chats.phoneNumberShare', { workspaceId: this.workspaceId, payload });
     });
 
     this.socket.ev.on('messages.upsert', (payload) => {
@@ -698,7 +686,6 @@ export class ConnectionManager extends EventEmitter {
       return;
     }
     const jid = normalizePhoneToJid(to, env.WHATSAPP_COUNTRY_CODE);
-    const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
     await this.socket.sendPresenceUpdate(presence, jid);
   }
 
