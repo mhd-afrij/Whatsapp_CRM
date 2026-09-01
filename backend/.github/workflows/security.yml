@@ -1,0 +1,41 @@
+name: Security
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Audit whatsapp-sync
+        working-directory: whatsapp-sync
+        run: npm audit --audit-level=high || true
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+
+      - name: Composer audit api
+        working-directory: api
+        run: composer install --no-interaction --prefer-dist --no-progress && composer audit || true
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for committed secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          extra_args: --only-verified

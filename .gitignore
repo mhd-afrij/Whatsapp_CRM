@@ -1,13 +1,50 @@
-# Root repository ignores
+# Local environmental noise
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+coverage/
+
+# Backend (Laravel / PHP) runtime artifacts
 Backend/api/vendor/
+backend/api/vendor/
 Backend/node_modules/
 Backend/api/storage/logs/
 Backend/api/storage/framework/cache/
 Backend/api/storage/framework/sessions/
 Backend/api/storage/framework/views/
 Backend/api/bootstrap/cache/*.php
-Frontend/node_modules/
-Frontend/dist/
+backend/storage/logs/
+backend/storage/framework/cache/
+backend/storage/framework/sessions/
+backend/storage/framework/views/
+backend/bootstrap/cache/*.php
+
+# WhatsApp sync
+backend/whatsapp-sync/node_modules/
+whatsapp-gateway/node_modules/
+
+# Databases / runtime data
+dump.rdb
+*.sqlite
+*.sqlite3
+test-results/
+media-storage/
+
+# Leftover tooling artifacts
+.codex-pr4-resolved/
+
+# Logs
 *.log
-.DS_Store
-Thumbs.db
