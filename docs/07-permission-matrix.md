@@ -1,9 +1,9 @@
-# 07 — Permission Matrix
+﻿# 07 â€” Permission Matrix
 
 Permissions are stored in the `permissions` table and granted to `roles` via `permission_role`.
 Roles are editable (Super Admin can create custom roles), but the platform seeds 5 system roles
 (`is_system = true`) with the defaults below. **Authorization checks in code always test a
-permission string (e.g. `can('contacts.edit')`), never a role name** — this table documents the
+permission string (e.g. `can('contacts.edit')`), never a role name** â€” this table documents the
 seeded defaults, not a hard-coded rule.
 
 Legend: **Y** = granted, **N** = not granted, **Own** = scoped to records the user owns/created,
@@ -32,6 +32,17 @@ Legend: **Y** = granted, **N** = not granted, **Own** = scoped to records the us
 | **Tasks** | | | | | |
 | tasks.manage | Y | Y | Y | Own | N |
 | tasks.view_team | Y | Y | Team | Team | N |
+| **Campaigns** | | | | | |
+| campaigns.view | Y | Y | Y | N | N |
+| campaigns.create | Y | Y | N | N | N |
+| campaigns.update | Y | Y | N | N | N |
+| campaigns.delete | Y | Y | N | N | N |
+| campaigns.send | Y | Y | N | N | N |
+| **Saved Replies / Templates** | | | | | |
+| templates.use | Y | Y | Y | Y | N |
+| templates.manage | Y | Y | N | N | N |
+| **Dead Letter Queue** | | | | | |
+| dlq.manage | Y | Y | N | N | N |
 | **Notes** | | | | | |
 | notes.create | Y | Y | Y | Y | N |
 | notes.view_private | Y | Y | Team | N | N |
@@ -63,28 +74,28 @@ Legend: **Y** = granted, **N** = not granted, **Own** = scoped to records the us
 
 ## Role Summaries
 
-- **Super Admin** — full unrestricted access, including role/permission management itself and
+- **Super Admin** â€” full unrestricted access, including role/permission management itself and
   irreversible actions (delete conversations, delete pipelines). Exactly one workspace-level
   super admin is expected but not enforced at the DB level (business rule, enforced in app
   logic: cannot demote the last remaining Super Admin).
-- **Admin** — operational control over the whole workspace (users, teams, WhatsApp connection,
+- **Admin** â€” operational control over the whole workspace (users, teams, WhatsApp connection,
   workspace settings) but cannot edit roles/permissions or hard-delete conversations.
-- **Manager** — full visibility and management within their team(s): can assign conversations,
+- **Manager** â€” full visibility and management within their team(s): can assign conversations,
   manage pipelines' leads/deals across the team, view team-scoped private notes, view team
   users, but has no workspace-admin or role-admin capability.
-- **Agent** — day-to-day operator: replies to assigned/team conversations, manages their own
+- **Agent** â€” day-to-day operator: replies to assigned/team conversations, manages their own
   contacts/leads/deals/tasks, creates notes, but cannot assign conversations to others or see
   other agents' private notes.
-- **Viewer** — read-only across contacts, conversations, dashboards, and reports; cannot create,
+- **Viewer** â€” read-only across contacts, conversations, dashboards, and reports; cannot create,
   edit, reply, or manage anything. Intended for stakeholders who need visibility only.
 
 ## Enforcement Points
 
 1. **Route middleware** (`permission:{name}`) on every `/api/v1` route per `05-api-contract.md`.
 2. **Policies** for record-level "Own"/"Team" scoping (e.g. `ContactPolicy::update` checks
-   `contacts.edit` OR (`contacts.edit.own` implied by ownership) — implemented as a single
+   `contacts.edit` OR (`contacts.edit.own` implied by ownership) â€” implemented as a single
    permission plus a policy-level ownership check, not two separate permission strings, to keep
    the permission catalog from exploding.
-3. **Frontend** hides/disables UI per §4 of `06-frontend-route-map.md`, strictly a UX layer.
+3. **Frontend** hides/disables UI per Â§4 of `06-frontend-route-map.md`, strictly a UX layer.
 4. **Audit log** records every permission-gated mutation (`users.manage`, `roles.manage`,
    `workspace.settings.manage`, `whatsapp.connection.manage`, deletes) regardless of role.

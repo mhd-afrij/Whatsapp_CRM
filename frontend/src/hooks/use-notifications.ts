@@ -18,7 +18,7 @@ export const NOTIFICATIONS_KEY = ["notifications"] as const;
  * Powers the notification bell: recent notifications + unread count, live via the
  * gateway's `notification.created` event (room `workspace:{id}:user:{id}`, see
  * whatsapp-gateway's emitNotificationCreated / docs/EVENT_CATALOG.md), with the same
- * poll-fallback pattern used by useWhatsappStatus/useInboxUnreadCount - only polls on an
+ * poll-fallback pattern used by useWhatsappStatus - only polls on an
  * interval when the socket itself isn't connected.
  */
 export function useNotifications(enabled: boolean) {

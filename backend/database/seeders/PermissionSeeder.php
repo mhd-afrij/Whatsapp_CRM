@@ -23,6 +23,11 @@ class PermissionSeeder extends Seeder
             ['name' => 'contacts.edit', 'group' => 'contacts'],
             ['name' => 'contacts.delete', 'group' => 'contacts'],
             ['name' => 'contacts.export', 'group' => 'contacts'],
+            // Kept in the catalog (so admins can grant/deny it in the Role Admin UI) but
+            // the import route itself is still gated on contacts.create - importing IS
+            // creating, and gating on a second permission would 403 every existing
+            // workspace until re-seeded (see docs/07-permission-matrix.md).
+            ['name' => 'contacts.import', 'group' => 'contacts'],
 
             ['name' => 'conversations.view', 'group' => 'conversations'],
             ['name' => 'conversations.view_all', 'group' => 'conversations'],
@@ -33,9 +38,8 @@ class PermissionSeeder extends Seeder
             ['name' => 'conversations.change_priority', 'group' => 'conversations'],
             ['name' => 'conversations.delete', 'group' => 'conversations'],
 
-            ['name' => 'leads.manage', 'group' => 'leads_deals'],
             ['name' => 'deals.manage', 'group' => 'leads_deals'],
-            ['name' => 'pipelines.manage', 'group' => 'leads_deals'],
+            ['name' => 'leads.manage', 'group' => 'leads_deals'],
             ['name' => 'reports.view', 'group' => 'leads_deals'],
 
             ['name' => 'tasks.manage', 'group' => 'tasks'],
@@ -78,6 +82,22 @@ class PermissionSeeder extends Seeder
             // the reasoning.
             ['name' => 'analytics.view', 'group' => 'analytics'],
             ['name' => 'analytics.export', 'group' => 'analytics'],
+
+            // Campaigns module (bulk WhatsApp messaging).
+            ['name' => 'campaigns.view', 'group' => 'campaigns'],
+            ['name' => 'campaigns.create', 'group' => 'campaigns'],
+            ['name' => 'campaigns.update', 'group' => 'campaigns'],
+            ['name' => 'campaigns.delete', 'group' => 'campaigns'],
+            ['name' => 'campaigns.send', 'group' => 'campaigns'],
+
+            // Phantom-permission fixes: routes/api.php and MessageTemplatePolicy /
+            // FailedJobController have always referenced these keys, but they were
+            // never in this catalog - so only super admins (who bypass permission
+            // checks entirely) could use saved replies, manage templates, or retry
+            // failed jobs. Seeding them makes them grantable via the Role Admin UI.
+            ['name' => 'templates.use', 'group' => 'templates'],
+            ['name' => 'templates.manage', 'group' => 'templates'],
+            ['name' => 'dlq.manage', 'group' => 'admin'],
         ];
     }
 

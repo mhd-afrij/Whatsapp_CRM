@@ -400,4 +400,134 @@ class ConversationTest extends TestCase
         $this->assertCount(1, $data);
         $this->assertSame('urgent', $data[0]['priority']);
     }
+
+    public function test_marking_a_conversation_unread_calls_the_gateway(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create(['workspace_id' => $agent->workspace_id, 'assigned_user_id' => $agent->id]);
+
+        Http::fake([
+            '*/internal/whatsapp/conversations/*/mark-unread' => Http::response([
+                'success' => true,
+                'message' => 'Conversation marked as unread',
+                'data' => ['conversationId' => $conversation->id, 'unreadCount' => 1],
+            ], 200),
+        ]);
+
+        $this->asUser($agent)->patchJson("/api/v1/conversations/{$conversation->id}/unread")
+            ->assertOk()
+            ->assertJsonPath('data.unread_count', 1);
+
+        Http::assertSent(function ($request) use ($conversation) {
+            return str_contains($request->url(), "/internal/whatsapp/conversations/{$conversation->id}/mark-unread")
+                && $request['workspaceId'] === $conversation->workspace_id;
+        });
+    }
+
+    public function test_marking_a_conversation_read_resets_the_gateway_unread_counter(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create(['workspace_id' => $agent->workspace_id, 'assigned_user_id' => $agent->id]);
+        $this->insertMessage($conversation);
+
+        Http::fake([
+            '*/internal/whatsapp/conversations/*/read' => Http::response([
+                'success' => true,
+                'message' => 'Conversation marked as read',
+                'data' => ['conversationId' => $conversation->id, 'unreadCount' => 0],
+            ], 200),
+        ]);
+
+        $this->asUser($agent)->patchJson("/api/v1/conversations/{$conversation->id}/read")
+            ->assertOk()
+            ->assertJsonPath('data.unread_count', 0);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), "/internal/whatsapp/conversations/{$conversation->id}/read"));
+    }
+
+    public function test_agent_can_star_and_unstar_a_message(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create(['workspace_id' => $agent->workspace_id, 'assigned_user_id' => $agent->id]);
+        $messageId = $this->insertMessage($conversation);
+
+        Http::fake([
+            '*/internal/whatsapp/conversations/*/messages/*/star' => Http::response([
+                'success' => true,
+                'message' => 'Message starred',
+                'data' => ['messageId' => $messageId, 'starredAt' => now()->toIso8601String()],
+            ], 200),
+        ]);
+
+        $this->asUser($agent)->patchJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/star", [
+            'starred' => true,
+        ])->assertOk()->assertJsonPath('data.message_id', $messageId);
+
+        Http::assertSent(function ($request) use ($conversation, $messageId) {
+            return str_contains($request->url(), "/internal/whatsapp/conversations/{$conversation->id}/messages/{$messageId}/star")
+                && $request['starred'] === true
+                && $request['workspaceId'] === $conversation->workspace_id;
+        });
+    }
+
+    public function test_viewer_cannot_forward_a_message(): void
+    {
+        $this->seedRbac();
+        $viewer = $this->userWithRole('Viewer');
+        $conversation = Conversation::factory()->create(['workspace_id' => $viewer->workspace_id, 'assigned_user_id' => $viewer->id]);
+        $target = Conversation::factory()->create(['workspace_id' => $viewer->workspace_id, 'assigned_user_id' => $viewer->id]);
+        $messageId = $this->insertMessage($conversation);
+
+        $this->asUser($viewer)->postJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/forward", [
+            'target_conversation_id' => $target->id,
+        ])->assertStatus(403);
+    }
+
+    public function test_forwarding_a_message_calls_the_gateway_with_the_target(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create(['workspace_id' => $agent->workspace_id, 'assigned_user_id' => $agent->id]);
+        $target = Conversation::factory()->create(['workspace_id' => $agent->workspace_id, 'assigned_user_id' => $agent->id]);
+        $messageId = $this->insertMessage($conversation);
+
+        Http::fake([
+            '*/internal/whatsapp/conversations/*/messages/forward' => Http::response([
+                'success' => true,
+                'message' => 'Message forwarded',
+                'data' => ['messageId' => 77, 'whatsappMessageId' => 'WA_FWD'],
+            ], 201),
+        ]);
+
+        $this->asUser($agent)->postJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/forward", [
+            'target_conversation_id' => $target->id,
+        ])->assertCreated()->assertJsonPath('data.message_id', 77);
+
+        Http::assertSent(function ($request) use ($conversation, $target, $messageId) {
+            return str_contains($request->url(), "/internal/whatsapp/conversations/{$target->id}/messages/forward")
+                && $request['sourceMessageId'] === $messageId
+                && $request['workspaceId'] === $conversation->workspace_id
+                && $request['requestedByUserId'] !== null;
+        });
+    }
+
+    public function test_forwarding_to_a_hidden_conversation_is_rejected(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $otherAgent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create(['workspace_id' => $agent->workspace_id, 'assigned_user_id' => $agent->id]);
+        $hiddenTarget = Conversation::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'assigned_user_id' => $otherAgent->id,
+        ]);
+        $messageId = $this->insertMessage($conversation);
+
+        $this->asUser($agent)->postJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/forward", [
+            'target_conversation_id' => $hiddenTarget->id,
+        ])->assertStatus(404);
+    }
 }

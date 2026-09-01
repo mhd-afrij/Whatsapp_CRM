@@ -67,6 +67,65 @@ class WorkspaceSettingsAndAuditLogTest extends TestCase
         ]);
     }
 
+    public function test_away_message_settings_persist_and_survive_refresh(): void
+    {
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+
+        $this->asUser($admin)->patchJson('/api/v1/workspace', [
+            'away_message_enabled' => true,
+            'away_message' => 'We are offline — will reply during business hours.',
+            'away_message_trigger' => 'outside_hours',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('workspace_settings', [
+            'workspace_id' => $admin->workspace_id,
+            'away_message_enabled' => true,
+            'away_message' => 'We are offline — will reply during business hours.',
+            'away_message_trigger' => 'outside_hours',
+        ]);
+
+        // Save → refresh → values remain unchanged (the UI round-trip contract).
+        $response = $this->asUser($admin)->getJson('/api/v1/workspace')->assertOk();
+        $response->assertJsonPath('data.away_message_enabled', true);
+        $response->assertJsonPath('data.away_message', 'We are offline — will reply during business hours.');
+        $response->assertJsonPath('data.away_message_trigger', 'outside_hours');
+    }
+
+    public function test_away_message_defaults_when_unset(): void
+    {
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+
+        $response = $this->asUser($admin)->getJson('/api/v1/workspace')->assertOk();
+
+        $response->assertJsonPath('data.away_message_enabled', false);
+        $response->assertJsonPath('data.away_message', null);
+        $response->assertJsonPath('data.away_message_trigger', 'outside_hours');
+    }
+
+    public function test_away_message_rejects_invalid_trigger(): void
+    {
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+
+        $this->asUser($admin)->patchJson('/api/v1/workspace', [
+            'away_message_enabled' => true,
+            'away_message_trigger' => 'always',
+        ])->assertStatus(422);
+    }
+
+    public function test_away_message_rejects_oversized_message(): void
+    {
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+
+        $this->asUser($admin)->patchJson('/api/v1/workspace', [
+            'away_message_enabled' => true,
+            'away_message' => str_repeat('x', 2001),
+        ])->assertStatus(422);
+    }
+
     public function test_administrator_can_upload_workspace_logo(): void
     {
         Storage::fake('public');

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Jobs\GenerateReportExportJob;
 use App\Models\Notification;
+use App\Services\AzureBlobService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -17,7 +18,9 @@ use Illuminate\Support\Facades\Validator;
  */
 class ReportExportController extends Controller
 {
-    private const TYPES = ['contacts', 'leads', 'deals', 'tasks'];
+    public function __construct(protected AzureBlobService $azureBlob) {}
+
+    private const TYPES = ['contacts', 'deals', 'tasks'];
 
     /** POST /api/v1/reports/export {type, from, to} */
     public function store(Request $request)
@@ -62,10 +65,16 @@ class ReportExportController extends Controller
 
         $path = $notification->data['file'] ?? null;
 
-        if (! $path || ! Storage::disk('local')->exists($path)) {
+        if (! $path || ! $this->azureBlob->exists($path)) {
             return $this->error('Export file not found - it may have expired.', null, 404);
         }
 
-        return Storage::disk('local')->download($path);
+        return response($this->azureBlob->download($path), 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="'.basename($path).'"',
+        ]);
     }
 }
+
+
+

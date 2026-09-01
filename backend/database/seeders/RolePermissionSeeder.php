@@ -29,6 +29,8 @@ class RolePermissionSeeder extends Seeder
             'contacts.edit' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
             'contacts.delete' => ['Super Administrator', 'Administrator'],
             'contacts.export' => ['Super Administrator', 'Administrator', 'Manager'],
+            // Import is functionally a bulk create; grant to the same roles as contacts.create.
+            'contacts.import' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
 
             'conversations.view' => ['Super Administrator', 'Administrator', 'Manager', 'Agent', 'Viewer'],
             'conversations.view_all' => ['Super Administrator', 'Administrator'],
@@ -39,9 +41,8 @@ class RolePermissionSeeder extends Seeder
             'conversations.change_priority' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
             'conversations.delete' => ['Super Administrator'],
 
-            'leads.manage' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
             'deals.manage' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
-            'pipelines.manage' => ['Super Administrator', 'Administrator'],
+            'leads.manage' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
             'reports.view' => ['Super Administrator', 'Administrator', 'Manager', 'Agent', 'Viewer'],
 
             'tasks.manage' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
@@ -80,13 +81,28 @@ class RolePermissionSeeder extends Seeder
             'analytics.export' => ['Super Administrator', 'Administrator', 'Manager'],
 
             'dlq.manage' => ['Super Administrator', 'Administrator'],
+
+            // Campaigns module - per docs/07-permission-matrix.md: managers have
+            // read-only visibility, only admins compose/send.
+            'campaigns.view' => ['Super Administrator', 'Administrator', 'Manager'],
+            'campaigns.create' => ['Super Administrator', 'Administrator'],
+            'campaigns.update' => ['Super Administrator', 'Administrator'],
+            'campaigns.delete' => ['Super Administrator', 'Administrator'],
+            'campaigns.send' => ['Super Administrator', 'Administrator'],
+
+            // Phantom-permission fixes (see PermissionSeeder) - these were always
+            // enforced by routes/policies but never seeded, so grant them to the
+            // roles that were already relying on them in practice (agents use
+            // saved replies from the inbox composer).
+            'templates.use' => ['Super Administrator', 'Administrator', 'Manager', 'Agent'],
+            'templates.manage' => ['Super Administrator', 'Administrator'],
         ];
 
         $roles = [
             'Super Administrator' => 'Full unrestricted access, including role/permission management and irreversible actions.',
             'Administrator' => 'Operational control over the whole workspace; cannot edit roles/permissions or hard-delete conversations.',
             'Manager' => 'Full visibility and management within their team(s); no workspace-admin or role-admin capability.',
-            'Agent' => 'Day-to-day operator; manages their own contacts/leads/deals/tasks and replies to assigned/team conversations.',
+            'Agent' => 'Day-to-day operator; manages their own contacts/deals/tasks and replies to assigned/team conversations.',
             'Viewer' => 'Read-only across contacts, conversations, dashboards, and reports.',
         ];
 

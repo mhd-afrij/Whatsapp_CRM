@@ -1,7 +1,7 @@
 import { apiClient, unwrap } from "@/lib/api-client";
 import type { LabelSummary } from "@/lib/conversations-api";
 
-export type LabelEntityType = "contacts" | "leads" | "deals" | "conversations";
+export type LabelEntityType = "contacts" | "deals" | "conversations";
 
 export interface LabelFormValues {
   name: string;
@@ -29,8 +29,8 @@ export async function deleteLabel(id: number): Promise<null> {
 
 /**
  * Attach/detach follow the per-entity nested routes (contacts/{id}/labels/{label},
- * leads/{id}/labels/{label}, deals/{id}/labels/{label}, conversations/{id}/labels/{label}) -
- * the pivot tables (contact_label/lead_label/deal_label/conversation_label) are separate,
+ * deals/{id}/labels/{label}, conversations/{id}/labels/{label}) -
+ * the pivot tables (contact_label/deal_label/conversation_label) are separate,
  * non-polymorphic tables per docs/04-database-design.md, so there's no single generic endpoint.
  */
 export async function attachLabelTo(

@@ -18,23 +18,23 @@ class UserPolicy
 
     public function update(User $user, User $target): bool
     {
-        return $user->hasPermission('users.manage') || $user->id === $target->id;
+        return $user->hasPermission('users.manage') && (! $target->isSuperAdmin() || $user->isSuperAdmin());
     }
 
     public function suspend(User $user, User $target): bool
     {
         // The permission matrix (docs/07-permission-matrix.md) has no dedicated
         // "users.suspend" permission; suspend/reactivate are covered by "users.manage".
-        return $user->hasPermission('users.manage') && $user->id !== $target->id;
+        return $user->hasPermission('users.manage') && $user->id !== $target->id && (! $target->isSuperAdmin() || $user->isSuperAdmin());
     }
 
     public function reactivate(User $user, User $target): bool
     {
-        return $user->hasPermission('users.manage');
+        return $user->hasPermission('users.manage') && (! $target->isSuperAdmin() || $user->isSuperAdmin());
     }
 
     public function delete(User $user, User $target): bool
     {
-        return $user->hasPermission('users.manage') && $user->id !== $target->id;
+        return $user->hasPermission('users.manage') && $user->id !== $target->id && (! $target->isSuperAdmin() || $user->isSuperAdmin());
     }
 }

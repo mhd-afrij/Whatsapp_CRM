@@ -85,6 +85,34 @@ class MediaController extends Controller
     }
 
     /**
+     * GET /api/v1/conversations/{conversation}/messages/{message}/media/{media}/content
+     * Local-disk dev mode: proxies the raw media bytes from the gateway so
+     * previews work even without MinIO/S3 configured. Same authorization
+     * checks as url() - the user must be able to view the owning conversation.
+     */
+    public function content(Request $request, int $conversation, Message $message, MessageMedia $media)
+    {
+        if ($media->message_id !== $message->id) {
+            return $this->error('Media does not belong to the given message.', null, 404);
+        }
+
+        if ($message->conversation_id !== $conversation) {
+            return $this->error('Message does not belong to the given conversation.', null, 404);
+        }
+
+        $conversation = $message->conversation;
+        if (! $conversation || $conversation->workspace_id !== $request->user()->workspace_id) {
+            return $this->error('Conversation not found.', null, 404);
+        }
+
+        try {
+            return $this->gateway->mediaContent($media->id, $conversation->workspace_id);
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+    }
+
+    /**
      * GET /api/v1/conversations/{conversation}/messages/{message}/media/{media}/url
      */
     public function url(Request $request, int $conversation, Message $message, MessageMedia $media)

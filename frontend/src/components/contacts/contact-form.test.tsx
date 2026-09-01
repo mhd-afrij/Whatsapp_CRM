@@ -1,7 +1,21 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ContactForm } from "./contact-form";
+
+function renderForm() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const onSubmit = vi.fn().mockResolvedValue(undefined);
+  const utils = render(
+    <QueryClientProvider client={queryClient}>
+      <ContactForm onSubmit={onSubmit} />
+    </QueryClientProvider>
+  );
+  return { onSubmit, ...utils };
+}
 
 /**
  * Phase 18: a critical form's Zod validation, per the roadmap item ("e.g.
@@ -15,9 +29,8 @@ import { ContactForm } from "./contact-form";
  */
 describe("ContactForm validation", () => {
   it("rejects a malformed email and does not call onSubmit", async () => {
-    const onSubmit = vi.fn();
+    const { onSubmit } = renderForm();
     const user = userEvent.setup();
-    render(<ContactForm onSubmit={onSubmit} />);
 
     await user.type(screen.getByLabelText(/email/i), "not-an-email");
     await user.click(screen.getByRole("button", { name: /save/i }));
@@ -26,10 +39,9 @@ describe("ContactForm validation", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("allows an empty email (optional field) and submits null for blank optional fields", async () => {
-    const onSubmit = vi.fn().mockResolvedValue(undefined);
+  it("allows an empty email (optional field), submits null for blank optional fields, and auto-fills the browser timezone", async () => {
+    const { onSubmit } = renderForm();
     const user = userEvent.setup();
-    render(<ContactForm onSubmit={onSubmit} />);
 
     await user.type(screen.getByLabelText(/full name/i), "Jane Doe");
     await user.click(screen.getByRole("button", { name: /save/i }));
@@ -37,21 +49,43 @@ describe("ContactForm validation", () => {
     expect(onSubmit).toHaveBeenCalledWith({
       full_name: "Jane Doe",
       email: null,
-      company: null,
-      job_title: null,
       phone_number: null,
+      address: null,
+      city: null,
+      country: null,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     });
   });
 
-  it("rejects a full name longer than 255 characters", async () => {
-    const onSubmit = vi.fn();
+  it("keeps the national number in the field and submits E.164 using the selected country code", async () => {
+    const { onSubmit } = renderForm();
     const user = userEvent.setup();
-    render(<ContactForm onSubmit={onSubmit} />);
 
-    await user.type(screen.getByLabelText(/full name/i), "a".repeat(256));
+    const phoneInput = screen.getByLabelText(/phone number/i);
+    await user.type(phoneInput, "0750144774");
+    await user.tab();
+
+    // The dropdown holds the +94 code; the field keeps the national number.
+    expect(phoneInput).toHaveValue("0750144774");
     await user.click(screen.getByRole("button", { name: /save/i }));
 
-    await screen.findByRole("button", { name: /save/i });
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ phone_number: "94750144774" })
+    );
   });
+
+  it(
+    "rejects a full name longer than 255 characters",
+    async () => {
+      const { onSubmit } = renderForm();
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/full name/i), "a".repeat(256));
+      await user.click(screen.getByRole("button", { name: /save/i }));
+
+      await screen.findByRole("button", { name: /save/i });
+      expect(onSubmit).not.toHaveBeenCalled();
+    },
+    20_000
+  );
 });

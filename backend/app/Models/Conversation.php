@@ -91,6 +91,11 @@ class Conversation extends Model
         return $this->belongsToMany(Label::class, 'conversation_label')->withPivot('created_at');
     }
 
+    public function slaEvents(): HasMany
+    {
+        return $this->hasMany(SlaEvent::class);
+    }
+
     /**
      * Constrain inbox reads to the records a user may see. WorkspaceScope is
      * already applied by BelongsToWorkspace; this scope adds the agent/team

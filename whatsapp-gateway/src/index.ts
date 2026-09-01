@@ -16,11 +16,30 @@ async function main() {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'whatsapp-gateway HTTP server listening');
   });
 
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      logger.error(
+        { port: env.PORT },
+        `Port ${env.PORT} is already in use. Stop the existing whatsapp-gateway process or change PORT before starting dev again.`,
+      );
+      process.exit(1);
+      return;
+    }
+    logger.error({ err }, 'HTTP server failed to start');
+  });
+
+  // BullMQ's Worker.run() only resolves when the worker is closed - awaiting it
+  // here would block the rest of startup (socket server, session restore) forever.
+  // Start both workers off-loop and let main() continue.
   const sendMessageWorker = createSendMessageWorker();
-  await sendMessageWorker.run();
+  void sendMessageWorker.run().catch((err) => {
+    logger.error({ err }, 'Send message worker stopped unexpectedly');
+  });
 
   const mediaDownloadWorker = createMediaDownloadWorker();
-  await mediaDownloadWorker.run();
+  void mediaDownloadWorker.run().catch((err) => {
+    logger.error({ err }, 'Media download worker stopped unexpectedly');
+  });
 
   createSocketServer(server);
 

@@ -99,6 +99,15 @@ specific chat.
 - **Rooms**: `workspace:{workspaceId}:inbox`, `workspace:{workspaceId}:conversation:{conversationId}`
 - **Payload**: `{ "conversationId": 45, "readByUserId": 7, "readAt": "..." }`
 
+### `contact.created` / `contact.updated` / `contact.deleted`
+- **Namespace**: `/gateway` (relayed from the backend via `POST /internal/whatsapp/events/emit`
+  — see `GatewayClient::emitEvent` and `ContactController::relayContactEvent`)
+- **Emitted by**: backend, on `POST /contacts`, `PATCH /contacts/{id}`, `DELETE /contacts/{id}`
+  (archive), and `POST /contacts/{id}/restore` (emitted as `contact.updated`).
+- **Rooms**: `workspace:{workspaceId}`, `workspace:{workspaceId}:inbox` (contacts are
+  workspace-shared, so the contacts list/detail UI joins the inbox room).
+- **Payload**: `{ "contact_id": 456 }`
+
 ### `note.created`
 - **Namespace**: `/crm`
 - **Emitted by**: backend, on `POST /notes`.
@@ -144,6 +153,7 @@ specific chat.
 | UI surface | Events consumed |
 |---|---|
 | Conversation list | `conversation.created`, `conversation.updated`, `conversation.assigned`, `conversation.closed`, `conversation.reopened`, `conversation.read`, `message.created` (for preview/unread) |
+| Contacts list / detail | `contact.created`, `contact.updated`, `contact.deleted` (via `useContactRealtime`) |
 | Active chat panel | `message.created`, `message.updated`, `message.failed`, `typing.updated`, `conversation.read`, `note.created` |
 | Notification bell | `notification.created` |
 | Agent presence sidebar | `presence.updated` |

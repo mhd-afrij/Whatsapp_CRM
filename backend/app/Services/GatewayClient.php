@@ -46,6 +46,20 @@ class GatewayClient
         return $this->request('post', '/internal/whatsapp/reconnect');
     }
 
+    /**
+     * Destructive reset: asks the gateway to log the WhatsApp session out
+     * (forcing a fresh QR re-pair) and purge every gateway-owned row for the
+     * workspace - chats, whatsapp_contacts, the dispatch queue / processing
+     * failures and the sync checkpoints. Backend-owned rows (leads, deals,
+     * tasks, CRM contacts) are never touched by the gateway; the caller is
+     * responsible for any backend-side cleanup. Returns the deleted-row
+     * counts plus the post-logout session snapshot.
+     */
+    public function resetData(int $workspaceId): array
+    {
+        return $this->request('post', '/internal/whatsapp/reset-data', ['workspaceId' => $workspaceId]);
+    }
+
     public function events(int $limit = 50): array
     {
         return $this->request('get', '/internal/whatsapp/events', ['limit' => $limit]);
@@ -65,6 +79,37 @@ class GatewayClient
     }
 
     /**
+     * Start (find or create) a WhatsApp conversation for a contact by phone number.
+     * Returns the conversation ID, ready to use for sending messages.
+     */
+    public function startConversation(array $payload): array
+    {
+        return $this->request('post', '/internal/whatsapp/conversations/start', $payload);
+    }
+
+    /**
+     * Ask the gateway to delete every message in a conversation and reset the
+     * gateway-owned conversation summary columns (last_message_at,
+     * last_message_preview, unread_count). The conversation row itself stays
+     * so the chat thread can continue.
+     */
+    public function clearConversation(int $conversationId, int $workspaceId): array
+    {
+        return $this->request('delete', "/internal/whatsapp/conversations/{$conversationId}/messages", ['workspaceId' => $workspaceId]);
+    }
+
+    /**
+     * Ask the gateway to delete a conversation and every gateway-owned row it
+     * cascades (messages, media, reactions, status events, dispatch queue,
+     * participants, assignments, label links). Backend-owned CRM rows that
+     * merely reference the contact are untouched.
+     */
+    public function deleteConversation(int $conversationId, int $workspaceId): array
+    {
+        return $this->request('delete', "/internal/whatsapp/conversations/{$conversationId}", ['workspaceId' => $workspaceId]);
+    }
+
+    /**
      * Resolves a message_media row to a short-lived signed URL (or, in
      * local-disk dev mode, a server-side file path) via the gateway's
      * `/internal/whatsapp/media/:mediaId/url` endpoint. Callers MUST verify
@@ -74,6 +119,42 @@ class GatewayClient
     public function mediaUrl(int $mediaId, int $workspaceId): array
     {
         return $this->request('get', "/internal/whatsapp/media/{$mediaId}/url", ['workspaceId' => $workspaceId]);
+    }
+
+    /**
+     * Proxies the raw bytes of a message_media row from the gateway's
+     * `/internal/whatsapp/media/:mediaId/content` endpoint (local-disk dev
+     * mode, where there is no public signed URL). Returns a full response
+     * with the gateway's bytes + content type; the caller MUST verify the
+     * requesting user can view the owning conversation first - see
+     * MediaController::content().
+     */
+    public function mediaContent(int $mediaId, int $workspaceId): \Symfony\Component\HttpFoundation\Response
+    {
+        $baseUrl = rtrim((string) config('services.whatsapp_gateway.base_url'), '/');
+        $token = (string) config('services.whatsapp_gateway.token');
+        $timeout = (int) config('services.whatsapp_gateway.timeout', 10);
+
+        try {
+            $response = Http::withHeaders(['X-Internal-Gateway-Token' => $token])
+                ->timeout($timeout)
+                ->get($baseUrl."/internal/whatsapp/media/{$mediaId}/content", ['workspaceId' => $workspaceId]);
+        } catch (ConnectionException $e) {
+            throw new RuntimeException('Unable to reach the WhatsApp gateway service.', previous: $e);
+        }
+
+        try {
+            $response->throw();
+        } catch (RequestException $e) {
+            throw new RuntimeException(
+                'WhatsApp gateway returned an error: '.($response->json('message') ?? $response->status()),
+                previous: $e,
+            );
+        }
+
+        return response($response->body(), 200, [
+            'Content-Type' => $response->header('Content-Type') ?: 'application/octet-stream',
+        ]);
     }
 
     /**
@@ -181,6 +262,70 @@ class GatewayClient
     }
 
     /**
+     * "Mark as unread" (mirrors WhatsApp Web): asks the gateway to bump the
+     * conversation's unread_count to at least 1 and emit a conversation.updated
+     * so the inbox shows the unread dot again.
+     */
+    public function markConversationUnread(int $conversationId, int $workspaceId): array
+    {
+        return $this->request('post', "/internal/whatsapp/conversations/{$conversationId}/mark-unread", [
+            'workspaceId' => $workspaceId,
+        ]);
+    }
+
+    /**
+     * Resets the gateway-owned unread_count to 0 when an agent reads the
+     * conversation. Called by ConversationController::markRead alongside the
+     * per-user last_read_message_id write.
+     */
+    public function markConversationRead(int $conversationId, int $workspaceId): array
+    {
+        return $this->request('post', "/internal/whatsapp/conversations/{$conversationId}/read", [
+            'workspaceId' => $workspaceId,
+        ]);
+    }
+
+    /**
+     * Stars/unstars a message via the gateway (the messages table is
+     * gateway-owned). Returns { messageId, starredAt }.
+     */
+    public function setMessageStarred(int $workspaceId, int $conversationId, int $messageId, bool $starred): array
+    {
+        return $this->request('patch', "/internal/whatsapp/conversations/{$conversationId}/messages/{$messageId}/star", [
+            'workspaceId' => $workspaceId,
+            'starred' => $starred,
+        ]);
+    }
+
+    /**
+     * WhatsApp-style "Delete for me" via the gateway (the messages table is
+     * gateway-owned): stamps the message's `deleted_for_me_at` so it is hidden
+     * from the workspace's inbox. Nothing is sent to WhatsApp (the contact
+     * keeps their copy). Returns { messageId, deletedForMeAt }.
+     */
+    public function deleteMessageForMe(int $workspaceId, int $conversationId, int $messageId, ?int $userId = null): array
+    {
+        return $this->request('delete', "/internal/whatsapp/conversations/{$conversationId}/messages/{$messageId}/delete-for-me", [
+            'workspaceId' => $workspaceId,
+            'userId' => $userId,
+        ]);
+    }
+
+    /**
+     * Forwards a message into a conversation via the gateway, which
+     * reconstructs the source content (text or stored media) and sends it with
+     * WhatsApp's isForwarded marker. Returns { messageId, whatsappMessageId }.
+     */
+    public function forwardMessage(int $workspaceId, int $conversationId, int $sourceMessageId, int $requestedByUserId): array
+    {
+        return $this->request('post', "/internal/whatsapp/conversations/{$conversationId}/messages/forward", [
+            'workspaceId' => $workspaceId,
+            'sourceMessageId' => $sourceMessageId,
+            'requestedByUserId' => $requestedByUserId,
+        ]);
+    }
+
+    /**
      * Relays a `notification.created` event (Phase 12) to a single user's room
      * (`workspace:{workspaceId}:user:{userId}` in the gateway's `/gateway` Socket.IO
      * namespace - see whatsapp-gateway's emitNotificationCreated). Distinct from
@@ -203,9 +348,17 @@ class GatewayClient
         $timeout = (int) config('services.whatsapp_gateway.timeout', 10);
 
         try {
-            $response = Http::withHeaders(['X-Internal-Gateway-Token' => $token])
-                ->timeout($timeout)
-                ->{$method}($baseUrl.$path, $query);
+            $request = Http::withHeaders(['X-Internal-Gateway-Token' => $token])
+                ->timeout($timeout);
+
+            // Laravel's HTTP client sends the second argument as the request
+            // body for every verb except GET/HEAD. The gateway's internal API
+            // reads workspaceId etc. from query params on DELETE, so build the
+            // query explicitly instead of relying on the body (which the
+            // gateway would ignore).
+            $response = $method === 'delete'
+                ? $request->withQueryParameters($query)->delete($baseUrl.$path)
+                : $request->{$method}($baseUrl.$path, $query);
         } catch (ConnectionException $e) {
             throw new RuntimeException('Unable to reach the WhatsApp gateway service.', previous: $e);
         }

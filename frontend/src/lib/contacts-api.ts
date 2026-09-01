@@ -5,6 +5,8 @@ export interface WhatsappContactDetail {
   id: number;
   wa_jid: string;
   push_name: string | null;
+  /** Saved (address-book) name for this number - preferred over push_name when present. */
+  contact_name?: string | null;
   phone_number: string | null;
   profile_picture_url: string | null;
   is_business: boolean;
@@ -26,13 +28,6 @@ export interface ContactActivity {
   created_by: number | null;
 }
 
-export interface LeadSummary {
-  id: number;
-  status: string;
-  source: string;
-  created_at: string;
-}
-
 export interface DealSummary {
   id: number;
   title: string;
@@ -40,6 +35,12 @@ export interface DealSummary {
   value_amount: string | number | null;
   value_currency: string;
 }
+
+export type ContactStatus = "active" | "inactive";
+
+export type ContactPriority = "low" | "normal" | "high" | "urgent";
+
+export type ContactSource = "whatsapp" | "manual" | "import" | "other" | string;
 
 export interface Contact {
   id: number;
@@ -50,6 +51,15 @@ export interface Contact {
   company: string | null;
   job_title: string | null;
   phone_number: string | null;
+  normalized_phone_number: string | null;
+  address: string | null;
+  city: string | null;
+  country: string | null;
+  timezone: string | null;
+  status: ContactStatus;
+  priority: ContactPriority;
+  source: ContactSource | null;
+  last_contacted_at: string | null;
   custom_fields: Record<string, unknown> | null;
   owner_user_id: number | null;
   owner: UserSummary | null;
@@ -57,7 +67,6 @@ export interface Contact {
   labels: LabelSummary[];
   conversations?: ConversationSummary[];
   activities?: ContactActivity[];
-  leads?: LeadSummary[];
   deals?: DealSummary[];
   created_at: string;
   updated_at: string;
@@ -66,9 +75,14 @@ export interface Contact {
 
 export interface ContactFilters {
   search?: string;
+  status?: ContactStatus;
+  source?: ContactSource;
+  country?: string;
+  whatsapp?: "connected" | "unavailable";
+  recently_contacted?: boolean;
   owner_user_id?: number;
   archived?: boolean;
-  sort?: "full_name" | "email" | "company" | "created_at" | "updated_at";
+  sort?: "full_name" | "email" | "company" | "created_at" | "updated_at" | "last_contacted_at" | "status";
   direction?: "asc" | "desc";
   per_page?: number;
   page?: number;
@@ -82,6 +96,13 @@ export interface ContactFormValues {
   company?: string | null;
   job_title?: string | null;
   phone_number?: string | null;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
+  timezone?: string | null;
+  status?: ContactStatus | null;
+  priority?: ContactPriority | null;
+  source?: ContactSource | null;
   owner_user_id?: number | null;
   custom_fields?: Record<string, unknown> | null;
 }
@@ -97,7 +118,8 @@ async function unwrapPaginated<T>(
   promise: Promise<{ data: PaginatedApiResponse<T> }>
 ): Promise<Paginated<T>> {
   const { data: body } = await promise;
-  if (!body.success) {
+  // Backend omits `success` on 2xx bodies — only an explicit false is a failure.
+  if (body.success === false || !body.data) {
     throw new Error(body.message ?? "Request failed");
   }
   return { data: body.data, meta: body.meta ?? { per_page: 0, has_more: false } };
@@ -121,6 +143,30 @@ export async function updateContact(id: number, values: ContactFormValues): Prom
 
 export async function archiveContact(id: number): Promise<null> {
   return unwrap(apiClient.delete(`/contacts/${id}`));
+}
+
+export interface DuplicateMergeDetail {
+  workspace_id: number;
+  phone: string;
+  kept: number;
+  kept_name: string | null;
+  merged: number[];
+}
+
+export interface DuplicateMergeReport {
+  groups: number;
+  merged: number;
+  deleted: number;
+  details: DuplicateMergeDetail[];
+}
+
+/**
+ * Merges duplicate contacts (same workspace + normalized phone) created
+ * before phone-based dedup was enforced on the WhatsApp path. Pass
+ * dryRun=true to preview the groups without changing anything.
+ */
+export async function mergeDuplicateContacts(dryRun: boolean): Promise<DuplicateMergeReport> {
+  return unwrap(apiClient.post("/contacts/merge-duplicates", { dry_run: dryRun }));
 }
 
 export async function restoreContact(id: number): Promise<Contact> {

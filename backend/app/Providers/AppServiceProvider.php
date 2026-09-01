@@ -45,11 +45,11 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::policy(Conversation::class, ConversationPolicy::class);
         Gate::policy(Contact::class, ContactPolicy::class);
-        Gate::policy(Lead::class, LeadPolicy::class);
         Gate::policy(Deal::class, DealPolicy::class);
         Gate::policy(Task::class, TaskPolicy::class);
         Gate::policy(User::class, UserPolicy::class);
         Gate::policy(Label::class, LabelPolicy::class);
+        Gate::policy(Lead::class, LeadPolicy::class);
         Gate::policy(Team::class, TeamPolicy::class);
         Gate::policy(Role::class, RolePolicy::class);
         Gate::policy(Invitation::class, InvitationPolicy::class);

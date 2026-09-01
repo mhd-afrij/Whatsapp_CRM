@@ -45,7 +45,6 @@ export function useDeleteLabel() {
       // the simplest correct client-side response is to invalidate every list/detail
       // query that might render label badges.
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
-      queryClient.invalidateQueries({ queryKey: ["leads"] });
       queryClient.invalidateQueries({ queryKey: ["deals"] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     },

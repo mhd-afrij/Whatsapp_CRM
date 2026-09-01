@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { AlertCircle, Clock3, QrCode, RefreshCcw, Wifi, WifiOff } from "lucide-react";
 import { RequirePermission } from "@/components/auth/require-permission";
 import {
   useWhatsappActions,
@@ -28,11 +27,11 @@ function formatDisconnectReason(reason: unknown): string | null {
 
 const STATUS_LABELS: Record<WhatsappConnectionStatus, string> = {
   idle: "Not connected",
-  connecting: "Connecting",
+  connecting: "Connecting…",
   qr_pending: "Scan the QR code",
   connected: "Connected",
   disconnected: "Disconnected",
-  reconnecting: "Reconnecting",
+  reconnecting: "Reconnecting…",
   auth_required: "Re-authentication required",
   error: "Connection error",
 };
@@ -46,44 +45,6 @@ const STATUS_STYLES: Record<WhatsappConnectionStatus, string> = {
   reconnecting: "bg-warning/10 text-warning",
   auth_required: "bg-danger/10 text-danger",
   error: "bg-danger/10 text-danger",
-};
-
-const STATUS_COPY: Record<
-  WhatsappConnectionStatus,
-  { title: string; body: string }
-> = {
-  idle: {
-    title: "Not connected",
-    body: "Start a new WhatsApp session to generate a pairing QR code.",
-  },
-  connecting: {
-    title: "Connecting",
-    body: "The gateway is opening a fresh session and preparing pairing.",
-  },
-  qr_pending: {
-    title: "Waiting for QR scan",
-    body: "Scan the QR code from WhatsApp Linked Devices to finish pairing.",
-  },
-  connected: {
-    title: "Connected",
-    body: "The gateway is live and ready to receive and send messages.",
-  },
-  disconnected: {
-    title: "Disconnected",
-    body: "The session was ended or dropped. Reconnect to continue.",
-  },
-  reconnecting: {
-    title: "Reconnecting",
-    body: "The gateway is retrying automatically with backoff.",
-  },
-  auth_required: {
-    title: "Re-authentication required",
-    body: "WhatsApp logged this session out. A new QR scan is required.",
-  },
-  error: {
-    title: "Connection error",
-    body: "Automatic reconnect attempts were exhausted. Try again manually.",
-  },
 };
 
 function StatusBadge({ status }: { status: WhatsappConnectionStatus }) {
@@ -114,10 +75,11 @@ function DisconnectDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-surface p-6 shadow-lg">
+      <div className="w-full max-w-sm rounded-lg bg-surface p-6 shadow-lg">
         <h2 className="text-lg font-semibold text-text">Disconnect WhatsApp?</h2>
         <p className="mt-2 text-sm text-muted">
-          This will end the active WhatsApp session. You will need to scan a new QR code to reconnect.
+          This will end the active WhatsApp session. You will need to scan a new QR code to
+          reconnect.
         </p>
         <div className="mt-6 flex justify-end gap-3">
           <button
@@ -133,7 +95,7 @@ function DisconnectDialog({
             disabled={isPending}
             className="rounded-md bg-danger px-4 py-2 text-sm font-medium text-white hover:bg-danger/90 disabled:opacity-50"
           >
-            {isPending ? "Disconnecting..." : "Disconnect"}
+            {isPending ? "Disconnecting…" : "Disconnect"}
           </button>
         </div>
       </div>
@@ -151,6 +113,36 @@ function useNow(intervalMs = 1_000): number {
   }, [intervalMs]);
 
   return now;
+}
+
+function ConnectionTimeline() {
+  const { data: events, isLoading } = useWhatsappConnectionHistory();
+
+  if (isLoading) {
+    return <p className="text-sm text-muted">Loading history…</p>;
+  }
+
+  if (!events || events.length === 0) {
+    return <p className="text-sm text-muted">No connection events yet.</p>;
+  }
+
+  return (
+    <ul className="space-y-3">
+      {events.map((event) => {
+        const reason = formatDisconnectReason(event.metadata?.disconnectReason ?? event.metadata?.reason);
+        return (
+          <li key={event.id} className="flex items-start gap-3 border-b border-border pb-3 last:border-0">
+            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
+            <div>
+              <p className="text-sm font-medium text-text">{formatConnectionEvent(event.event_type)}</p>
+              <p className="text-xs text-muted">{new Date(event.occurred_at).toLocaleString()}</p>
+              {reason && <p className="mt-0.5 text-xs text-muted">{reason}</p>}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 function formatConnectionEvent(eventType: string): string {
@@ -176,104 +168,48 @@ function formatConnectionEvent(eventType: string): string {
   }
 }
 
-function ConnectionTimeline() {
-  const { data: events, isLoading } = useWhatsappConnectionHistory();
-
-  if (isLoading) {
-    return <p className="text-sm text-muted">Loading history...</p>;
-  }
-
-  if (!events || events.length === 0) {
-    return <p className="text-sm text-muted">No connection events yet.</p>;
-  }
-
-  return (
-    <ul className="space-y-3">
-      {events.map((event) => {
-        const reason = formatDisconnectReason(event.metadata?.disconnectReason ?? event.metadata?.reason);
-        return (
-          <li key={event.id} className="flex items-start gap-3 rounded-xl border border-border bg-bg/40 p-3">
-            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-text">{formatConnectionEvent(event.event_type)}</p>
-              <p className="text-xs text-muted">{new Date(event.occurred_at).toLocaleString()}</p>
-              {reason && <p className="mt-0.5 text-xs text-muted">{reason}</p>}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 function LiveStatusPanel() {
   const { data: status } = useWhatsappStatus();
   const { data: events } = useWhatsappConnectionHistory();
 
   const latestEvent = events?.[0] ?? null;
   const connectedNumber = status?.phoneNumber ?? null;
-  const currentStatus = status?.status ?? "idle";
-  const copy = STATUS_COPY[currentStatus];
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+    <div className="rounded-lg border border-border bg-surface p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Live session</p>
-          <h2 className="mt-1 text-xl font-semibold text-text">{copy.title}</h2>
-          <p className="mt-1 max-w-xl text-sm text-muted">{copy.body}</p>
+          <h2 className="mt-1 text-lg font-semibold text-text">
+            {status?.status === "connected" ? "WhatsApp is live" : "WhatsApp session"}
+          </h2>
+          <p className="mt-1 text-sm text-muted">
+            This summary updates from the gateway in real time after connect, reconnect, or QR scan events.
+          </p>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <StatusBadge status={currentStatus} />
-          {currentStatus === "connected" ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success">
-              <Wifi className="h-3.5 w-3.5" />
-              Online
-            </span>
-          ) : currentStatus === "error" || currentStatus === "auth_required" ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-danger/10 px-3 py-1 text-xs font-medium text-danger">
-              <AlertCircle className="h-3.5 w-3.5" />
-              Needs action
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-3 py-1 text-xs font-medium text-warning">
-              <Clock3 className="h-3.5 w-3.5" />
-              Pending
-            </span>
-          )}
-        </div>
+        <StatusBadge status={status?.status ?? "idle"} />
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-3">
-        <div className="rounded-xl border border-border bg-bg/60 p-4">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-md border border-border bg-bg/60 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Connected number</p>
-          <p className="mt-2 text-lg font-semibold text-text">{connectedNumber ?? "Not available yet"}</p>
+          <p className="mt-2 text-lg font-semibold text-text">
+            {connectedNumber ?? "Not available yet"}
+          </p>
           <p className="mt-1 text-sm text-muted">
-            {currentStatus === "connected"
+            {status?.status === "connected"
               ? "The gateway has confirmed the active WhatsApp session."
               : "Connect WhatsApp to load the active session details here."}
           </p>
         </div>
 
-        <div className="rounded-xl border border-border bg-bg/60 p-4">
+        <div className="rounded-md border border-border bg-bg/60 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Most recent activity</p>
           <p className="mt-2 text-lg font-semibold text-text">
             {latestEvent ? formatConnectionEvent(latestEvent.event_type) : "No recent activity"}
           </p>
           <p className="mt-1 text-sm text-muted">
-            {latestEvent
-              ? new Date(latestEvent.occurred_at).toLocaleString()
-              : "Waiting for the next connection event."}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-border bg-bg/60 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Current state</p>
-          <p className="mt-2 text-lg font-semibold text-text">{STATUS_LABELS[currentStatus]}</p>
-          <p className="mt-1 text-sm text-muted">
-            {currentStatus === "connected"
-              ? "Keep this tab open to monitor disconnects and QR expiry."
-              : "Use the actions below to recover or restart the session."}
+            {latestEvent ? new Date(latestEvent.occurred_at).toLocaleString() : "Waiting for the next connection event."}
           </p>
         </div>
       </div>
@@ -284,9 +220,8 @@ function LiveStatusPanel() {
 function WhatsappSettingsContent() {
   const { data: status, isLoading, isError, refetch } = useWhatsappStatus();
   const { data: events } = useWhatsappConnectionHistory();
-  const { connect, disconnect, logout, reconnect } = useWhatsappActions();
+  const { connect, disconnect, reconnect } = useWhatsappActions();
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const now = useNow();
   const currentStatus: WhatsappConnectionStatus = status?.status ?? "idle";
@@ -298,194 +233,143 @@ function WhatsappSettingsContent() {
   const latestReason = latestEvent
     ? formatDisconnectReason(latestEvent.metadata?.disconnectReason ?? latestEvent.metadata?.reason)
     : null;
-  const needsResetBeforeQr =
-    currentStatus !== "idle" && currentStatus !== "disconnected";
-  const startQrFlowLabel = needsResetBeforeQr ? "Reset session and scan QR" : "Connect WhatsApp";
-
-  const startQrFlow = async () => {
-    setActionError(null);
-    try {
-      if (needsResetBeforeQr) {
-        await logout.mutateAsync();
-      }
-      await connect.mutateAsync();
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Failed to start WhatsApp pairing.");
-    }
-  };
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-3xl border border-border bg-surface p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-2xl">
-            <h1 className="text-2xl font-semibold text-text">WhatsApp Connection</h1>
-            <p className="mt-1 text-sm text-muted">
-              Manage the workspace&apos;s single WhatsApp session used to send and receive messages.
+    <div className="max-w-2xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-text">WhatsApp Connection</h1>
+        <p className="mt-1 text-sm text-muted">
+          Manage the workspace&apos;s single WhatsApp session used to send and receive messages.
+        </p>
+      </div>
+
+      <LiveStatusPanel />
+
+      <div className="rounded-lg border border-border bg-surface p-6">
+        {isLoading && <p className="mt-4 text-sm text-muted">Loading connection status…</p>}
+        {isError && (
+          <ErrorState
+            className="mt-4"
+            message="Unable to reach the WhatsApp gateway. Try again shortly."
+            onRetry={() => refetch()}
+          />
+        )}
+
+        {currentStatus === "qr_pending" && status?.qrCode && (
+          <div className="mt-6 flex flex-col items-center gap-3">
+            <p className="max-w-xs text-center text-sm text-muted">
+              Open WhatsApp on your phone → <span className="font-medium text-text">Linked Devices</span> →{" "}
+              <span className="font-medium text-text">Link a device</span>, then scan this code.
             </p>
+            {qrExpired ? (
+              <p className="text-sm text-danger">This QR code has expired.</p>
+            ) : (
+              <>
+                <div className="rounded-lg border border-border p-4">
+                  <Image
+                    src={status.qrCode}
+                    alt="WhatsApp QR code"
+                    width={220}
+                    height={220}
+                    unoptimized
+                  />
+                </div>
+                {qrSecondsRemaining !== null && (
+                  <p className="text-xs text-muted">Expires in {qrSecondsRemaining}s</p>
+                )}
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => connect.mutate()}
+              disabled={connect.isPending}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+            >
+              {connect.isPending ? "Refreshing…" : "Refresh QR code"}
+            </button>
           </div>
-          <div className="flex flex-wrap gap-2">
+        )}
+
+        {(currentStatus === "idle" || currentStatus === "disconnected") && (
+          <div className="mt-6">
+            <button
+              type="button"
+              onClick={() => connect.mutate()}
+              disabled={connect.isPending}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+            >
+              {connect.isPending ? "Connecting…" : "Connect WhatsApp"}
+            </button>
+          </div>
+        )}
+
+        {currentStatus === "auth_required" && (
+          <div className="mt-6 space-y-2">
+            <p className="text-sm text-danger">
+              WhatsApp logged this session out. Re-authentication is required — connect again to
+              generate a new QR code.
+            </p>
+            {latestReason && <p className="text-xs text-muted">Reason: {latestReason}</p>}
+            <button
+              type="button"
+              onClick={() => connect.mutate()}
+              disabled={connect.isPending}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+            >
+              {connect.isPending ? "Connecting…" : "Reconnect and scan new QR"}
+            </button>
+          </div>
+        )}
+
+        {currentStatus === "error" && (
+          <div className="mt-6 space-y-2">
+            <p className="text-sm text-danger">
+              Automatic reconnection attempts were exhausted. Try reconnecting manually.
+            </p>
+            {latestReason && <p className="text-xs text-muted">Last known reason: {latestReason}</p>}
             <button
               type="button"
               onClick={() => reconnect.mutate()}
               disabled={reconnect.isPending}
-              className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-medium text-text hover:bg-primary-soft/50 disabled:opacity-50"
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
             >
-              <RefreshCcw className="h-4 w-4" />
-              {reconnect.isPending ? "Reconnecting..." : "Reconnect"}
+              {reconnect.isPending ? "Reconnecting…" : "Retry connection"}
+            </button>
+          </div>
+        )}
+
+        {(currentStatus === "connecting" || currentStatus === "reconnecting") && (
+          <p className="mt-6 text-sm text-muted">
+            {currentStatus === "connecting"
+              ? "Establishing connection…"
+              : "Connection dropped; retrying automatically with backoff…"}
+          </p>
+        )}
+
+        {currentStatus === "connected" && (
+          <div className="mt-6 flex gap-3">
+            <button
+              type="button"
+              onClick={() => reconnect.mutate()}
+              disabled={reconnect.isPending}
+              className="rounded-md border border-border px-4 py-2 text-sm font-medium text-text hover:bg-primary-soft/50 disabled:opacity-50"
+            >
+              {reconnect.isPending ? "Reconnecting…" : "Reconnect"}
             </button>
             <button
               type="button"
-              onClick={() => {
-                void startQrFlow();
-              }}
-              disabled={connect.isPending || logout.isPending}
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+              onClick={() => setShowDisconnectDialog(true)}
+              className="rounded-md border border-danger px-4 py-2 text-sm font-medium text-danger hover:bg-danger/10"
             >
-              <QrCode className="h-4 w-4" />
-              {connect.isPending || logout.isPending ? "Preparing QR..." : startQrFlowLabel}
+              Disconnect
             </button>
-            {currentStatus === "connected" && (
-              <button
-                type="button"
-                onClick={() => setShowDisconnectDialog(true)}
-                className="inline-flex items-center gap-2 rounded-full border border-danger px-4 py-2 text-sm font-medium text-danger hover:bg-danger/10"
-              >
-                Disconnect
-              </button>
-            )}
           </div>
-        </div>
+        )}
       </div>
 
-      {actionError && (
-        <div className="rounded-2xl border border-danger/20 bg-danger/5 p-4 text-sm text-danger">
-          {actionError}
-        </div>
-      )}
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="space-y-6">
-          <LiveStatusPanel />
-
-          <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
-            {isLoading && <p className="mt-4 text-sm text-muted">Loading connection status...</p>}
-            {isError && (
-              <ErrorState
-                className="mt-4"
-                message="Unable to reach the WhatsApp gateway. Try again shortly."
-                onRetry={() => refetch()}
-              />
-            )}
-
-            {currentStatus === "qr_pending" && status?.qrCode && (
-              <div className="mt-2 grid gap-5 md:grid-cols-[240px_minmax(0,1fr)] md:items-center">
-                <div className="flex justify-center rounded-2xl border border-border bg-bg/60 p-4">
-                  {qrExpired ? (
-                    <div className="flex h-[220px] w-[220px] items-center justify-center rounded-xl border border-dashed border-danger/40 bg-danger/5 text-center text-sm text-danger">
-                      QR expired
-                    </div>
-                  ) : (
-                    <Image
-                      src={status.qrCode}
-                      alt="WhatsApp QR code"
-                      width={220}
-                      height={220}
-                      unoptimized
-                      className="rounded-xl"
-                    />
-                  )}
-                </div>
-                <div className="space-y-3">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-warning/10 px-3 py-1 text-xs font-medium text-warning">
-                    <QrCode className="h-3.5 w-3.5" />
-                    Pairing required
-                  </div>
-                  <p className="text-sm text-muted">
-                    Open WhatsApp on your phone, go to{" "}
-                    <span className="font-medium text-text">Linked Devices</span>, then scan the QR to finish connecting.
-                  </p>
-                  {qrSecondsRemaining !== null && !qrExpired && (
-                    <p className="text-xs text-muted">QR expires in {qrSecondsRemaining}s.</p>
-                  )}
-                  {qrExpired && (
-                    <p className="text-sm text-danger">This QR code has expired. Refresh it to generate a new one.</p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {currentStatus === "auth_required" && (
-              <div className="mt-2 rounded-2xl border border-danger/20 bg-danger/5 p-4">
-                <p className="text-sm font-medium text-danger">
-                  WhatsApp logged this session out. Re-authentication is required.
-                </p>
-                {latestReason && <p className="mt-1 text-xs text-muted">Reason: {latestReason}</p>}
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void startQrFlow();
-                    }}
-                    disabled={connect.isPending || logout.isPending}
-                    className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
-                  >
-                    {connect.isPending || logout.isPending ? "Preparing QR..." : "Reconnect and scan new QR"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {currentStatus === "error" && (
-              <div className="mt-2 rounded-2xl border border-danger/20 bg-danger/5 p-4">
-                <p className="text-sm font-medium text-danger">Automatic reconnection attempts were exhausted.</p>
-                {latestReason && <p className="mt-1 text-xs text-muted">Last known reason: {latestReason}</p>}
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => reconnect.mutate()}
-                    disabled={reconnect.isPending}
-                    className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
-                  >
-                    {reconnect.isPending ? "Reconnecting..." : "Retry connection"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {(currentStatus === "connecting" || currentStatus === "reconnecting") && (
-              <div className="mt-2 rounded-2xl border border-warning/20 bg-warning/5 p-4">
-                <p className="text-sm text-warning">
-                  {currentStatus === "connecting"
-                    ? "Establishing connection..."
-                    : "Connection dropped; retrying automatically with backoff..."}
-                </p>
-              </div>
-            )}
-
-            {(currentStatus === "idle" || currentStatus === "disconnected") && (
-              <div className="mt-2 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    void startQrFlow();
-                  }}
-                  disabled={connect.isPending || logout.isPending}
-                  className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
-                >
-                  {connect.isPending || logout.isPending ? "Preparing QR..." : "Connect WhatsApp"}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
-            <h2 className="mb-4 text-lg font-semibold text-text">Connection history</h2>
-            <ConnectionTimeline />
-          </div>
-        </div>
+      <div className="rounded-lg border border-border bg-surface p-6">
+        <h2 className="mb-4 text-lg font-semibold text-text">Connection history</h2>
+        <ConnectionTimeline />
       </div>
 
       <DisconnectDialog

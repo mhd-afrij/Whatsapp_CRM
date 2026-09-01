@@ -27,13 +27,15 @@ vi.mock('../lib/storage', () => ({
   getStorageClient: () => ({ putObject: (...args: unknown[]) => putObjectMock(...args) }),
 }));
 
-const { emitConversationEvent, emitNotificationCreated } = vi.hoisted(() => ({
+const { emitConversationEvent, emitNotificationCreated, emitContactEvent } = vi.hoisted(() => ({
   emitConversationEvent: vi.fn(),
   emitNotificationCreated: vi.fn(),
+  emitContactEvent: vi.fn(),
 }));
 vi.mock('../lib/socket-server', () => ({
   emitConversationEvent: (...args: unknown[]) => emitConversationEvent(...args),
   emitNotificationCreated: (...args: unknown[]) => emitNotificationCreated(...args),
+  emitContactEvent: (...args: unknown[]) => emitContactEvent(...args),
 }));
 
 import { createInternalWhatsappRouter } from './internal-whatsapp.routes';
@@ -208,6 +210,57 @@ describe('internal media/url and events/emit routes', () => {
       });
       expect(res.status).toBe(400);
       expect(emitNotificationCreated).not.toHaveBeenCalled();
+    });
+
+    it('relays a contact.created event to the workspace socket rooms', async () => {
+      const res = await fetch(`${baseUrl}/internal/whatsapp/events/emit`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'contact.created',
+          workspaceId: 1,
+          payload: { contact_id: 5 },
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(emitContactEvent).toHaveBeenCalledWith('contact.created', 1, {
+        contact_id: 5,
+      });
+      expect(emitConversationEvent).not.toHaveBeenCalled();
+    });
+
+    it('relays a contact.updated event and ignores conversationId on contact events', async () => {
+      const res = await fetch(`${baseUrl}/internal/whatsapp/events/emit`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'contact.updated',
+          workspaceId: 1,
+          conversationId: 42,
+          payload: { contact_id: 9 },
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(emitContactEvent).toHaveBeenCalledWith('contact.updated', 1, {
+        contact_id: 9,
+      });
+      expect(emitConversationEvent).not.toHaveBeenCalled();
+    });
+
+    it('relays a contact.deleted event to the workspace socket rooms', async () => {
+      const res = await fetch(`${baseUrl}/internal/whatsapp/events/emit`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'contact.deleted',
+          workspaceId: 3,
+          payload: { contact_id: 11 },
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(emitContactEvent).toHaveBeenCalledWith('contact.deleted', 3, {
+        contact_id: 11,
+      });
     });
   });
 });

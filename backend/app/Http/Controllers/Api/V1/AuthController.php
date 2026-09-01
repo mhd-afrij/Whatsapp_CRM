@@ -10,6 +10,7 @@ use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Models\Invitation;
 use App\Models\Permission;
+use App\Models\Role;
 use App\Models\User;
 use App\Notifications\InvitationNotification;
 use App\Support\AuditLogger;
@@ -55,6 +56,7 @@ class AuthController extends Controller
 
         return $this->success([
             'token' => $token,
+            'access_token' => $token,
             'user' => $this->userPayload($user),
         ], 'Logged in successfully.');
     }
@@ -73,6 +75,26 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         return $this->success($this->userPayload($request->user()), 'Current user retrieved.');
+    }
+
+    /**
+     * PATCH /api/v1/auth/me
+     * Lets the signed-in user update their own profile (display name and
+     * short bio). Email/roles/teams are admin-owned (UserController::update);
+     * this endpoint never crosses a workspace or user boundary.
+     */
+    public function updateMe(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:255'],
+            'about' => ['sometimes', 'nullable', 'string', 'max:1000'],
+        ]);
+
+        $request->user()->fill(array_intersect_key($data, ['name' => true, 'about' => true]))->save();
+
+        AuditLogger::log('user.profile_updated', $request->user(), $request->user(), $data, $request);
+
+        return $this->success($this->userPayload($request->user()), 'Profile updated successfully.');
     }
 
     public function forgotPassword(ForgotPasswordRequest $request)
@@ -109,6 +131,12 @@ class AuthController extends Controller
     {
         $actor = $request->user();
         $data = $request->validated();
+
+        $role = Role::query()->whereKey($data['role_id'])->firstOrFail();
+
+        if ((in_array($role->slug, ['super_admin', 'super-administrator'], true) || $role->name === 'Super Administrator') && ! $actor->isSuperAdmin()) {
+            return $this->error('Only a super admin can invite another super admin.', null, 403);
+        }
 
         $invitation = Invitation::create([
             'workspace_id' => $actor->workspace_id,
@@ -166,6 +194,7 @@ class AuthController extends Controller
 
         return $this->success([
             'token' => $token,
+            'access_token' => $token,
             'user' => $this->userPayload($user),
         ], 'Invitation accepted. Welcome!', null, 201);
     }
@@ -176,9 +205,11 @@ class AuthController extends Controller
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
+            'about' => $user->about,
             'workspace_id' => $user->workspace_id,
             'is_active' => $user->is_active,
             'roles' => $user->roles()->pluck('name'),
+            'role_keys' => $user->roleKeys(),
             'permissions' => $user->isSuperAdmin()
                 ? Permission::pluck('name')
                 : $user->permissionNames(),

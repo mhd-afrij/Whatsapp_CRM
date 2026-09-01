@@ -1,188 +1,48 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import Link from "next/link";
-import { Plus } from "lucide-react";
-import { RequirePermission } from "@/components/auth/require-permission";
-import { useLeadList } from "@/hooks/use-leads";
-import type { LeadFilters, LeadSource, LeadStatus } from "@/lib/leads-api";
-import { LabelFilterChips } from "@/components/labels/label-filter-chips";
-import { LabelBadge } from "@/components/labels/label-badge";
-import { ErrorState } from "@/components/ui/error-state";
-import { NewLeadModal } from "@/components/leads/new-lead-modal";
+import { useState } from 'react';
+import { Filter, Plus, RefreshCw, Search, SlidersHorizontal, UsersRound } from 'lucide-react';
+import { LeadBoard } from '@/components/leads/lead-board';
+import { RequirePermission } from '@/components/auth/require-permission';
+import { useLeadList, useMoveLead } from '@/hooks/use-leads';
+import type { Lead, LeadFilters, LeadStage } from '@/lib/leads-api';
+import { ContactDetailDrawer } from '@/components/contacts/contact-detail-drawer';
 
-const STATUS_OPTIONS: LeadStatus[] = ["new", "contacted", "qualified", "disqualified", "converted"];
-const SOURCE_OPTIONS: LeadSource[] = ["whatsapp", "manual", "import", "other"];
-
-function TableSkeleton() {
-  return (
-    <div className="space-y-2 p-4">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="h-10 animate-pulse rounded bg-border/60" />
-      ))}
-    </div>
-  );
-}
-
-function LeadsTable() {
-  const [status, setStatus] = useState<LeadStatus | "">("");
-  const [source, setSource] = useState<LeadSource | "">("");
-  const [page, setPage] = useState(1);
-  const [labelIds, setLabelIds] = useState<number[]>([]);
-
-  const filters: LeadFilters = {
-    status: status || undefined,
-    source: source || undefined,
-    page,
-    per_page: 20,
-    labels: labelIds.length > 0 ? labelIds : undefined,
-  };
-  const { data, isLoading, isError, refetch } = useLeadList(filters);
+function LeadsView() {
+  const [search, setSearch] = useState('');
+  const [temperature, setTemperature] = useState<LeadFilters['temperature']>();
+  const [pendingLeadId, setPendingLeadId] = useState<number>();
+  const [selectedContactId, setSelectedContactId] = useState<number | null>(null);
+  const filters: LeadFilters = { search: search || undefined, temperature, per_page: 100 };
+  const { data, isLoading, isError, refetch, isFetching } = useLeadList(filters);
+  const moveLeadMutation = useMoveLead();
   const leads = data?.data ?? [];
-  const meta = data?.meta;
-  const [showNewLead, setShowNewLead] = useState(false);
+  const hotCount = leads.filter((lead) => lead.temperature === 'hot').length;
+  const qualifiedCount = leads.filter((lead) => lead.stage === 'qualified').length;
+  const convertedCount = leads.filter((lead) => lead.stage === 'converted').length;
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-text">Leads</h1>
-        <button
-          type="button"
-          onClick={() => setShowNewLead(true)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-dark"
-        >
-          <Plus className="h-4 w-4" /> New lead
-        </button>
-      </div>
+  const moveLead = async (lead: Lead, stage: LeadStage) => {
+    setPendingLeadId(lead.id);
+    try { await moveLeadMutation.mutateAsync({ id: lead.id, stage }); } finally { setPendingLeadId(undefined); }
+  };
 
-      {showNewLead && <NewLeadModal onClose={() => setShowNewLead(false)} />}
-
-      <div className="flex flex-wrap gap-3">
-        <select
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value as LeadStatus | "");
-            setPage(1);
-          }}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-text"
-        >
-          <option value="">All statuses</option>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select
-          value={source}
-          onChange={(e) => {
-            setSource(e.target.value as LeadSource | "");
-            setPage(1);
-          }}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-text"
-        >
-          <option value="">All sources</option>
-          {SOURCE_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <LabelFilterChips
-        selected={labelIds}
-        onChange={(ids) => {
-          setLabelIds(ids);
-          setPage(1);
-        }}
-      />
-
-      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-        {isLoading && <TableSkeleton />}
-        {isError && (
-          <ErrorState message="Unable to load leads. Try again shortly." onRetry={() => refetch()} />
-        )}
-        {!isLoading && !isError && leads.length === 0 && (
-          <div className="flex flex-col items-center justify-center gap-2 p-10 text-center">
-            <p className="text-sm font-medium text-text">No leads yet</p>
-            <p className="text-xs text-muted">
-              Create one manually, or convert a contact or conversation into a lead.
-            </p>
-          </div>
-        )}
-
-        {!isLoading && !isError && leads.length > 0 && (
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-border text-xs uppercase text-muted">
-              <tr>
-                <th className="px-4 py-3 font-medium">Contact</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Source</th>
-                <th className="px-4 py-3 font-medium">Owner</th>
-                <th className="px-4 py-3 font-medium">Created</th>
-                <th className="px-4 py-3 font-medium">Labels</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leads.map((lead) => (
-                <tr key={lead.id} className="border-b border-border last:border-0 hover:bg-primary-soft/30">
-                  <td className="px-4 py-3">
-                    <Link href={`/leads/${lead.id}`} className="font-medium text-primary hover:underline">
-                      {lead.contact?.full_name || `Contact #${lead.contact_id}`}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 capitalize text-muted">{lead.status}</td>
-                  <td className="px-4 py-3 capitalize text-muted">{lead.source}</td>
-                  <td className="px-4 py-3 text-muted">{lead.owner?.name || "Unassigned"}</td>
-                  <td className="px-4 py-3 text-muted">{new Date(lead.created_at).toLocaleDateString()}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {lead.labels.map((label) => (
-                        <LabelBadge key={label.id} label={label} />
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {meta && meta.last_page && meta.last_page > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted">
-          <span>
-            Page {meta.page} of {meta.last_page} ({meta.total} total)
-          </span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="rounded-md border border-border px-3 py-1.5 disabled:opacity-40"
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              disabled={!!meta.last_page && page >= meta.last_page}
-              onClick={() => setPage((p) => p + 1)}
-              className="rounded-md border border-border px-3 py-1.5 disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  return <main className='space-y-7 p-6 md:p-8'>
+    <header className='flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between'>
+      <div><div className='mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-primary'><span className='h-2 w-2 rounded-full bg-primary shadow-[0_0_0_4px_var(--color-primary-soft)]' />Sales workspace</div><h1 className='text-3xl font-semibold tracking-tight text-text md:text-4xl'>Lead pipeline</h1><p className='mt-2 max-w-xl text-sm leading-6 text-muted'>Turn live WhatsApp conversations into qualified opportunities and keep every follow-up visible to the team.</p></div>
+      <button type='button' className='inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-dark'><Plus className='h-4 w-4' />New lead</button>
+    </header>
+    <section className='grid gap-3 sm:grid-cols-3'>
+      {[{ label: 'Total leads', value: leads.length, icon: UsersRound, tone: 'text-info' }, { label: 'Hot opportunities', value: hotCount, icon: SlidersHorizontal, tone: 'text-danger' }, { label: 'Converted', value: convertedCount, icon: Filter, tone: 'text-success' }].map(({ label, value, icon: Icon, tone }) => <div key={label} className='relative overflow-hidden rounded-2xl border border-border bg-surface p-4 shadow-sm'><div className='flex items-center justify-between'><span className='text-xs font-medium uppercase tracking-wider text-muted'>{label}</span><Icon className={`h-4 w-4 ${tone}`} /></div><p className='mt-3 text-2xl font-semibold text-text'>{value}</p><p className='mt-1 text-xs text-muted'>{label === 'Total leads' ? `${qualifiedCount} qualified now` : 'Across this view'}</p></div>)}
+    </section>
+    <section className='flex flex-col gap-3 rounded-2xl border border-border bg-surface p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between'>
+      <div className='relative min-w-0 flex-1 sm:max-w-md'><Search className='pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted' /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder='Search people, phones, or lead notes' className='w-full rounded-xl border border-border bg-bg py-2.5 pl-9 pr-3 text-sm text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20' /></div>
+      <div className='flex items-center gap-2'><select aria-label='Filter by temperature' value={temperature ?? ''} onChange={(event) => setTemperature((event.target.value || undefined) as LeadFilters['temperature'])} className='rounded-xl border border-border bg-bg px-3 py-2.5 text-sm text-text outline-none'><option value=''>All temperatures</option><option value='hot'>Hot</option><option value='warm'>Warm</option><option value='cold'>Cold</option></select><button type='button' onClick={() => void refetch()} aria-label='Refresh leads' className='rounded-xl border border-border p-2.5 text-muted hover:bg-primary-soft/40 hover:text-primary'><RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} /></button></div>
+    </section>
+    {isLoading && <div className='rounded-2xl border border-border bg-surface p-12 text-center text-sm text-muted'>Loading your pipeline...</div>}
+    {isError && <div className='rounded-2xl border border-danger/20 bg-danger/5 p-8 text-center'><p className='text-sm font-semibold text-danger'>The pipeline could not be loaded.</p><button type='button' onClick={() => void refetch()} className='mt-3 text-xs font-semibold text-danger underline'>Try again</button></div>}
+    {!isLoading && !isError && <div className='-mx-6 overflow-x-auto px-6 pb-3 md:-mx-8 md:px-8'><LeadBoard leads={leads} onStageChange={moveLead} onContactClick={setSelectedContactId} pendingLeadId={pendingLeadId} /></div>}
+    <ContactDetailDrawer contactId={selectedContactId} open={selectedContactId !== null} onOpenChange={(open) => { if (!open) setSelectedContactId(null); }} />
+  </main>;
 }
 
-export default function LeadsPage() {
-  return (
-    <RequirePermission permission="leads.manage">
-      <LeadsTable />
-    </RequirePermission>
-  );
-}
+export default function LeadsPage() { return <RequirePermission permission='leads.manage'><LeadsView /></RequirePermission>; }

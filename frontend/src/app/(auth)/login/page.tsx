@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -14,6 +15,7 @@ export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
   const [formError, setFormError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -66,16 +68,27 @@ export default function LoginPage() {
             <label htmlFor="password" className="text-sm font-medium text-text">
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              className={cn(
-                "w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary",
-                errors.password && "border-danger focus:border-danger focus:ring-danger"
-              )}
-              {...register("password")}
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete="current-password"
+                className={cn(
+                  "w-full rounded-md border border-border bg-surface px-3 py-2 pr-10 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary",
+                  errors.password && "border-danger focus:border-danger focus:ring-danger"
+                )}
+                {...register("password")}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((value) => !value)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted transition-colors hover:text-text"
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             {errors.password && (
               <p className="text-xs text-danger">{errors.password.message}</p>
             )}
@@ -93,11 +106,19 @@ export default function LoginPage() {
             {isSubmitting ? "Signing in..." : "Sign in"}
           </button>
 
-          <p className="text-center text-sm">
-            <Link href="/forgot-password" className="font-medium text-primary hover:underline">
-              Forgot your password?
-            </Link>
-          </p>
+          <div className="space-y-1 text-center">
+            <p className="text-sm">
+              <Link href="/forgot-password" className="font-medium text-primary hover:underline">
+                Forgot your password?
+              </Link>
+            </p>
+            <p className="text-sm text-muted">
+              Don&apos;t have an account?{" "}
+              <Link href="/signup" className="font-medium text-primary hover:underline">
+                Sign up
+              </Link>
+            </p>
+          </div>
         </form>
       </div>
     </div>

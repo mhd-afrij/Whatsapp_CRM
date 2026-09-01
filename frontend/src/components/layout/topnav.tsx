@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { LogOut, Menu, Wifi, WifiOff, Sun, Moon } from "lucide-react";
+import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, Wifi, WifiOff, Sun, Moon } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { useSocket } from "@/providers/socket-provider";
 import { useTheme } from "@/context/theme-context";
@@ -15,7 +15,7 @@ export function Topnav() {
   const { user, logout } = useAuth();
   const { isConnected } = useSocket();
   const { theme, toggleTheme } = useTheme();
-  const { open } = useMobileSidebar();
+  const { open, collapsed, toggleCollapsed } = useMobileSidebar();
 
   if (pathname?.startsWith("/inbox")) {
     return null;
@@ -30,6 +30,16 @@ export function Topnav() {
         className="shrink-0 rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary md:hidden"
       >
         <Menu className="h-5 w-5" />
+      </button>
+
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        className="hidden shrink-0 rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary md:inline-flex"
+      >
+        {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
       </button>
 
       <div className="hidden shrink-0 items-center gap-2 text-sm text-muted lg:flex">

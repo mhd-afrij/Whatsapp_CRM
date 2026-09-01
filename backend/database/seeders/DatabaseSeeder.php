@@ -20,7 +20,6 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
             RolePermissionSeeder::class,
             AdminUserSeeder::class,
-            PipelineSeeder::class,
         ]);
     }
 }

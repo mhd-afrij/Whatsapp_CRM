@@ -21,7 +21,6 @@ const FIELD_TYPES = [
 
 const ENTITY_TYPES = [
   { value: 'contact', label: 'Contact' },
-  { value: 'lead', label: 'Lead' },
   { value: 'deal', label: 'Deal' },
 ];
 
@@ -78,7 +77,7 @@ function FieldDefinitionForm({
           <label className="text-sm font-medium">Type</label>
           <select
             value={fieldType}
-            onChange={(e) => setFieldType(e.target.value)}
+            onChange={(e) => setFieldType(e.target.value as CustomFieldDefinition["field_type"])}
             className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
           >
             {FIELD_TYPES.map((t) => (
@@ -180,7 +179,7 @@ export default function CustomFieldsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Custom Fields</h1>
-          <p className="text-sm text-muted">Define custom fields for contacts, leads, and deals</p>
+          <p className="text-sm text-muted">Define custom fields for contacts and deals</p>
         </div>
         <button
           onClick={() => { setShowForm(true); setEditingId(null); }}

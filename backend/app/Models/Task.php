@@ -41,14 +41,14 @@ class Task extends Model
         return $this->belongsTo(Contact::class);
     }
 
-    public function lead(): BelongsTo
-    {
-        return $this->belongsTo(Lead::class);
-    }
-
     public function deal(): BelongsTo
     {
         return $this->belongsTo(Deal::class);
+    }
+
+    public function lead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class);
     }
 
     public function conversation(): BelongsTo

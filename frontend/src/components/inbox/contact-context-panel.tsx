@@ -1,12 +1,11 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
-import { CalendarDays, CircleAlert, MessageSquareText, NotebookPen, StickyNote } from "lucide-react";
+import Link from "next/link";
+import { UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
 import { useConversation, useConversationActions } from "@/hooks/use-conversations";
-import { useConvertConversationToLead } from "@/hooks/use-leads";
 import { useUsers } from "@/hooks/use-users";
 import { useContact } from "@/hooks/use-contacts";
 import { useCreateNote, useNoteList } from "@/hooks/use-notes";
@@ -14,7 +13,7 @@ import { useTaskList } from "@/hooks/use-tasks";
 import { useWhatsappStatus } from "@/hooks/use-whatsapp-connection";
 import { LabelPicker } from "@/components/labels/label-picker";
 import { Avatar } from "@/components/ui/avatar";
-import { ApiError } from "@/lib/api-client";
+import { ChatOverviewPanel } from "@/components/contacts/chat-overview-panel";
 
 function SectionCard({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -40,13 +39,9 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
   const canAssign = usePermission("conversations.assign");
   const canClose = usePermission("conversations.close");
   const canReopen = usePermission("conversations.reopen");
-  const canManageLeads = usePermission("leads.manage");
   const canManageLabels = usePermission("conversations.reply");
   const { data: users } = useUsers();
-  const convertMutation = useConvertConversationToLead();
-  const router = useRouter();
-  const [convertError, setConvertError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "notes" | "tasks">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "chat" | "notes" | "tasks">("overview");
   const contactId = conversation?.contact?.id ?? null;
   const { data: contact } = useContact(contactId ?? 0);
   const { data: notes } = useNoteList({ conversation_id: conversationId });
@@ -57,6 +52,7 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
     () =>
       contact?.full_name ||
       conversation?.contact?.full_name ||
+      conversation?.whatsapp_contact?.contact_name ||
       conversation?.whatsapp_contact?.push_name ||
       conversation?.whatsapp_contact?.phone_number ||
       "Unknown contact",
@@ -78,7 +74,10 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
   const name = contactDisplay;
   const phoneNumber =
     contact?.phone_number ?? conversation.whatsapp_contact?.phone_number ?? conversation.whatsapp_contact?.wa_jid ?? null;
-  const statusLabel = conversation.whatsapp_contact?.push_name ? "WhatsApp contact" : "CRM contact";
+  const statusLabel =
+    conversation.whatsapp_contact?.contact_name || conversation.whatsapp_contact?.push_name
+      ? "WhatsApp contact"
+      : "CRM contact";
 
   return (
     <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-l border-border bg-surface">
@@ -92,12 +91,21 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
             ? `WhatsApp connected${whatsapp.phoneNumber ? ` · ${whatsapp.phoneNumber}` : ""}`
             : `WhatsApp ${whatsapp?.status ?? "idle"}`}
         </p>
+        {contactId && (
+          <Link
+            href={`/contacts/${contactId}`}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border bg-bg px-3 py-1.5 text-xs font-medium text-text hover:bg-primary-soft/40"
+          >
+            <UserRound className="h-3.5 w-3.5 text-muted" />
+            View full contact
+          </Link>
+        )}
       </div>
 
       <div className="min-h-0 overflow-y-auto overflow-x-hidden p-3">
         <div className="space-y-3">
           <div className="flex gap-2 rounded-2xl border border-border bg-bg p-1 text-xs">
-            {(["overview", "notes", "tasks"] as const).map((tab) => (
+            {(["overview", "chat", "notes", "tasks"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -117,18 +125,21 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
           <SectionCard title="Contact information">
             <dl className="space-y-2">
               {phoneNumber && <DetailRow label="Phone" value={phoneNumber} />}
-              {conversation.whatsapp_contact?.push_name && (
-                <DetailRow label="WhatsApp name" value={conversation.whatsapp_contact.push_name} />
+              {(conversation.whatsapp_contact?.contact_name || conversation.whatsapp_contact?.push_name) && (
+                <DetailRow
+                  label="WhatsApp name"
+                  value={conversation.whatsapp_contact.contact_name || conversation.whatsapp_contact.push_name}
+                />
               )}
               {contact?.email && <DetailRow label="Email" value={contact.email} />}
-              {contact?.company && <DetailRow label="Company" value={contact.company} />}
-              {contact?.job_title && <DetailRow label="Job title" value={contact.job_title} />}
               {conversation.contact?.full_name && conversation.contact.full_name !== name && (
                 <DetailRow label="CRM name" value={conversation.contact.full_name} />
               )}
-              {!conversation.contact?.email && !conversation.whatsapp_contact?.push_name && (
-                <p className="text-sm text-muted">No additional details on file.</p>
-              )}
+              {!conversation.contact?.email &&
+                !conversation.whatsapp_contact?.contact_name &&
+                !conversation.whatsapp_contact?.push_name && (
+                  <p className="text-sm text-muted">No additional details on file.</p>
+                )}
             </dl>
           </SectionCard>
 
@@ -185,25 +196,6 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
               {conversation.status}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {canManageLeads && (
-                <button
-                  type="button"
-                  disabled={convertMutation.isPending}
-                  onClick={async () => {
-                    setConvertError(null);
-                    try {
-                      const lead = await convertMutation.mutateAsync(conversationId);
-                      router.push(`/leads/${lead.id}`);
-                    } catch (error) {
-                      setConvertError(error instanceof ApiError ? error.message : "Unable to convert to a lead.");
-                    }
-                  }}
-                  className="rounded-full border border-border bg-bg px-3 py-1.5 text-xs font-medium text-text hover:bg-primary-soft/40 disabled:opacity-50"
-                >
-                  {convertMutation.isPending ? "Converting..." : "Convert to lead"}
-                </button>
-              )}
-
               {conversation.status === "closed" ? (
                 canReopen && (
                   <button
@@ -228,9 +220,12 @@ export function ContactContextPanel({ conversationId }: { conversationId: number
                 )
               )}
             </div>
-            {convertError && <p className="mt-2 text-xs text-danger">{convertError}</p>}
           </SectionCard>
             </>
+          )}
+
+          {activeTab === "chat" && (
+            <ChatOverviewPanel conversationId={conversationId} showOpenLink={false} compact />
           )}
 
           {activeTab === "notes" && (

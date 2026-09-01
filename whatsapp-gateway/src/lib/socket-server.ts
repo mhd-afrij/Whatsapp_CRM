@@ -137,7 +137,9 @@ export function emitConversationEvent(
     | 'conversation.assigned'
     | 'conversation.closed'
     | 'conversation.reopened'
-    | 'conversation.priority_changed',
+    | 'conversation.priority_changed'
+    | 'conversation.cleared'
+    | 'conversation.deleted',
   workspaceId: number,
   conversationId: number | null,
   payload: Record<string, unknown>,
@@ -148,6 +150,25 @@ export function emitConversationEvent(
     ns.to(`workspace:${workspaceId}:conversation:${conversationId}`);
   }
   ns.emit(event, envelope(event, workspaceId, payload));
+}
+
+/**
+ * Broadcasts a CRM contact lifecycle event (created/updated/deleted/restored)
+ * decided on the Laravel side (ContactController) to the workspace rooms, so
+ * open contact lists/details refresh without a page reload. Contacts are
+ * workspace-shared (not per-agent), so the inbox room + workspace room both
+ * receive it - the same rooms the contacts page's realtime hook joins.
+ */
+export function emitContactEvent(
+  event: 'contact.created' | 'contact.updated' | 'contact.deleted',
+  workspaceId: number,
+  payload: Record<string, unknown>,
+): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}`)
+    .to(`workspace:${workspaceId}:inbox`)
+    .emit(event, envelope(event, workspaceId, payload));
 }
 
 /**
@@ -227,6 +248,21 @@ export function emitPresenceUpdated(
   io.of('/gateway')
     .to(`workspace:${workspaceId}`)
     .emit('presence.updated', envelope('presence.updated', workspaceId, payload));
+}
+
+/**
+ * Broadcasts that a workspace's WhatsApp chat/contact data was cleared (a
+ * "reset" action originated via POST /internal/whatsapp/reset-data). The
+ * inbox and workspace rooms both receive it so open conversation lists /
+ * detail panels can drop their local state and refetch rather than serving
+ * now-deleted rows.
+ */
+export function emitConversationsReset(workspaceId: number, payload: Record<string, unknown>): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}:inbox`)
+    .to(`workspace:${workspaceId}`)
+    .emit('conversations.reset', envelope('conversations.reset', workspaceId, payload));
 }
 
 export function getSocketServer(): SocketIOServer | null {

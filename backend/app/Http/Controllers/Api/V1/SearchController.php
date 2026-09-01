@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Deal;
-use App\Models\Lead;
 use App\Models\Task;
+use App\Models\Lead;
 use Illuminate\Http\Request;
 
 class SearchController extends Controller
@@ -22,12 +22,12 @@ class SearchController extends Controller
      * `auth:sanctum`+`active`); `search.global` itself is granted to every seeded role (see
      * docs/07-permission-matrix.md), so the gate here is per-category: a category is included
      * in results only if the requesting user holds the permission that would let them view that
-     * entity type normally (contacts.view / conversations.view / leads.manage / deals.manage /
+     * entity type normally (contacts.view / conversations.view / deals.manage /
      * tasks.manage-or-view_team). This keeps search permission-aware without inventing a new
      * blanket "can see everything" permission.
      *
-     * Workspace isolation is automatic: every model queried here (Contact, Conversation, Lead,
-     * Deal, Task, Message) uses the BelongsToWorkspace trait, which applies a global scope
+     * Workspace isolation is automatic: every model queried here (Contact, Conversation,
+     * Deal, Task) uses the BelongsToWorkspace trait, which applies a global scope
      * filtering to the authenticated user's workspace_id on every query - no manual
      * workspace_id filtering is needed or done here.
      *
@@ -101,11 +101,11 @@ class SearchController extends Controller
         if ($user->hasPermission('conversations.view')) {
             $allowed[] = 'conversations';
         }
-        if ($user->hasPermission('leads.manage')) {
-            $allowed[] = 'leads';
-        }
         if ($user->hasPermission('deals.manage')) {
             $allowed[] = 'deals';
+        }
+        if ($user->hasPermission('leads.manage')) {
+            $allowed[] = 'leads';
         }
         if ($user->hasAnyPermission(['tasks.manage', 'tasks.view_team'])) {
             $allowed[] = 'tasks';
@@ -133,18 +133,14 @@ class SearchController extends Controller
         $useFt = $this->useFulltext();
 
         return match ($category) {
-            'contacts' => $useFt
-                ? Contact::query()
-                    ->whereRaw('MATCH(full_name, email, company) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)])
-                    ->orderByDesc('id')
-                : Contact::query()
-                    ->where(function ($query) use ($q) {
-                        $query->where('full_name', 'like', "%{$q}%")
-                            ->orWhere('email', 'like', "%{$q}%")
-                            ->orWhere('phone_number', 'like', "%{$q}%")
-                            ->orWhere('company', 'like', "%{$q}%");
-                    })
-                    ->orderByDesc('id'),
+            // Contacts use the model's search scope (LIKE + normalized-phone
+            // matching, spec §14) on every driver rather than FULLTEXT: the
+            // normalized-phone requirement can't be expressed with MATCH, and
+            // InnoDB FULLTEXT cannot see rows inserted inside an uncommitted
+            // transaction (which broke the insert-then-search tests).
+            'contacts' => Contact::query()
+                ->search($q)
+                ->orderByDesc('id'),
 
             'conversations' => $useFt
                 ? Conversation::query()
@@ -152,7 +148,9 @@ class SearchController extends Controller
                     ->where(function ($query) use ($q) {
                         $query->whereHas('contact', fn ($c) => $c->whereRaw('MATCH(full_name, email, company) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)]))
                             ->orWhereHas('whatsappContact', fn ($c) => $c->where('push_name', 'like', "%{$q}%"))
-                            ->orWhereHas('messages', fn ($m) => $m->whereRaw('MATCH(body) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)]));
+                            ->orWhereHas('messages', fn ($m) => $m
+                                ->whereNull('deleted_for_me_at')
+                                ->whereRaw('MATCH(body) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)]));
                     })
                     ->orderByDesc('last_message_at')
                 : Conversation::query()
@@ -160,25 +158,26 @@ class SearchController extends Controller
                     ->where(function ($query) use ($q) {
                         $query->whereHas('contact', fn ($c) => $c->where('full_name', 'like', "%{$q}%"))
                             ->orWhereHas('whatsappContact', fn ($c) => $c->where('push_name', 'like', "%{$q}%"))
-                            ->orWhereHas('messages', fn ($m) => $m->where('body', 'like', "%{$q}%"));
+                            ->orWhereHas('messages', fn ($m) => $m
+                                ->whereNull('deleted_for_me_at')
+                                ->where('body', 'like', "%{$q}%"));
                     })
                     ->orderByDesc('last_message_at'),
-
-            'leads' => Lead::query()
-                ->with(['contact'])
-                ->where(function ($query) use ($q) {
-                    $query->whereHas('contact', fn ($c) => $c->where('full_name', 'like', "%{$q}%")
-                        ->orWhere('email', 'like', "%{$q}%")
-                        ->orWhere('phone_number', 'like', "%{$q}%"))
-                        ->orWhere('status', 'like', "%{$q}%");
-                })
-                ->orderByDesc('created_at'),
 
             'deals' => Deal::query()
                 ->with(['contact'])
                 ->where(function ($query) use ($q) {
                     $query->where('title', 'like', "%{$q}%")
                         ->orWhereHas('contact', fn ($c) => $c->where('full_name', 'like', "%{$q}%"));
+                })
+                ->orderByDesc('created_at'),
+
+            'leads' => Lead::query()
+                ->with(['contact', 'owner'])
+                ->where(function ($query) use ($q) {
+                    $query->where('stage', 'like', "%{$q}%")
+                        ->orWhere('source', 'like', "%{$q}%")
+                        ->orWhereHas('contact', fn ($c) => $c->where('full_name', 'like', "%{$q}%")->orWhere('phone_number', 'like', "%{$q}%"));
                 })
                 ->orderByDesc('created_at'),
 

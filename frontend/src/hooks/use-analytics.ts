@@ -5,8 +5,6 @@ import {
   fetchAgentPerformance,
   fetchConversationVolume,
   fetchDashboardSummary,
-  fetchLeadFunnel,
-  fetchPipelineStageDistribution,
   fetchResponseTimeTrend,
   fetchTaskCompletionRate,
   fetchWonVsLost,
@@ -33,22 +31,6 @@ export function useResponseTimeTrend(filters: AnalyticsFilters) {
   return useQuery({
     queryKey: ["analytics", "response-time-trend", filters],
     queryFn: () => fetchResponseTimeTrend(filters),
-    staleTime: 15_000,
-  });
-}
-
-export function useLeadFunnel(filters: AnalyticsFilters) {
-  return useQuery({
-    queryKey: ["analytics", "lead-funnel", filters],
-    queryFn: () => fetchLeadFunnel(filters),
-    staleTime: 15_000,
-  });
-}
-
-export function usePipelineStageDistribution(filters: AnalyticsFilters) {
-  return useQuery({
-    queryKey: ["analytics", "pipeline-stage-distribution", filters],
-    queryFn: () => fetchPipelineStageDistribution(filters),
     staleTime: 15_000,
   });
 }

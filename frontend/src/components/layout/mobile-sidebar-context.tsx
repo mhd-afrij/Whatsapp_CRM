@@ -7,17 +7,22 @@ interface MobileSidebarContextValue {
   open: () => void;
   close: () => void;
   toggle: () => void;
+  collapsed: boolean;
+  toggleCollapsed: () => void;
 }
 
 const MobileSidebarContext = createContext<MobileSidebarContextValue | null>(null);
 
 export function MobileSidebarProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const value: MobileSidebarContextValue = {
     isOpen,
     open: () => setIsOpen(true),
     close: () => setIsOpen(false),
     toggle: () => setIsOpen((prev) => !prev),
+    collapsed,
+    toggleCollapsed: () => setCollapsed((prev) => !prev),
   };
   return (
     <MobileSidebarContext.Provider value={value}>{children}</MobileSidebarContext.Provider>

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { RequirePermission } from "@/components/auth/require-permission";
-import { usePipelineList } from "@/hooks/use-pipelines";
 import { useUpdateWorkspaceSettings, useWorkspaceSettings } from "@/hooks/use-workspace-settings";
 import { ApiError } from "@/lib/api-client";
 import type { WorkspaceSettings } from "@/lib/workspace-api";
@@ -22,7 +21,6 @@ const TIMEZONES = [
 ];
 
 function WorkspaceSettingsForm({ workspace }: { workspace: WorkspaceSettings }) {
-  const { data: pipelines } = usePipelineList();
   const updateMutation = useUpdateWorkspaceSettings();
 
   // Lazily seeded from the loaded workspace once (no effect needed - this
@@ -30,9 +28,6 @@ function WorkspaceSettingsForm({ workspace }: { workspace: WorkspaceSettings }) 
   // isLoading guard below).
   const [name, setName] = useState(workspace.name);
   const [timezone, setTimezone] = useState(workspace.timezone);
-  const [defaultPipelineId, setDefaultPipelineId] = useState<string>(
-    workspace.default_pipeline_id ? String(workspace.default_pipeline_id) : ""
-  );
   const defaults = workspace.notification_defaults as { email?: boolean; in_app?: boolean } | null;
   const [notifyEmail, setNotifyEmail] = useState(defaults?.email ?? true);
   const [notifyInApp, setNotifyInApp] = useState(defaults?.in_app ?? true);
@@ -47,7 +42,6 @@ function WorkspaceSettingsForm({ workspace }: { workspace: WorkspaceSettings }) 
       await updateMutation.mutateAsync({
         name: name.trim(),
         timezone,
-        default_pipeline_id: defaultPipelineId ? Number(defaultPipelineId) : null,
         notification_defaults: { email: notifyEmail, in_app: notifyInApp },
       });
       setSaved(true);
@@ -106,21 +100,6 @@ function WorkspaceSettingsForm({ workspace }: { workspace: WorkspaceSettings }) 
               {TIMEZONES.map((tz) => (
                 <option key={tz} value={tz}>
                   {tz}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted">Default pipeline</label>
-            <select
-              value={defaultPipelineId}
-              onChange={(e) => setDefaultPipelineId(e.target.value)}
-              className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm text-text"
-            >
-              <option value="">None</option>
-              {pipelines?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
                 </option>
               ))}
             </select>

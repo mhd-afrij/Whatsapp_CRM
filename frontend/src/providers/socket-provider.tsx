@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { io, type Socket } from "socket.io-client";
 import { useAuth } from "@/context/auth-context";
 import { getToken } from "@/lib/token-store";
@@ -18,58 +11,75 @@ interface SocketContextValue {
   isConnected: boolean;
 }
 
-const SocketContext = createContext<SocketContextValue>({
-  socket: null,
-  isConnected: false,
-});
+const SocketContext = createContext<SocketContextValue | undefined>(undefined);
 
-const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:4000";
+let activeSocket: Socket | null = null;
+
+export function getSocket(): Socket | null {
+  return activeSocket;
+}
 
 export function SocketProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, user } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- tearing down the socket connection when auth is lost is a direct synchronization of external state, not derived render state
-      setSocket((current) => {
-        current?.disconnect();
-        return null;
-      });
-      setIsConnected(false);
-      return;
-    }
-
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:4000";
     const token = getToken();
-    const workspaceId = user?.workspace_id !== undefined ? Number(user.workspace_id) : undefined;
-    const instance = wrapSocketWithEnvelope(
-      io(`${socketUrl}/gateway`, {
-        autoConnect: true,
-        transports: ["websocket"],
-        auth: token ? { token } : undefined,
-      }),
-      Number.isFinite(workspaceId) ? workspaceId : undefined
-    );
 
-    instance.on("connect", () => setIsConnected(true));
-    instance.on("disconnect", () => setIsConnected(false));
+    const client = io(`${socketUrl}/gateway`, {
+      transports: ["polling", "websocket"],
+      auth: token ? { token } : undefined,
+    });
 
-    setSocket(instance);
+    // Every gateway event is delivered inside an `{event_id, event_type,
+    // workspace_id, occurred_at, data}` envelope (docs/EVENT_CATALOG.md). Wrap
+    // the client once here so all `socket.on(...)` call sites below receive the
+    // unwrapped `data` and get envelope dedup/workspace filtering for free.
+    // NOTE: the auth context stores workspace_id as a string, but the envelope
+    // carries a number - coerce before the strict comparison in the wrapper.
+    const workspaceId =
+      user?.workspace_id != null ? Number(user.workspace_id) : undefined;
+    const wrapped = wrapSocketWithEnvelope(client, workspaceId);
+
+    const handleConnect = () => setIsConnected(true);
+    const handleDisconnect = () => setIsConnected(false);
+
+    wrapped.on("connect", handleConnect);
+    wrapped.on("disconnect", handleDisconnect);
+    wrapped.on("connect_error", handleDisconnect);
+
+    socketRef.current = wrapped;
+    activeSocket = wrapped;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- publishing the just-created socket instance is part of establishing the external connection, same pattern as auth-context.tsx
+    setSocket(wrapped);
 
     return () => {
-      instance.disconnect();
+      wrapped.off("connect", handleConnect);
+      wrapped.off("disconnect", handleDisconnect);
+      wrapped.off("connect_error", handleDisconnect);
+      client.disconnect();
+      if (activeSocket === wrapped) {
+        activeSocket = null;
+      }
+      socketRef.current = null;
       setSocket(null);
       setIsConnected(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reconnecting on every user object identity change (e.g. a background /auth/me refetch) would tear down and rejoin all inbox rooms unnecessarily; only workspace_id actually matters and that doesn't change without a full re-auth (isAuthenticated flip).
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.workspace_id]);
 
-  const value = useMemo(() => ({ socket, isConnected }), [socket, isConnected]);
-
-  return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
+  return (
+    <SocketContext.Provider value={{ socket, isConnected }}>{children}</SocketContext.Provider>
+  );
 }
 
 export function useSocket(): SocketContextValue {
-  return useContext(SocketContext);
+  const ctx = useContext(SocketContext);
+  if (!ctx) {
+    throw new Error("useSocket must be used within a SocketProvider");
+  }
+  return ctx;
 }
+

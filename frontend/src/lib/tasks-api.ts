@@ -19,7 +19,6 @@ export interface Task {
   assignee_id: number | null;
   created_by: number | null;
   contact_id: number | null;
-  lead_id: number | null;
   deal_id: number | null;
   conversation_id: number | null;
   due_at: string | null;
@@ -29,7 +28,6 @@ export interface Task {
   assignee: UserSummary | null;
   creator: UserSummary | null;
   contact: TaskLinkSummary | null;
-  lead: TaskLinkSummary | null;
   deal: TaskLinkSummary | null;
   conversation: TaskLinkSummary | null;
   created_at: string;
@@ -54,8 +52,9 @@ export interface TaskFilters {
   completed?: boolean;
   status?: TaskStatus;
   priority?: TaskPriority;
+  /** Due on a specific day (YYYY-MM-DD). */
+  due_date?: string;
   contact_id?: number;
-  lead_id?: number;
   deal_id?: number;
   conversation_id?: number;
   page?: number;
@@ -67,7 +66,6 @@ export interface TaskFormValues {
   description?: string | null;
   assignee_id?: number | null;
   contact_id?: number | null;
-  lead_id?: number | null;
   deal_id?: number | null;
   conversation_id?: number | null;
   due_at?: string | null;
@@ -80,7 +78,6 @@ export interface TaskUpdateValues {
   description?: string | null;
   assignee_id?: number | null;
   contact_id?: number | null;
-  lead_id?: number | null;
   deal_id?: number | null;
   conversation_id?: number | null;
   due_at?: string | null;
@@ -99,7 +96,8 @@ async function unwrapPaginated<T>(
   promise: Promise<{ data: PaginatedApiResponse<T> }>
 ): Promise<Paginated<T>> {
   const { data: body } = await promise;
-  if (!body.success) {
+  // Backend omits `success` on 2xx bodies — only an explicit false is a failure.
+  if (body.success === false || !body.data) {
     throw new Error(body.message ?? "Request failed");
   }
   return { data: body.data, meta: body.meta ?? { per_page: 0, has_more: false } };

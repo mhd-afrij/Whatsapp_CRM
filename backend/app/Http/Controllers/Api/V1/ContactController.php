@@ -6,32 +6,63 @@ use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\ContactActivity;
 use App\Models\Label;
+use App\Services\ContactDeduplicator;
+use App\Services\GatewayClient;
 use App\Support\AuditLogger;
+use App\Support\PhoneNumber;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ContactController extends Controller
 {
     /**
      * GET /api/v1/contacts
-     * Search (name/email/phone/company), filters (owner_user_id, has_conversation),
-     * sort (sort=field, direction=asc|desc), pagination.
+     * Search (name/email/phone/company, phone matched on the normalized key too),
+     * filters (status, source, country, whatsapp connected/unavailable,
+     * recently_contacted, owner_user_id, labels, archived), sort and pagination.
      */
     public function index(Request $request)
     {
         $this->authorize('viewAny', Contact::class);
 
-        $query = Contact::query()->with(['owner', 'whatsappContact', 'labels']);
+        $query = Contact::query()
+            ->with(['owner', 'whatsappContact', 'labels'])
+            ->selectRaw('contacts.*, '.$this->lastActivitySubquery().' AS last_activity_at');
 
         if ($request->filled('search')) {
-            $search = $request->string('search')->toString();
-            $query->where(function ($q) use ($search) {
-                $q->where('full_name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%")
-                    ->orWhere('phone_number', 'like', "%{$search}%")
-                    ->orWhere('company', 'like', "%{$search}%");
+            $query->search($request->string('search')->toString());
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->string('status'));
+        }
+
+        if ($request->filled('source')) {
+            $query->where('source', $request->string('source'));
+        }
+
+        if ($request->filled('country')) {
+            $query->where('country', $request->string('country'));
+        }
+
+        $whatsapp = $request->string('whatsapp')->toString();
+        if ($whatsapp === 'connected') {
+            $query->whatsappConnected();
+        } elseif ($whatsapp === 'unavailable') {
+            $query->whatsappUnavailable();
+        }
+
+        if ($request->boolean('recently_contacted')) {
+            $since = now()->subDays((int) $request->integer('recently_contacted_days', 7));
+            $query->where(function ($q) use ($since) {
+                $q->where('last_contacted_at', '>=', $since)
+                    ->orWhereHas('conversations', fn ($c) => $c->where('last_message_at', '>=', $since))
+                    ->orWhereHas('whatsappContact.conversations', fn ($c) => $c->where('last_message_at', '>=', $since));
             });
         }
 
@@ -52,7 +83,7 @@ class ContactController extends Controller
 
         $sort = $request->string('sort', 'created_at')->toString();
         $direction = $request->string('direction', 'desc')->toString() === 'asc' ? 'asc' : 'desc';
-        $allowedSorts = ['full_name', 'email', 'company', 'created_at', 'updated_at'];
+        $allowedSorts = ['full_name', 'email', 'company', 'created_at', 'updated_at', 'last_contacted_at', 'status'];
         if (! in_array($sort, $allowedSorts, true)) {
             $sort = 'created_at';
         }
@@ -60,6 +91,10 @@ class ContactController extends Controller
         $perPage = min(max((int) $request->integer('per_page', 15), 1), 100);
 
         $paginator = $query->orderBy($sort, $direction)->orderByDesc('id')->paginate($perPage);
+
+        foreach ($paginator->items() as $contact) {
+            $contact->last_contacted_at = $this->bestLastContactedAt($contact);
+        }
 
         return $this->success($paginator->items(), 'OK', [
             'page' => $paginator->currentPage(),
@@ -71,11 +106,17 @@ class ContactController extends Controller
 
     /**
      * GET /api/v1/contacts/{id}
-     * Includes conversation history, activity timeline, and linked leads/deals
-     * (empty arrays if those modules haven't shipped an API yet - never fabricated).
+     * Includes conversation history, activity timeline, and linked deals.
+     * Trashed (archived) contacts resolve too - the recreate/restore flow must
+     * be able to view an archived contact before restoring it, so the lookup
+     * uses withTrashed() + an explicit workspace check instead of route model
+     * binding (which would 404 on soft-deleted rows).
      */
-    public function show(Request $request, Contact $contact)
+    public function show(Request $request, int $id)
     {
+        $contact = Contact::withTrashed()
+            ->selectRaw('contacts.*, '.$this->lastActivitySubquery().' AS last_activity_at')
+            ->findOrFail($id);
         $this->authorize('view', $contact);
 
         $contact->load([
@@ -84,9 +125,10 @@ class ContactController extends Controller
             'labels',
             'conversations' => fn ($q) => $q->orderByDesc('last_message_at')->limit(20),
             'activities' => fn ($q) => $q->orderByDesc('occurred_at')->limit(50),
-            'leads',
             'deals',
         ]);
+
+        $contact->last_contacted_at = $this->bestLastContactedAt($contact);
 
         return $this->success($contact, 'OK');
     }
@@ -113,10 +155,14 @@ class ContactController extends Controller
         $contact = Contact::create(array_merge($data, [
             'workspace_id' => $workspaceId,
             'owner_user_id' => $data['owner_user_id'] ?? $request->user()->id,
+            'status' => $data['status'] ?? Contact::STATUS_ACTIVE,
+            'source' => $data['source'] ?? Contact::SOURCE_MANUAL,
+            'last_contacted_at' => $data['last_contacted_at'] ?? now(),
         ]));
 
         $this->logActivity($contact, 'other', 'Contact created', $request->user()->id);
         AuditLogger::log('contact.created', $request->user(), $contact, $data, $request);
+        $this->relayContactEvent('contact.created', $contact);
 
         return $this->success([
             'contact' => $contact->fresh(['owner', 'whatsappContact', 'labels']),
@@ -145,12 +191,15 @@ class ContactController extends Controller
 
         $this->logActivity($contact, 'other', 'Contact updated', $request->user()->id);
         AuditLogger::log('contact.updated', $request->user(), $contact, $data, $request, $before);
+        $this->relayContactEvent('contact.updated', $contact);
 
         return $this->success($contact->fresh(['owner', 'whatsappContact', 'labels']), 'Contact updated');
     }
 
     /**
-     * DELETE /api/v1/contacts/{id} - soft delete (archive).
+     * DELETE /api/v1/contacts/{id} - soft delete (archive). Conversation and
+     * message history is preserved (they reference whatsapp_contacts, not the
+     * CRM contact); the audit log records the archive.
      */
     public function destroy(Request $request, Contact $contact)
     {
@@ -160,12 +209,17 @@ class ContactController extends Controller
 
         $this->logActivity($contact, 'other', 'Contact archived', $request->user()->id);
         AuditLogger::log('contact.archived', $request->user(), $contact, [], $request);
+        $this->relayContactEvent('contact.deleted', $contact);
 
         return $this->success(null, 'Contact archived');
     }
 
     /**
      * POST /api/v1/contacts/{id}/restore
+     * Recreates an archived (soft-deleted) contact. If a contact with the same
+     * normalized phone number is already active in the workspace, both are kept
+     * (the caller decides how to merge) - matching the duplicate-flagging (not
+     * blocking) policy used on create.
      */
     public function restore(Request $request, int $id)
     {
@@ -176,13 +230,39 @@ class ContactController extends Controller
 
         $this->logActivity($contact, 'other', 'Contact restored', $request->user()->id);
         AuditLogger::log('contact.restored', $request->user(), $contact, [], $request);
+        $this->relayContactEvent('contact.updated', $contact);
 
         return $this->success($contact->fresh(), 'Contact restored');
     }
 
     /**
+     * POST /api/v1/contacts/merge-duplicates
+     * Merges duplicate contacts (same workspace + normalized phone number) that
+     * were left behind before phone-based dedup was enforced on the WhatsApp
+     * path: keeps the manually-saved row, re-points every linked record, and
+     * deletes the rest. Pass { dry_run: true } to preview without changing
+     * anything (gated on contacts.delete - it is a destructive maintenance op).
+     */
+    public function mergeDuplicates(Request $request, ContactDeduplicator $deduplicator)
+    {
+        $dryRun = $request->boolean('dry_run');
+        $report = $deduplicator->mergeDuplicates($request->user()->workspace_id, $dryRun);
+
+        AuditLogger::log(
+            $dryRun ? 'contacts.merge_duplicates_preview' : 'contacts.merge_duplicates',
+            $request->user(),
+            null,
+            ['groups' => $report['groups'], 'merged' => $report['merged'], 'deleted' => $report['deleted']],
+            $request
+        );
+
+        return $this->success($report, $dryRun ? 'Duplicate contacts preview' : 'Duplicate contacts merged');
+    }
+
+    /**
      * POST /api/v1/contacts/import
-     * CSV columns: full_name,email,company,job_title,phone_number.
+     * CSV columns: full_name,email,company,job_title,phone_number,address,city,
+     * country,timezone,status,source.
      * Returns a per-row validation report; duplicates are flagged, not silently
      * created or rejected - the caller decides via the report.
      */
@@ -203,7 +283,7 @@ class ContactController extends Controller
         $header = fgetcsv($handle);
         $header = array_map(fn ($h) => strtolower(trim((string) $h)), $header ?: []);
 
-        $allowed = ['full_name', 'email', 'company', 'job_title', 'phone_number'];
+        $allowed = ['full_name', 'email', 'company', 'job_title', 'phone_number', 'address', 'city', 'country', 'timezone', 'status', 'source'];
         $workspaceId = $request->user()->workspace_id;
 
         $report = ['created' => [], 'failed' => [], 'duplicates' => []];
@@ -218,13 +298,7 @@ class ContactController extends Controller
                 }
             }
 
-            $rowValidator = Validator::make($rowData, [
-                'full_name' => 'nullable|string|max:255',
-                'email' => 'nullable|email|max:255',
-                'company' => 'nullable|string|max:255',
-                'job_title' => 'nullable|string|max:150',
-                'phone_number' => 'nullable|string|max:32',
-            ]);
+            $rowValidator = Validator::make($rowData, $this->rules());
 
             if ($rowValidator->fails()) {
                 $report['failed'][] = [
@@ -253,6 +327,8 @@ class ContactController extends Controller
             $contact = Contact::create(array_merge($data, [
                 'workspace_id' => $workspaceId,
                 'owner_user_id' => $request->user()->id,
+                'status' => $data['status'] ?? Contact::STATUS_ACTIVE,
+                'source' => $data['source'] ?? Contact::SOURCE_IMPORT,
             ]));
 
             $this->logActivity($contact, 'other', 'Contact imported', $request->user()->id);
@@ -293,7 +369,7 @@ class ContactController extends Controller
         $this->authorize('export', Contact::class);
 
         $workspaceId = $request->user()->workspace_id;
-        $columns = ['id', 'full_name', 'email', 'company', 'job_title', 'phone_number', 'owner_user_id', 'created_at'];
+        $columns = ['id', 'full_name', 'email', 'company', 'job_title', 'phone_number', 'address', 'city', 'country', 'timezone', 'status', 'source', 'owner_user_id', 'last_contacted_at', 'created_at'];
 
         $response = new StreamedResponse(function () use ($workspaceId, $columns) {
             $handle = fopen('php://output', 'w');
@@ -324,6 +400,13 @@ class ContactController extends Controller
             'company' => 'sometimes|nullable|string|max:255',
             'job_title' => 'sometimes|nullable|string|max:150',
             'phone_number' => 'sometimes|nullable|string|max:32',
+            'address' => 'sometimes|nullable|string|max:255',
+            'city' => 'sometimes|nullable|string|max:100',
+            'country' => 'sometimes|nullable|string|max:100',
+            'timezone' => ['sometimes', 'nullable', 'string', 'max:64', 'timezone'],
+            'status' => ['sometimes', 'nullable', Rule::in([Contact::STATUS_ACTIVE, Contact::STATUS_INACTIVE])],
+            'priority' => ['sometimes', 'nullable', Rule::in([Contact::PRIORITY_LOW, Contact::PRIORITY_NORMAL, Contact::PRIORITY_HIGH, Contact::PRIORITY_URGENT])],
+            'source' => ['sometimes', 'nullable', 'string', 'max:30'],
             'custom_fields' => 'sometimes|nullable|array',
             'owner_user_id' => [
                 'sometimes', 'nullable', 'integer',
@@ -332,15 +415,24 @@ class ContactController extends Controller
         ];
     }
 
+    /**
+     * Finds a duplicate within the workspace using the normalized phone number
+     * (spec §4), falling back to the raw value for legacy rows that predate
+     * normalization. Null when the phone is empty or no match exists.
+     */
     protected function findDuplicate(int $workspaceId, ?string $phoneNumber): ?Contact
     {
-        if (! $phoneNumber) {
+        if (! $phoneNumber || ! preg_match('/\d/', $phoneNumber)) {
             return null;
         }
 
+        $normalized = PhoneNumber::normalize($phoneNumber);
+
         return Contact::query()
             ->where('workspace_id', $workspaceId)
-            ->where('phone_number', $phoneNumber)
+            ->where(fn ($q) => $q
+                ->where('normalized_phone_number', $normalized)
+                ->orWhere('phone_number', $phoneNumber))
             ->first();
     }
 
@@ -354,6 +446,56 @@ class ContactController extends Controller
             'occurred_at' => now(),
             'created_by' => $userId,
         ]);
+    }
+
+    /**
+     * Best-effort relay of contact CRUD events to the gateway's Socket.IO layer
+     * so open contact lists/details update in realtime (spec §17). A gateway
+     * outage must never fail the mutation - it is already committed by the time
+     * this runs - so failures are logged, not thrown.
+     */
+    protected function relayContactEvent(string $event, Contact $contact): void
+    {
+        try {
+            app(GatewayClient::class)->emitEvent($event, $contact->workspace_id, null, [
+                'contact_id' => $contact->id,
+            ]);
+        } catch (RuntimeException $e) {
+            Log::warning('Failed to relay contact event to gateway', [
+                'event' => $event,
+                'contact_id' => $contact->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Subquery that derives the freshest conversation activity for a contact,
+     * covering both linking paths: conversations.contact_id and
+     * conversations.whatsapp_contact_id -> whatsapp_contacts.contact_id. Used
+     * by index() and show() so "last contacted" reflects gateway-created
+     * WhatsApp threads even before any backend write bumps the stored column.
+     */
+    protected function lastActivitySubquery(): string
+    {
+        return '(SELECT MAX(conv.last_message_at) FROM conversations conv WHERE conv.workspace_id = contacts.workspace_id AND (conv.contact_id = contacts.id OR conv.whatsapp_contact_id IN (SELECT wc.id FROM whatsapp_contacts wc WHERE wc.contact_id = contacts.id)))';
+    }
+
+    /**
+     * The effective "last contacted" for display: the freshest of the stored
+     * column and the derived max conversation activity (so gateway-created
+     * WhatsApp threads count even before any backend write bumps the column).
+     */
+    protected function bestLastContactedAt(Contact $contact): ?Carbon
+    {
+        $stored = $contact->last_contacted_at?->getTimestamp() ?? 0;
+        $derived = $contact->getAttribute('last_activity_at')
+            ? (int) strtotime((string) $contact->getAttribute('last_activity_at'))
+            : 0;
+
+        $best = max($stored, $derived);
+
+        return $best > 0 ? Carbon::createFromTimestampUTC($best) : $contact->last_contacted_at;
     }
 
     /**

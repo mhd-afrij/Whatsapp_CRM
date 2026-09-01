@@ -170,11 +170,10 @@ function TaskDetail({ id }: { id: number }) {
           <div>
             <p className="text-xs uppercase text-muted">Linked to</p>
             <p className="text-sm text-text">
-              {task.lead && `Lead #${task.lead.id}`}
               {task.deal && `Deal #${task.deal.id}`}
               {task.contact && `Contact #${task.contact.id}`}
               {task.conversation && `Conversation #${task.conversation.id}`}
-              {!task.lead && !task.deal && !task.contact && !task.conversation && "—"}
+              {!task.deal && !task.contact && !task.conversation && "—"}
             </p>
           </div>
         </div>

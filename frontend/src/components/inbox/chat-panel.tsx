@@ -4,21 +4,28 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import Link from "next/link";
 import {
   ArrowLeft,
-  Check,
-  CheckCheck,
+  Ban,
   ChevronDown,
   Clock,
   Copy,
   CornerUpLeft,
   Archive,
+  Download,
   FileText,
+  Flag,
+  Forward,
   Info,
   Lock,
+  Mail,
   MoreVertical,
+  Music,
   Paperclip,
   Pin,
+  Search,
   Send,
   Sparkles,
+  Trash2,
+  Video,
   Volume2,
   X,
   XCircle,
@@ -28,19 +35,30 @@ import { usePermission } from "@/hooks/use-permission";
 import {
   useConversation,
   useConversationActions,
+  useForwardMessage,
   useLoadOlderMessages,
+  useMessageStar,
   useMessages,
   useSendMessage,
   useTypingIndicator,
   messagesKey,
 } from "@/hooks/use-conversations";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCreateNote } from "@/hooks/use-notes";
 import { useComposerDraft } from "@/hooks/use-composer-draft";
 import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
 import { ApiError } from "@/lib/api-client";
 import type { ConversationPriority, Message, OutboundMessageType } from "@/lib/conversations-api";
-import { uploadMessageMedia, addReaction, removeReaction, revokeMessage } from "@/lib/conversations-api";
+import {
+  uploadMessageMedia,
+  addReaction,
+  removeReaction,
+  revokeMessage,
+  deleteMessageForMe,
+  fetchMediaUrl,
+  fetchConversations,
+  exportConversationChat,
+} from "@/lib/conversations-api";
 import { useAuth } from "@/context/auth-context";
 import { MediaPreview } from "./media-preview";
 import { MessageReactions } from "./message-reactions";
@@ -50,6 +68,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/providers/toast-provider";
 import { PRIORITY_OPTIONS } from "@/components/inbox/priority-selector";
 import { formatInboxDateSeparator, formatInboxTime, isSameInboxDay } from "@/lib/time-format";
+import { useMessageSearch } from "@/hooks/use-message-search";
+import { MessageStatusTick } from "./message/message-status-tick";
 
 const NEAR_BOTTOM_THRESHOLD_PX = 80;
 const NEAR_TOP_THRESHOLD_PX = 80;
@@ -90,6 +110,7 @@ function contactLabel(conversation: ReturnType<typeof useConversation>["data"]):
   if (!conversation) return "";
   return (
     conversation.contact?.full_name ||
+    conversation.whatsapp_contact?.contact_name ||
     conversation.whatsapp_contact?.push_name ||
     conversation.whatsapp_contact?.phone_number ||
     conversation.whatsapp_contact?.wa_jid ||
@@ -110,12 +131,59 @@ function contactSubtitle(conversation: ReturnType<typeof useConversation>["data"
   return [number, status].filter(Boolean).join(" | ");
 }
 
-function StatusTick({ status }: { status: Message["status"] }) {
-  if (status === "failed") return <XCircle className="h-3 w-3 text-danger" />;
-  if (status === "read") return <CheckCheck className="h-3 w-3 text-info" />;
-  if (status === "delivered") return <CheckCheck className="h-3 w-3 text-muted" />;
-  if (status === "sent") return <Check className="h-3 w-3 text-muted" />;
-  return <Clock className="h-3 w-3 text-muted" />;
+function mediaTypeLabel(mime: string): string {
+  if (mime.startsWith("image/")) return "Photo";
+  if (mime.startsWith("video/")) return "Video";
+  if (mime.startsWith("audio/")) return "Audio";
+  return "Document";
+}
+
+/** Compact 36px thumbnail for the reply quote bar — reuses the same signed-URL
+ *  query ("media-url") as MediaPreview, so already-loaded media is instant. */
+function ReplyMediaThumb({
+  conversationId,
+  message,
+}: {
+  conversationId: number;
+  message: Message;
+}) {
+  const media = message.media;
+  const isImage = Boolean(media?.mime_type.startsWith("image/"));
+  const { data } = useQuery({
+    queryKey: ["media-url", conversationId, message.id, media?.id],
+    queryFn: () =>
+      media ? fetchMediaUrl(conversationId, message.id, media.id) : Promise.resolve(null),
+    enabled: isImage,
+    staleTime: 60_000,
+  });
+
+  if (!media) return null;
+
+  const isVideo = media.mime_type.startsWith("video/");
+  const isAudio = media.mime_type.startsWith("audio/");
+
+  if (isImage && data?.kind === "signed_url" && data.url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL
+      <img
+        src={data.url}
+        alt=""
+        className="h-9 w-9 shrink-0 rounded-lg border border-border object-cover"
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface">
+      {isVideo ? (
+        <Video className="h-4 w-4 text-muted" />
+      ) : isAudio ? (
+        <Music className="h-4 w-4 text-muted" />
+      ) : (
+        <FileText className="h-4 w-4 text-muted" />
+      )}
+    </div>
+  );
 }
 
 function MessageActionsMenu({
@@ -123,15 +191,18 @@ function MessageActionsMenu({
   conversationId,
   onReply,
   onJumpToReply,
-  onRevoke,
+  onStarToggle,
+  onForward,
+  onRequestDelete,
 }: {
   message: Message;
   conversationId: number;
   onReply: (message: Message) => void;
   onJumpToReply: (messageId: number) => void;
-  onRevoke: (messageId: number) => void;
+  onStarToggle: (message: Message) => void;
+  onForward: (message: Message) => void;
+  onRequestDelete: (message: Message) => void;
 }) {
-  const { user } = useAuth();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -157,18 +228,6 @@ function MessageActionsMenu({
     }
     setOpen(false);
   };
-
-  const handleRevoke = () => {
-    if (window.confirm("Revoke this message for everyone?")) {
-      onRevoke(message.id);
-    }
-    setOpen(false);
-  };
-
-  const canRevoke =
-    message.direction === "outbound" &&
-    message.sender_type === "user" &&
-    message.sender?.id === user?.id;
 
   return (
     <div ref={ref} className="absolute right-2 top-2 z-10">
@@ -209,24 +268,262 @@ function MessageActionsMenu({
           </button>
           <button
             type="button"
+            onClick={() => {
+              onForward(message);
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+          >
+            <Forward className="h-4 w-4 text-muted" />
+            Forward
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onStarToggle(message);
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+          >
+            <Sparkles className="h-4 w-4 text-muted" />
+            {message.starred_at ? "Unstar" : "Star"}
+          </button>
+          <button
+            type="button"
             onClick={copyMessage}
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
           >
             <Copy className="h-4 w-4 text-muted" />
             Copy text
           </button>
-          {canRevoke && (
-            <button
-              type="button"
-              onClick={handleRevoke}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
-            >
-              <XCircle className="h-4 w-4" />
-              Revoke message
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              onRequestDelete(message);
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete message
+          </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function MessageContextMenu({
+  message,
+  conversationId,
+  onReply,
+  onCopy,
+  onStarToggle,
+  onForward,
+  onRetry,
+  onRequestDelete,
+}: {
+  message: Message;
+  conversationId: number;
+  onReply: (message: Message) => void;
+  onCopy: (text: string) => void;
+  onStarToggle: (message: Message) => void;
+  onForward: (message: Message) => void;
+  onRetry: (messageId: number) => void;
+  onRequestDelete: (message: Message) => void;
+}) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [x, setX] = useState(0);
+  const [y, setY] = useState(0);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickaway = (e: MouseEvent) => {
+      if (e.target instanceof Node && !(e.target as HTMLElement).closest(".message-context-menu")) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickaway);
+    return () => document.removeEventListener("mousedown", handleClickaway);
+  }, [open]);
+
+  const handleReply = () => {
+    onReply(message);
+    setOpen(false);
+  };
+
+  const handleCopy = () => {
+    const text = message.body?.trim() || `[${message.message_type}]`;
+    onCopy(text);
+    setOpen(false);
+  };
+
+  const canRetry =
+    message.direction === "outbound" &&
+    message.sender_type === "user" &&
+    message.sender?.id === user?.id &&
+    message.status === "failed";
+
+  return (
+    <div
+      className={`absolute pointer-events-none transform transition-opacity opacity-0 rounded-xl border border-border bg-surface py-1 shadow-lg z-40 ${
+        open ? "pointer-events-auto opacity-100" : ""
+      }`}
+      style={{ left: `${x}px`, top: `${y}px` }}
+      onClick={(e) => {
+        // Click outside closes menu
+        setOpen(false);
+      }}
+    >
+      <div
+        className="rounded-xl border border-border bg-surface py-1 shadow-lg w-max max-w-xs"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={handleReply}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+        >
+          <CornerUpLeft className="h-3.5 w-3.5 text-muted" />
+          Reply
+        </button>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg mt-2"
+        >
+          <Copy className="h-3.5 w-3.5 text-muted" />
+          Copy text
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            onForward(message);
+            setOpen(false);
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg mt-2"
+        >
+          <Forward className="h-3.5 w-3.5 text-muted" />
+          Forward
+        </button>
+        {canRetry && (
+          <button
+            type="button"
+            onClick={() => {
+              onRetry(message.id);
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-primary hover:bg-primary/10"
+          >
+            <Clock className="h-3.5 w-3.5 text-muted" />
+            Retry
+          </button>
+        )}
+        {!canRetry && (
+          <button
+            type="button"
+            onClick={() => {
+              onStarToggle(message);
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-muted" />
+            {message.starred_at ? "Unstar" : "Star"}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            onRequestDelete(message);
+            setOpen(false);
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-danger/10 mt-2"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete message
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * WhatsApp-style delete dialog (mirrors WhatsApp's "Delete message?" prompt):
+ * "Delete for everyone" (revoke - only for the user's own outbound messages)
+ * or "Delete for me" (hide from this workspace's inbox; the contact's copy is
+ * untouched). Rendered at the bubble's top level (outside the z-10 menus) so
+ * the fixed backdrop sits above the composer and conversation action menu.
+ */
+function DeleteMessageDialog({
+  message,
+  canDeleteForEveryone,
+  onDeleteForMe,
+  onDeleteForEveryone,
+  onClose,
+}: {
+  message: Message;
+  canDeleteForEveryone: boolean;
+  onDeleteForMe: (message: Message) => void;
+  onDeleteForEveryone: (messageId: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative mx-4 w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-xl">
+        <h3 className="text-base font-semibold text-text">Delete message?</h3>
+        <p className="mt-2 text-sm text-muted">
+          {canDeleteForEveryone
+            ? "Delete this message for everyone in the chat, or just remove it from your inbox?"
+            : "This message will only be removed from your inbox. The contact will still have it."}
+        </p>
+        <div className="mt-4 flex flex-col gap-2">
+          {canDeleteForEveryone && (
+            <button
+              type="button"
+              onClick={() => {
+                onDeleteForEveryone(message.id);
+                onClose();
+              }}
+              className="flex w-full items-center gap-2 rounded-xl border border-border bg-bg px-3 py-2 text-sm text-danger hover:bg-danger/10"
+            >
+              <XCircle className="h-4 w-4" />
+              Delete for everyone
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              onDeleteForMe(message);
+              onClose();
+            }}
+            className="flex w-full items-center gap-2 rounded-xl border border-border bg-bg px-3 py-2 text-sm text-danger hover:bg-danger/10"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete for me
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex w-full items-center gap-2 rounded-xl border border-border bg-bg px-3 py-2 text-sm text-text hover:bg-surface"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -236,34 +533,58 @@ function MessageBubble({
   conversationId,
   allMessages,
   timeZone,
+  isReplyingTo,
   onReply,
   onJumpToMessage,
   onReact,
+  onStarToggle,
+  onForward,
   onRevoke,
+  onDeleteForMe,
 }: {
   message: Message;
   conversationId: number;
   allMessages: Message[];
   timeZone?: string | null;
+  isReplyingTo?: boolean;
   onReply: (message: Message) => void;
   onJumpToMessage: (messageId: number) => void;
   onReact: (messageId: number, emoji: string, remove: boolean) => void;
+  onStarToggle: (message: Message) => void;
+  onForward: (message: Message) => void;
   onRevoke: (messageId: number) => void;
+  onDeleteForMe: (message: Message) => void;
 }) {
   const { user } = useAuth();
+  const [deleteTarget, setDeleteTarget] = useState<Message | null>(null);
   const isOutbound = message.direction === "outbound";
   const repliedTo = message.replied_to_message_id
     ? allMessages.find((item) => item.id === message.replied_to_message_id)
     : null;
 
+  // "Delete for everyone" keeps the same guard as the old Revoke action: only
+  // the sender of their own outbound message can revoke it on WhatsApp.
+  const canDeleteForEveryone =
+    deleteTarget?.direction === "outbound" &&
+    deleteTarget?.sender_type === "user" &&
+    deleteTarget?.sender?.id === user?.id;
+
   return (
-    <div id={`message-${message.id}`} className={cn("group relative flex min-w-0", isOutbound ? "justify-end" : "justify-start")}>
+    <div
+      id={`message-${message.id}`}
+      className={cn("group relative flex min-w-0", isOutbound ? "justify-end" : "justify-start")}
+    >
       <div
         className={cn(
           "w-fit min-w-[72px] max-w-[84%] rounded-2xl px-3 py-2 text-sm shadow-sm md:max-w-[68%] lg:max-w-[560px]",
           isOutbound
             ? "rounded-tr-sm bg-primary text-white"
-            : "rounded-tl-sm border border-border bg-surface text-text"
+            : "rounded-tl-sm border border-primary/25 bg-primary-soft text-text",
+          isReplyingTo
+            ? isOutbound
+              ? "ring-2 ring-primary-dark/70"
+              : "ring-2 ring-primary/50"
+            : undefined
         )}
       >
         <MessageActionsMenu
@@ -271,7 +592,9 @@ function MessageBubble({
           conversationId={conversationId}
           onReply={onReply}
           onJumpToReply={onJumpToMessage}
-          onRevoke={onRevoke}
+          onStarToggle={onStarToggle}
+          onForward={onForward}
+          onRequestDelete={setDeleteTarget}
         />
 
         {isOutbound && message.sender && (
@@ -282,8 +605,11 @@ function MessageBubble({
           <button
             type="button"
             className={cn(
+              // WhatsApp-style quote strip: a subtle tint behind the quoted text
+              // (translucent white over the green outbound bubble, a deeper green
+              // tint over the soft-green inbound bubble) so it reads as a distinct block.
               "mb-1 block w-full rounded border-l-2 px-2 py-1 text-left text-xs",
-              isOutbound ? "border-white/50" : "border-primary"
+              isOutbound ? "border-white/50 bg-white/10" : "border-primary bg-bg/60"
             )}
             onClick={() => onJumpToMessage(repliedTo.id)}
             title="Jump to replied message"
@@ -311,7 +637,79 @@ function MessageBubble({
           <span className={cn("text-[10px] leading-none", isOutbound ? "text-white/70" : "text-muted")}>
             {formatInboxTime(message.sent_at, timeZone)}
           </span>
-          {isOutbound && <StatusTick status={message.status} />}
+          {isOutbound && (
+            <MessageStatusTick
+              status={message.status}
+              deliveredAt={message.delivered_at}
+              readAt={message.read_at}
+            />
+          )}
+        </div>
+      </div>
+
+      {deleteTarget && (
+        <DeleteMessageDialog
+          message={deleteTarget}
+          canDeleteForEveryone={canDeleteForEveryone}
+          onDeleteForMe={onDeleteForMe}
+          onDeleteForEveryone={onRevoke}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+interface ConfirmDialogConfig {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+}
+
+function ConfirmDialog({
+  config,
+  showReason,
+  reason,
+  onReasonChange,
+  onCancel,
+}: {
+  config: ConfirmDialogConfig;
+  showReason: boolean;
+  reason: string;
+  onReasonChange: (value: string) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/50" onClick={onCancel} />
+      <div className="relative mx-4 w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-xl">
+        <h3 className="text-base font-semibold text-text">{config.title}</h3>
+        <p className="mt-2 text-sm text-muted">{config.message}</p>
+        {showReason && (
+          <textarea
+            value={reason}
+            onChange={(e) => onReasonChange(e.target.value)}
+            placeholder="Optional: describe the reason"
+            className="mt-3 w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+            rows={3}
+          />
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-xl border border-border bg-bg px-3 py-1.5 text-sm text-text hover:bg-surface"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={config.onConfirm}
+            className="rounded-xl bg-danger px-3 py-1.5 text-sm font-medium text-white hover:bg-danger-dark"
+          >
+            {config.confirmLabel}
+          </button>
         </div>
       </div>
     </div>
@@ -325,9 +723,14 @@ function ActionMenu({
   isPinned,
   isMuted,
   isStarred,
+  isBlocked,
+  hasUnread,
   canClose,
   canReopen,
   canChangePriority,
+  onOpenContactInfo,
+  onMarkUnread,
+  onExportChat,
   onArchive,
   onUnarchive,
   onPin,
@@ -339,6 +742,11 @@ function ActionMenu({
   onClose,
   onReopen,
   onPriorityChange,
+  onClear,
+  onDelete,
+  onBlock,
+  onUnblock,
+  onReport,
 }: {
   status: string;
   priority: ConversationPriority;
@@ -346,9 +754,14 @@ function ActionMenu({
   isPinned: boolean;
   isMuted: boolean;
   isStarred: boolean;
+  isBlocked: boolean;
+  hasUnread: boolean;
   canClose: boolean;
   canReopen: boolean;
   canChangePriority: boolean;
+  onOpenContactInfo?: () => void;
+  onMarkUnread: () => void;
+  onExportChat: () => void;
   onArchive: () => void;
   onUnarchive: () => void;
   onPin: () => void;
@@ -360,8 +773,15 @@ function ActionMenu({
   onClose: () => void;
   onReopen: () => void;
   onPriorityChange: (priority: ConversationPriority) => void;
+  onClear: () => void;
+  onDelete: () => void;
+  onBlock: () => void;
+  onUnblock: () => void;
+  onReport: (reason?: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<"clear" | "delete" | "block" | "report" | null>(null);
+  const [reportReason, setReportReason] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -375,8 +795,44 @@ function ActionMenu({
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
+  const configs = {
+    clear: {
+      title: "Clear all messages?",
+      message: "This will permanently delete all messages in this conversation. This action cannot be undone.",
+      confirmLabel: "Clear",
+      onConfirm: () => { onClear(); setConfirmAction(null); setOpen(false); },
+    },
+    delete: {
+      title: "Delete conversation?",
+      message: "This will permanently delete this conversation and all its messages. This action cannot be undone.",
+      confirmLabel: "Delete",
+      onConfirm: () => { onDelete(); setConfirmAction(null); setOpen(false); },
+    },
+    block: {
+      title: "Block this contact?",
+      message: "You will no longer receive messages from this contact. You can unblock them later.",
+      confirmLabel: "Block",
+      onConfirm: () => { onBlock(); setConfirmAction(null); setOpen(false); },
+    },
+    report: {
+      title: "Report this conversation?",
+      message: "Flag this conversation for review by an administrator.",
+      confirmLabel: "Report",
+      onConfirm: () => { onReport(reportReason || undefined); setConfirmAction(null); setReportReason(""); setOpen(false); },
+    },
+  };
+
   return (
     <div ref={ref} className="relative">
+      {confirmAction && (
+        <ConfirmDialog
+          config={configs[confirmAction]}
+          showReason={confirmAction === "report"}
+          reason={reportReason}
+          onReasonChange={setReportReason}
+          onCancel={() => { setConfirmAction(null); setReportReason(""); }}
+        />
+      )}
       <button
         type="button"
         aria-label="Conversation actions"
@@ -387,7 +843,21 @@ function ActionMenu({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-border bg-surface py-1 shadow-lg">
+        <div className="absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-border bg-surface py-1 shadow-lg">
+          {onOpenContactInfo && (
+            <button
+              type="button"
+              onClick={() => {
+                onOpenContactInfo();
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            >
+              <Info className="h-4 w-4 text-muted" />
+              Contact info
+            </button>
+          )}
+
           {canChangePriority && (
             <>
               <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-muted">
@@ -456,6 +926,74 @@ function ActionMenu({
             {isArchived ? "Unarchive" : "Archive"}
           </button>
 
+          <div className="my-1 border-t border-border" />
+
+          {!hasUnread && (
+            <button
+              type="button"
+              onClick={() => {
+                onMarkUnread();
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            >
+              <Mail className="h-4 w-4 text-muted" />
+              Mark as unread
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              onExportChat();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+          >
+            <Download className="h-4 w-4 text-muted" />
+            Export chat
+          </button>
+
+          <div className="my-1 border-t border-border" />
+
+          {isBlocked ? (
+            <button
+              type="button"
+              onClick={() => { onUnblock(); setOpen(false); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            >
+              <Ban className="h-4 w-4 text-muted" />
+              Unblock contact
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmAction("block")}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            >
+              <Ban className="h-4 w-4 text-muted" />
+              Block contact
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setConfirmAction("report")}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+          >
+            <Flag className="h-4 w-4 text-muted" />
+            Report
+          </button>
+
+          <div className="my-1 border-t border-border" />
+
+          <button
+            type="button"
+            onClick={() => setConfirmAction("clear")}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-warning hover:bg-warning/10"
+          >
+            <Trash2 className="h-4 w-4" />
+            Clear all messages
+          </button>
+
           {status === "closed" ? (
             canReopen && (
               <button
@@ -483,6 +1021,16 @@ function ActionMenu({
               </button>
             )
           )}
+
+          <div className="my-1 border-t border-border" />
+          <button
+            type="button"
+            onClick={() => setConfirmAction("delete")}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete conversation
+          </button>
         </div>
       )}
     </div>
@@ -491,6 +1039,7 @@ function ActionMenu({
 
 function Composer({
   conversationId,
+  contactName,
   replyTo,
   onClearReply,
   isClosed,
@@ -498,6 +1047,7 @@ function Composer({
   onReopen,
 }: {
   conversationId: number;
+  contactName: string;
   replyTo: Message | null;
   onClearReply: () => void;
   isClosed: boolean;
@@ -521,14 +1071,6 @@ function Composer({
   const createNote = useCreateNote({ conversation_id: conversationId });
   const { toast } = useToast();
 
-  useLayoutEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "0px";
-    const nextHeight = Math.min(Math.max(el.scrollHeight, COMPOSER_MIN_HEIGHT_PX), COMPOSER_MAX_HEIGHT_PX);
-    el.style.height = `${nextHeight}px`;
-  }, [body, mode]);
-
   const clearAttachment = useCallback(() => {
     setAttachment((current) => {
       if (current?.previewUrl) {
@@ -537,6 +1079,14 @@ function Composer({
       return null;
     });
   }, []);
+
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    const nextHeight = Math.min(Math.max(el.scrollHeight, COMPOSER_MIN_HEIGHT_PX), COMPOSER_MAX_HEIGHT_PX);
+    el.style.height = `${nextHeight}px`;
+  }, [body, mode]);
 
   const handleTemplateSelect = (content: string) => {
     setBody(content);
@@ -667,13 +1217,36 @@ function Composer({
       )}
 
       {!isNoteMode && replyTo && (
-        <div className="mb-2 flex items-center justify-between gap-2 rounded-2xl border border-border bg-bg px-3 py-2 text-xs text-text">
-          <span className="truncate">
-            <span className="font-medium">Replying to:</span> {replyTo.body ?? `[${replyTo.message_type}]`}
-          </span>
-          <button type="button" onClick={onClearReply} className="shrink-0 text-muted hover:text-text">
-            ×
-          </button>
+        <div
+          key={replyTo.id}
+          className="mb-2 flex items-stretch overflow-hidden rounded-2xl border border-border bg-bg shadow-sm animate-in slide-in-from-bottom-1 fade-in duration-150"
+        >
+          <div
+            className={cn(
+              "w-1 shrink-0",
+              replyTo.direction === "outbound" ? "bg-primary" : "bg-muted"
+            )}
+          />
+          <div className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2">
+            <ReplyMediaThumb conversationId={conversationId} message={replyTo} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-primary">
+                {replyTo.direction === "outbound" ? "You" : contactName}
+              </p>
+              <p className="truncate text-xs text-muted">
+                {replyTo.body ??
+                  (replyTo.media ? mediaTypeLabel(replyTo.media.mime_type) : `[${replyTo.message_type}]`)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClearReply}
+              aria-label="Cancel reply"
+              className="shrink-0 rounded-full p-1.5 text-muted transition-colors hover:bg-border/60 hover:text-text"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -723,32 +1296,37 @@ function Composer({
           <button
             type="button"
             onClick={() => setMode(isNoteMode ? "reply" : "note")}
+            aria-label={isNoteMode ? "Switch to reply mode" : "Switch to internal note mode"}
             className={cn(
-              "flex h-[42px] items-center gap-2 rounded-full border px-3 text-xs font-medium",
-              isNoteMode ? "border-warning bg-warning/10 text-warning" : "border-border bg-bg text-muted hover:text-text"
+              "flex h-[42px] items-center justify-center gap-2 rounded-full border text-xs font-medium",
+              isNoteMode
+                ? "w-[42px] border-warning bg-warning/10 text-warning"
+                : "border-border bg-bg px-3 text-muted hover:text-text"
             )}
           >
             <Lock className="h-3.5 w-3.5" />
-            {isNoteMode ? "Note" : "Reply"}
+            {!isNoteMode && "Reply"}
           </button>
         )}
 
         {canReply && (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isNoteMode || isUploading}
-            aria-label="Attach media"
-            className={cn(
-              "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
-              attachment && "text-primary"
-            )}
-          >
-            <Paperclip className="h-5 w-5" />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isNoteMode || isUploading}
+              aria-label="Attach media"
+              className={cn(
+                "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
+                attachment && "text-primary"
+              )}
+            >
+              <Paperclip className="h-5 w-5" />
+            </button>
+</>
         )}
 
-        <div className="relative">
+        <div className="relative min-w-0">
           {!isNoteMode && showTemplatePicker && (
             <TemplatePicker onSelect={handleTemplateSelect} onClose={() => setShowTemplatePicker(false)} />
           )}
@@ -782,10 +1360,98 @@ function Composer({
       </div>
 
       {sendMutation.isError && !isNoteMode && (
-        <p className="mt-2 text-xs text-danger">Unable to send message. Please try again.</p>
+        <p className="mt-2 text-xs text-danger">
+          {sendMutation.error instanceof ApiError
+            ? sendMutation.error.message
+            : "Unable to send message. Please try again."}
+        </p>
       )}
       {noteError && isNoteMode && <p className="mt-2 text-xs text-danger">{noteError}</p>}
     </form>
+  );
+}
+
+/**
+ * Forward-picker modal (mirrors WhatsApp's "Forward message" dialog):
+ * searchable conversation list, click to forward the selected message into
+ * that chat.
+ */
+function ForwardConversationDialog({
+  conversationId,
+  message,
+  onClose,
+  onForwarded,
+}: {
+  conversationId: number;
+  message: Message;
+  onClose: () => void;
+  onForwarded: (targetConversationId: number) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const { data, isLoading } = useQuery({
+    queryKey: ["conversations", "forward-picker", search],
+    queryFn: () => fetchConversations({ search: search || undefined, per_page: 20, page: 1 }),
+    staleTime: 30_000,
+  });
+  const conversations = (data?.data ?? []).filter((conversation) => conversation.id !== conversationId);
+  const preview = message.body?.trim() || `[${message.message_type}]`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl">
+        <div className="border-b border-border px-4 py-3">
+          <p className="text-sm font-semibold text-text">Forward message</p>
+          <p className="mt-0.5 truncate text-xs text-muted">{preview}</p>
+        </div>
+        <div className="shrink-0 border-b border-border p-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search conversations…"
+              className="w-full rounded-2xl border border-border bg-bg py-2 pl-9 pr-3 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {isLoading && (
+            <div className="space-y-2 p-3">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-12 animate-pulse rounded-xl bg-bg" />
+              ))}
+            </div>
+          )}
+          {!isLoading && conversations.length === 0 && (
+            <p className="p-4 text-center text-sm text-muted">No conversations found.</p>
+          )}
+          {conversations.map((conversation) => {
+            const name =
+              conversation.contact?.full_name ||
+              conversation.whatsapp_contact?.contact_name ||
+              conversation.whatsapp_contact?.push_name ||
+              conversation.whatsapp_contact?.phone_number ||
+              `Conversation #${conversation.id}`;
+            return (
+              <button
+                key={conversation.id}
+                type="button"
+                onClick={() => onForwarded(conversation.id)}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-text hover:bg-bg"
+              >
+                <Avatar name={name} size="sm" />
+                <span className="min-w-0 flex-1 truncate">{name}</span>
+                <span className="shrink-0 text-xs text-muted">
+                  {conversation.status === "closed" ? "Closed" : ""}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -797,19 +1463,27 @@ export function ChatPanel({
   onOpenContactInfo?: () => void;
 }) {
   const { data: conversation } = useConversation(conversationId);
-  const { data: messagesPage, isLoading } = useMessages(conversationId);
+  const { data: messagesPage, isLoading, isError, refetch: refetchMessages } = useMessages(conversationId);
   const { data: workspace } = useWorkspaceSettings();
   const loadOlder = useLoadOlderMessages(conversationId);
-  const { close, reopen, markRead, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar } =
+  const { close, reopen, markRead, markUnread, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar, clearMessages, deleteConv, block, unblock, report } =
     useConversationActions(conversationId);
   const { isContactTyping, typingName } = useTypingIndicator(conversationId);
+  const starMutation = useMessageStar(conversationId);
+  const forwardMutation = useForwardMessage(conversationId);
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const canClose = usePermission("conversations.close");
   const canReopen = usePermission("conversations.reopen");
   const canChangePriority = usePermission("conversations.change_priority");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [forwardTarget, setForwardTarget] = useState<Message | null>(null);
+  const suppressAutoReadUntil = useRef(0);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [isAtTop, setIsAtTop] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const { data: searchResults } = useMessageSearch(conversationId, searchQuery);
   const scrollRef = useRef<HTMLDivElement>(null);
   const readMarker = useRef<number | null>(null);
   const [trackedConversationId, setTrackedConversationId] = useState<number | null>(null);
@@ -846,10 +1520,53 @@ export function ChatPanel({
     [conversationId, queryClient]
   );
 
+  const handleDeleteForMe = useCallback(
+    async (message: Message) => {
+      try {
+        await deleteMessageForMe(conversationId, message.id);
+        // Drop the bubble immediately; the gateway also fans a message.updated
+        // with deletedForMeAt so other agents' open chats remove it live.
+        queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
+          const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
+          if (!typedCurrent) return current;
+          return {
+            ...typedCurrent,
+            data: typedCurrent.data.filter((m) => m.id !== message.id),
+          };
+        });
+        toast("Message deleted for me.", "success");
+      } catch {
+        toast("Unable to delete message.", "error");
+      }
+    },
+    [conversationId, queryClient, toast]
+  );
+
   const handleJumpToMessage = useCallback((messageId: number) => {
     const target = document.getElementById(`message-${messageId}`);
     target?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
+
+  const handleStarToggle = useCallback(
+    (message: Message) => {
+      starMutation.mutate({ messageId: message.id, starred: !message.starred_at });
+    },
+    [starMutation]
+  );
+
+  const handleForward = useCallback((message: Message) => {
+    setForwardTarget(message);
+  }, []);
+
+  const handleExportChat = useCallback(async () => {
+    if (!conversation) return;
+    try {
+      await exportConversationChat(conversation);
+      toast("Chat exported.", "success");
+    } catch {
+      toast("Unable to export chat.", "error");
+    }
+  }, [conversation, toast]);
 
   if (trackedConversationId !== conversationId) {
     setTrackedConversationId(conversationId);
@@ -890,6 +1607,10 @@ export function ChatPanel({
 
   useEffect(() => {
     if (conversation && conversation.unread_count > 0 && readMarker.current !== conversation.unread_count) {
+      // A manual "Mark as unread" from this panel sets the counter back up;
+      // don't immediately auto-clear it (WhatsApp keeps it unread until the
+      // chat is reopened).
+      if (Date.now() < suppressAutoReadUntil.current) return;
       readMarker.current = conversation.unread_count;
       markRead.mutate();
     }
@@ -926,10 +1647,35 @@ export function ChatPanel({
         <div className="flex h-16 items-center border-b border-border px-3">
           <div className="h-4 w-28 rounded bg-border/60" />
         </div>
-        <div className="space-y-3 overflow-hidden p-4">
+        <div className="message-list-bg space-y-3 overflow-hidden p-4">
           {Array.from({ length: 8 }).map((_, index) => (
-            <div key={index} className="h-10 w-2/3 animate-pulse rounded-2xl bg-bg" />
+            <div key={index} className="h-10 w-2/3 animate-pulse rounded-2xl bg-border/60" />
           ))}
+        </div>
+        <div className="border-t border-border bg-surface px-3 py-3">
+          <div className="h-11 rounded-2xl bg-bg/80" />
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-surface">
+        <div className="flex h-16 items-center border-b border-border px-3">
+          <div className="h-4 w-28 rounded bg-border/60" />
+        </div>
+        <div className="message-list-bg flex min-h-0 flex-1 items-center justify-center p-4">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <p className="text-sm text-danger">Unable to load messages.</p>
+            <button
+              type="button"
+              onClick={() => refetchMessages()}
+              className="rounded-full border border-border bg-surface px-4 py-1.5 text-xs text-muted hover:bg-bg"
+            >
+              Retry
+            </button>
+          </div>
         </div>
         <div className="border-t border-border bg-surface px-3 py-3">
           <div className="h-11 rounded-2xl bg-bg/80" />
@@ -957,6 +1703,14 @@ export function ChatPanel({
         </div>
 
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setShowSearch((v) => !v)}
+            className="rounded-full p-2 text-muted hover:bg-bg hover:text-text"
+            aria-label="Search messages"
+          >
+            <Search className="h-5 w-5" />
+          </button>
           {onOpenContactInfo && (
             <button
               type="button"
@@ -974,9 +1728,17 @@ export function ChatPanel({
             isPinned={Boolean(conversation?.pinned_at)}
             isMuted={Boolean(conversation?.muted_until && new Date(conversation.muted_until) > new Date())}
             isStarred={Boolean(conversation?.starred_at)}
+            isBlocked={Boolean(conversation?.blocked_at)}
+            hasUnread={Boolean(conversation && conversation.unread_count > 0)}
             canClose={canClose}
             canReopen={canReopen}
             canChangePriority={canChangePriority}
+            onOpenContactInfo={onOpenContactInfo}
+            onMarkUnread={() => {
+              suppressAutoReadUntil.current = Date.now() + 5000;
+              markUnread.mutate();
+            }}
+            onExportChat={handleExportChat}
             onArchive={() => archive.mutate()}
             onUnarchive={() => unarchive.mutate()}
             onPin={() => pin.mutate()}
@@ -988,15 +1750,81 @@ export function ChatPanel({
             onClose={() => close.mutate()}
             onReopen={() => reopen.mutate()}
             onPriorityChange={(priority) => changePriority.mutate(priority)}
+            onClear={() => clearMessages.mutate()}
+            onDelete={() => deleteConv.mutate()}
+            onBlock={() => block.mutate()}
+            onUnblock={() => unblock.mutate()}
+            onReport={(reason) => report.mutate(reason)}
           />
         </div>
       </header>
 
-      <div className="relative min-h-0 overflow-hidden">
+      <div className="relative flex min-h-0 flex-col overflow-hidden">
+        {showSearch && (
+          <div className="shrink-0 border-b border-border bg-surface px-3 py-2">
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 shrink-0 text-muted" />
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setShowSearch(false);
+                    setSearchQuery("");
+                  }
+                }}
+                placeholder="Search in conversation…"
+                className="min-w-0 flex-1 bg-transparent text-sm text-text placeholder:text-muted focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchQuery(""); }}
+                  className="text-muted hover:text-text"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => { setShowSearch(false); setSearchQuery(""); }}
+                className="text-muted hover:text-text"
+                aria-label="Close search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {searchResults && searchResults.data.length > 0 && (
+              <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-border bg-bg">
+                {searchResults.data.map((msg) => (
+                  <button
+                    key={msg.id}
+                    type="button"
+                    onClick={() => {
+                      handleJumpToMessage(msg.id);
+                      setShowSearch(false);
+                      setSearchQuery("");
+                    }}
+                    className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-primary-soft/40"
+                  >
+                    <span className="shrink-0 text-[10px] text-muted">
+                      {msg.sent_at ? formatInboxTime(msg.sent_at, workspace?.timezone) : ""}
+                    </span>
+                    <span className="min-w-0 truncate text-text">{msg.body ?? `[${msg.message_type}]`}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {searchQuery.trim() && searchResults && searchResults.data.length === 0 && (
+              <p className="mt-2 text-center text-xs text-muted">No messages found.</p>
+            )}
+          </div>
+        )}
         <section
           ref={scrollRef}
           onScroll={handleScroll}
-          className="h-full min-h-0 overflow-y-auto overflow-x-hidden px-4 py-4"
+          className="message-list-bg min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4"
         >
           {isAtTop && hasOlderMessages && (
             <div className="sticky top-0 z-10 mb-4 flex justify-center">
@@ -1029,7 +1857,7 @@ export function ChatPanel({
               <div key={message.id}>
                 {showSeparator && message.sent_at && (
                   <div className="my-3 flex justify-center">
-                    <span className="rounded-full bg-bg px-3 py-1 text-[11px] text-muted">
+                    <span className="rounded-full bg-surface/80 px-3 py-1 text-[11px] text-muted shadow-sm">
                       {formatInboxDateSeparator(message.sent_at, workspace?.timezone)}
                     </span>
                   </div>
@@ -1052,10 +1880,14 @@ export function ChatPanel({
                     conversationId={conversationId}
                     allMessages={messages}
                     timeZone={workspace?.timezone}
+                    isReplyingTo={replyTo?.id === message.id}
                     onReply={(item) => setReplyTo(item)}
                     onJumpToMessage={handleJumpToMessage}
                     onReact={handleReact}
+                    onStarToggle={handleStarToggle}
+                    onForward={handleForward}
                     onRevoke={handleRevoke}
+                    onDeleteForMe={handleDeleteForMe}
                   />
                 </div>
               </div>
@@ -1082,12 +1914,35 @@ export function ChatPanel({
 
       <Composer
         conversationId={conversationId}
+        contactName={contactLabel(conversation)}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
         isClosed={conversation?.status === "closed"}
         canReopen={canReopen}
         onReopen={() => reopen.mutate()}
       />
+
+      {forwardTarget && (
+        <ForwardConversationDialog
+          conversationId={conversationId}
+          message={forwardTarget}
+          onClose={() => setForwardTarget(null)}
+          onForwarded={(targetConversationId) => {
+            forwardMutation.mutate(
+              { messageId: forwardTarget.id, targetConversationId },
+              {
+                onSuccess: () => {
+                  toast("Message forwarded.", "success");
+                  setForwardTarget(null);
+                },
+                onError: (error) => {
+                  toast(error instanceof ApiError ? error.message : "Unable to forward message.", "error");
+                },
+              }
+            );
+          }}
+        />
+      )}
     </div>
   );
 }

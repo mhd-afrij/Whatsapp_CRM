@@ -53,12 +53,46 @@ export function validateMedia(mimeType: string, sizeBytes: number): void {
 
 const repository = new MessageRepository();
 
+/**
+ * A WhatsApp disconnect is usually transient: ConnectionManager reconnects with
+ * exponential backoff that can reach minutes (MAX_BACKOFF_MS = 5m). A media
+ * download must run against a live socket, so instead of burning the queue's
+ * short retry budget (4 attempts, ~40s total) on the first "no socket" check,
+ * wait for the connection to come back within this window and download then.
+ * Only if the socket never returns (e.g. logged out and never re-paired) do we
+ * throw and let BullMQ exhaust retries into a permanent failure record.
+ */
+export const WAIT_FOR_SOCKET_MS = 10 * 60_000;
+const SOCKET_POLL_INTERVAL_MS = 2_000;
+
+/**
+ * Polls for a live media downloader (i.e. a connected Baileys socket) up to
+ * `timeoutMs`, returning null if the connection never comes back. Polling
+ * beats subscribing to connection.updated events here: the socket may already
+ * be mid-reconnect when the job starts, and the poll cannot miss an event.
+ */
+export async function waitForMediaDownloader(
+  timeoutMs: number = WAIT_FOR_SOCKET_MS,
+): Promise<((message: unknown) => Promise<Buffer>) | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const downloader = connectionManager.getMediaDownloader();
+    if (downloader) {
+      return downloader;
+    }
+    await new Promise((resolve) => setTimeout(resolve, SOCKET_POLL_INTERVAL_MS));
+  }
+  return null;
+}
+
 async function processMediaDownload(job: Job<MediaDownloadJobData>): Promise<void> {
   const { workspaceId, messageId, whatsappMessageId, rawMessage, mimeType } = job.data;
 
-  const downloader = connectionManager.getMediaDownloader();
+  const downloader = await waitForMediaDownloader();
   if (!downloader) {
-    throw new Error('No active WhatsApp socket to download media from');
+    throw new Error(
+      `No active WhatsApp socket to download media from (waited ${WAIT_FOR_SOCKET_MS / 60_000} minutes for a reconnect)`,
+    );
   }
 
   const buffer = await downloader(rawMessage);
@@ -85,7 +119,11 @@ async function processMediaDownload(job: Job<MediaDownloadJobData>): Promise<voi
   await repository.insertMessageMedia(messageId, {
     mimeType,
     fileSizeBytes: buffer.length,
+    fileSize: buffer.length,
     storagePath,
+    blobName: storagePath,
+    mediaUrl: null,
+    storageProvider: 'azure_blob',
     checksumSha256: checksum,
   });
 }

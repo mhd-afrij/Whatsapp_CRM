@@ -65,6 +65,42 @@ class AdminSuiteTest extends TestCase
         $this->assertTrue($target->fresh()->roles()->where('roles.id', $viewerRole->id)->exists());
     }
 
+    public function test_admin_cannot_manage_super_admin_accounts_or_assign_super_admin_role(): void
+    {
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+        $superAdmin = $this->userWithRole('Super Administrator');
+        $agent = $this->userWithRole('Agent');
+        $superAdminRole = Role::where('name', 'Super Administrator')->firstOrFail();
+
+        $this->asUser($admin)
+            ->patchJson("/api/v1/users/{$superAdmin->id}", ['name' => 'Renamed Super Admin'])
+            ->assertStatus(403);
+
+        $this->asUser($admin)
+            ->patchJson("/api/v1/users/{$agent->id}", ['role_id' => $superAdminRole->id])
+            ->assertStatus(403);
+
+        $this->asUser($admin)
+            ->patchJson("/api/v1/users/{$superAdmin->id}/suspend")
+            ->assertStatus(403);
+    }
+
+    public function test_super_admin_can_assign_the_super_admin_role_to_another_user(): void
+    {
+        $this->seedRbac();
+        $superAdmin = $this->userWithRole('Super Administrator');
+        $agent = $this->userWithRole('Agent');
+        $superAdminRole = Role::where('name', 'Super Administrator')->firstOrFail();
+
+        $this->asUser($superAdmin)
+            ->patchJson("/api/v1/users/{$agent->id}", ['role_id' => $superAdminRole->id])
+            ->assertOk();
+
+        $this->assertTrue($agent->fresh()->isSuperAdmin());
+    }
+
+
     public function test_agent_cannot_update_another_user(): void
     {
         $this->seedRbac();

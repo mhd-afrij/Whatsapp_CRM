@@ -7,7 +7,7 @@ import { useGlobalSearch } from "@/hooks/use-search";
 import { SEARCH_CATEGORY_LABELS, type SearchCategory } from "@/lib/search-api";
 import { highlightMatch } from "@/components/search/highlight-match";
 
-const CATEGORY_ORDER: SearchCategory[] = ["contacts", "conversations", "leads", "deals", "tasks"];
+const CATEGORY_ORDER: SearchCategory[] = ["contacts", "conversations", "deals", "tasks"];
 
 function resultLabel(category: SearchCategory, item: Record<string, unknown>): string {
   switch (category) {
@@ -15,12 +15,8 @@ function resultLabel(category: SearchCategory, item: Record<string, unknown>): s
       return (item.full_name as string) || (item.email as string) || (item.phone_number as string) || `Contact #${item.id}`;
     case "conversations": {
       const contact = item.contact as { full_name?: string } | null;
-      const wa = item.whatsapp_contact as { push_name?: string; phone_number?: string } | null;
-      return contact?.full_name || wa?.push_name || wa?.phone_number || `Conversation #${item.id}`;
-    }
-    case "leads": {
-      const contact = item.contact as { full_name?: string } | null;
-      return contact?.full_name || `Lead #${item.id}`;
+      const wa = item.whatsapp_contact as { contact_name?: string; push_name?: string; phone_number?: string } | null;
+      return contact?.full_name || wa?.contact_name || wa?.push_name || wa?.phone_number || `Conversation #${item.id}`;
     }
     case "deals":
       return (item.title as string) || `Deal #${item.id}`;
@@ -37,8 +33,6 @@ function resultHref(category: SearchCategory, id: number): string {
       return `/contacts/${id}`;
     case "conversations":
       return `/inbox/${id}`;
-    case "leads":
-      return `/leads/${id}`;
     case "deals":
       return `/deals/${id}`;
     case "tasks":
@@ -94,7 +88,7 @@ export function GlobalSearchBar() {
             setOpen(false);
           }
         }}
-        placeholder="Search contacts, conversations, leads, deals, tasks…"
+        placeholder="Search contacts, conversations, deals, tasks…"
         aria-label="Global search"
         className="w-full min-w-0 rounded-md border border-border bg-bg py-2 pl-9 pr-8 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
       />

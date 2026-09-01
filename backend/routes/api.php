@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BusinessHoursController;
+use App\Http\Controllers\Api\V1\CalendarEventController;
+use App\Http\Controllers\Api\V1\CampaignController;
 use App\Http\Controllers\Api\V1\ContactController;
 use App\Http\Controllers\Api\V1\ConversationController;
 use App\Http\Controllers\Api\V1\DashboardController;
@@ -18,7 +20,6 @@ use App\Http\Controllers\Api\V1\MessageTemplateController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\PermissionController;
-use App\Http\Controllers\Api\V1\PipelineController;
 use App\Http\Controllers\Api\V1\ReportExportController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\SearchController;
@@ -50,6 +51,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
             Route::get('/me', [AuthController::class, 'me'])->name('me');
+            Route::patch('/me', [AuthController::class, 'updateMe'])->name('me.update');
 
             // Permission matrix (docs/07-permission-matrix.md) names this
             // "invitations.manage" — used here instead of a non-existent "users.create".
@@ -110,6 +112,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/disconnect', [WhatsappController::class, 'disconnect'])->name('disconnect');
             Route::post('/logout', [WhatsappController::class, 'logout'])->name('logout');
             Route::post('/reconnect', [WhatsappController::class, 'reconnect'])->name('reconnect');
+            Route::post('/reset-data', [WhatsappController::class, 'resetData'])->name('reset-data');
             Route::get('/connection-history', [WhatsappController::class, 'connectionHistory'])->name('connection-history');
         });
 
@@ -123,10 +126,14 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::prefix('conversations')->name('conversations.')->group(function () {
             Route::get('/', [ConversationController::class, 'index'])
                 ->middleware('permission:conversations.view')->name('index');
+            Route::post('/', [ConversationController::class, 'store'])
+                ->middleware('permission:conversations.reply')->name('store');
             Route::get('/{conversation}', [ConversationController::class, 'show'])
                 ->middleware('permission:conversations.view')->name('show');
             Route::get('/{conversation}/messages', [ConversationController::class, 'messages'])
                 ->middleware('permission:conversations.view')->name('messages.index');
+            Route::get('/{conversation}/messages/search', [ConversationController::class, 'searchMessages'])
+                ->middleware('permission:conversations.view')->name('messages.search');
             Route::post('/{conversation}/messages', [ConversationController::class, 'storeMessage'])
                 ->middleware('permission:conversations.reply')->name('messages.store');
             Route::patch('/{conversation}/assign', [ConversationController::class, 'assign'])
@@ -155,12 +162,20 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:conversations.view')->name('unstar');
             Route::patch('/{conversation}/read', [ConversationController::class, 'markRead'])
                 ->middleware('permission:conversations.view')->name('read');
+            Route::patch('/{conversation}/unread', [ConversationController::class, 'markUnread'])
+                ->middleware('permission:conversations.view')->name('unread');
             Route::post('/{conversation}/typing', [ConversationController::class, 'typing'])
                 ->middleware('permission:conversations.view')->name('typing');
             Route::get('/{conversation}/assignment-history', [ConversationController::class, 'assignmentHistory'])
                 ->middleware('permission:conversations.view')->name('assignment-history');
             Route::get('/{conversation}/messages/{message}/media/{media}/url', [MediaController::class, 'url'])
                 ->middleware('permission:conversations.view')->name('messages.media.url');
+            Route::get('/{conversation}/messages/{message}/media/{media}/content', [MediaController::class, 'content'])
+                ->middleware('permission:conversations.view')->name('messages.media.content');
+            Route::get('/{conversation}/messages/{message}/status-events', [ConversationController::class, 'messageStatusEvents'])
+                ->middleware('permission:conversations.view')->name('messages.status-events');
+            Route::get('/{conversation}/messages/{message}/reactions', [ConversationController::class, 'messageReactions'])
+                ->middleware('permission:conversations.view')->name('messages.reactions');
             Route::post('/{conversation}/media', [MediaController::class, 'store'])
                 ->middleware('permission:conversations.reply')->name('media.store');
             Route::post('/{conversation}/messages/{message}/reaction', [ConversationController::class, 'addReaction'])
@@ -169,6 +184,24 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:conversations.view')->name('messages.reaction.remove');
             Route::delete('/{conversation}/messages/{message}/revoke', [ConversationController::class, 'revokeMessage'])
                 ->middleware('permission:conversations.reply')->name('messages.revoke');
+            Route::post('/{conversation}/messages/{message}/retry', [ConversationController::class, 'retryMessage'])
+                ->middleware('permission:conversations.reply')->name('messages.retry');
+            Route::post('/{conversation}/messages/{message}/forward', [ConversationController::class, 'forwardMessage'])
+                ->middleware('permission:conversations.reply')->name('messages.forward');
+            Route::patch('/{conversation}/messages/{message}/star', [ConversationController::class, 'starMessage'])
+                ->middleware('permission:conversations.view')->name('messages.star');
+            Route::delete('/{conversation}/messages/{message}/delete-for-me', [ConversationController::class, 'deleteMessageForMe'])
+                ->middleware('permission:conversations.reply')->name('messages.delete-for-me');
+            Route::delete('/{conversation}/messages', [ConversationController::class, 'clearMessages'])
+                ->middleware('permission:conversations.close')->name('messages.clear');
+            Route::delete('/{conversation}', [ConversationController::class, 'deleteConversation'])
+                ->middleware('permission:conversations.close')->name('destroy');
+            Route::patch('/{conversation}/block', [ConversationController::class, 'block'])
+                ->middleware('permission:conversations.close')->name('block');
+            Route::patch('/{conversation}/unblock', [ConversationController::class, 'unblock'])
+                ->middleware('permission:conversations.close')->name('unblock');
+            Route::patch('/{conversation}/report', [ConversationController::class, 'report'])
+                ->middleware('permission:conversations.close')->name('report');
             Route::post('/{conversation}/labels/{label}', [ConversationController::class, 'attachLabel'])
                 ->middleware('permission:conversations.reply')->name('labels.attach');
             Route::delete('/{conversation}/labels/{label}', [ConversationController::class, 'detachLabel'])
@@ -182,6 +215,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware(['permission:contacts.export', 'throttle:export'])->name('export');
             Route::post('/import', [ContactController::class, 'import'])
                 ->middleware('permission:contacts.create')->name('import');
+            Route::post('/merge-duplicates', [ContactController::class, 'mergeDuplicates'])
+                ->middleware('permission:contacts.delete')->name('merge-duplicates');
             Route::post('/', [ContactController::class, 'store'])
                 ->middleware('permission:contacts.create')->name('store');
             Route::get('/{contact}', [ContactController::class, 'show'])
@@ -193,28 +228,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/{id}/restore', [ContactController::class, 'restore'])
                 ->middleware('permission:contacts.delete')->name('restore');
 
-            Route::post('/{contact}/convert-to-lead', [LeadController::class, 'convertFromContact'])
-                ->middleware('permission:leads.manage')->name('convert-to-lead');
-
             Route::post('/{contact}/labels/{label}', [ContactController::class, 'attachLabel'])
                 ->middleware('permission:contacts.view')->name('labels.attach');
             Route::delete('/{contact}/labels/{label}', [ContactController::class, 'detachLabel'])
                 ->middleware('permission:contacts.view')->name('labels.detach');
-        });
-
-        Route::prefix('conversations')->name('conversations.leads.')->group(function () {
-            Route::post('/{conversation}/convert-to-lead', [LeadController::class, 'convertFromConversation'])
-                ->middleware('permission:leads.manage')->name('convert-to-lead');
-        });
-
-        Route::prefix('leads')->name('leads.')->middleware('permission:leads.manage')->group(function () {
-            Route::get('/', [LeadController::class, 'index'])->name('index');
-            Route::post('/', [LeadController::class, 'store'])->name('store');
-            Route::get('/{lead}', [LeadController::class, 'show'])->name('show');
-            Route::patch('/{lead}', [LeadController::class, 'update'])->name('update');
-            Route::delete('/{lead}', [LeadController::class, 'destroy'])->name('destroy');
-            Route::post('/{lead}/labels/{label}', [LeadController::class, 'attachLabel'])->name('labels.attach');
-            Route::delete('/{lead}/labels/{label}', [LeadController::class, 'detachLabel'])->name('labels.detach');
         });
 
         Route::prefix('deals')->name('deals.')->middleware('permission:deals.manage')->group(function () {
@@ -230,28 +247,15 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::delete('/{deal}/labels/{label}', [DealController::class, 'detachLabel'])->name('labels.detach');
         });
 
-        Route::prefix('pipelines')->name('pipelines.')->group(function () {
-            // Read access follows deals.manage - anyone who can work deals can see the board.
-            Route::get('/', [PipelineController::class, 'index'])
-                ->middleware('permission:deals.manage')->name('index');
-            Route::get('/{pipeline}', [PipelineController::class, 'show'])
-                ->middleware('permission:deals.manage')->name('show');
-            Route::get('/{pipeline}/board', [PipelineController::class, 'board'])
-                ->middleware('permission:deals.manage')->name('board');
-
-            // Pipeline/stage configuration is an admin-only action.
-            Route::post('/', [PipelineController::class, 'store'])
-                ->middleware('permission:pipelines.manage')->name('store');
-            Route::patch('/{pipeline}', [PipelineController::class, 'update'])
-                ->middleware('permission:pipelines.manage')->name('update');
-            Route::delete('/{pipeline}', [PipelineController::class, 'destroy'])
-                ->middleware('permission:pipelines.manage')->name('destroy');
-            Route::post('/{pipeline}/stages', [PipelineController::class, 'storeStage'])
-                ->middleware('permission:pipelines.manage')->name('stages.store');
-            Route::patch('/{pipeline}/stages/{stage}', [PipelineController::class, 'updateStage'])
-                ->middleware('permission:pipelines.manage')->name('stages.update');
-            Route::delete('/{pipeline}/stages/{stage}', [PipelineController::class, 'destroyStage'])
-                ->middleware('permission:pipelines.manage')->name('stages.destroy');
+        Route::prefix('leads')->name('leads.')->middleware('permission:leads.manage')->group(function () {
+            Route::get('/', [LeadController::class, 'index'])->name('index');
+            Route::post('/', [LeadController::class, 'store'])->name('store');
+            Route::get('/{lead}', [LeadController::class, 'show'])->name('show');
+            Route::patch('/{lead}', [LeadController::class, 'update'])->name('update');
+            Route::delete('/{lead}', [LeadController::class, 'destroy'])->name('destroy');
+            Route::post('/{lead}/convert', [LeadController::class, 'convert'])->name('convert');
+            Route::post('/{lead}/labels/{label}', [LeadController::class, 'attachLabel'])->name('labels.attach');
+            Route::delete('/{lead}/labels/{label}', [LeadController::class, 'detachLabel'])->name('labels.detach');
         });
 
         Route::prefix('tasks')->name('tasks.')->group(function () {
@@ -271,6 +275,13 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/', [InternalNoteController::class, 'store'])->name('store');
             Route::patch('/{internalNote}', [InternalNoteController::class, 'update'])->name('update');
             Route::delete('/{internalNote}', [InternalNoteController::class, 'destroy'])->name('destroy');
+        });
+
+        Route::prefix('calendar-events')->name('calendar-events.')->group(function () {
+            Route::get('/', [CalendarEventController::class, 'index'])->name('index');
+            Route::post('/', [CalendarEventController::class, 'store'])->name('store');
+            Route::patch('/{calendarEvent}', [CalendarEventController::class, 'update'])->name('update');
+            Route::delete('/{calendarEvent}', [CalendarEventController::class, 'destroy'])->name('destroy');
         });
 
         Route::prefix('labels')->name('labels.')->group(function () {
@@ -311,6 +322,31 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:templates.use')->name('preview');
         });
 
+        // Campaigns (bulk WhatsApp messaging). Send/cancel share campaigns.send;
+        // everything read-only sits behind campaigns.view.
+        Route::prefix('campaigns')->name('campaigns.')->group(function () {
+            Route::get('/', [CampaignController::class, 'index'])
+                ->middleware('permission:campaigns.view')->name('index');
+            Route::post('/preview-audience', [CampaignController::class, 'previewAudience'])
+                ->middleware('permission:campaigns.view')->name('preview-audience');
+            Route::post('/', [CampaignController::class, 'store'])
+                ->middleware('permission:campaigns.create')->name('store');
+            Route::get('/{campaign}', [CampaignController::class, 'show'])
+                ->middleware('permission:campaigns.view')->name('show');
+            Route::patch('/{campaign}', [CampaignController::class, 'update'])
+                ->middleware('permission:campaigns.update')->name('update');
+            Route::delete('/{campaign}', [CampaignController::class, 'destroy'])
+                ->middleware('permission:campaigns.delete')->name('destroy');
+            Route::post('/{campaign}/send', [CampaignController::class, 'send'])
+                ->middleware(['permission:campaigns.send'])->name('send');
+            Route::post('/{campaign}/cancel', [CampaignController::class, 'cancel'])
+                ->middleware('permission:campaigns.send')->name('cancel');
+            Route::get('/{campaign}/analytics', [CampaignController::class, 'analytics'])
+                ->middleware('permission:campaigns.view')->name('analytics');
+            Route::get('/{campaign}/messages', [CampaignController::class, 'messages'])
+                ->middleware('permission:campaigns.view')->name('messages.index');
+        });
+
         // search.global is granted to every seeded role; the SearchController itself narrows
         // per-category based on the requesting user's actual view permissions.
         Route::get('/search', [SearchController::class, 'index'])
@@ -339,8 +375,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::prefix('analytics')->name('analytics.')->middleware('permission:analytics.view')->group(function () {
             Route::get('/conversation-volume', [AnalyticsController::class, 'conversationVolume'])->name('conversation-volume');
             Route::get('/response-time-trend', [AnalyticsController::class, 'responseTimeTrend'])->name('response-time-trend');
-            Route::get('/lead-funnel', [AnalyticsController::class, 'leadFunnel'])->name('lead-funnel');
-            Route::get('/pipeline-stage-distribution', [AnalyticsController::class, 'pipelineStageDistribution'])->name('pipeline-stage-distribution');
             Route::get('/won-vs-lost', [AnalyticsController::class, 'wonVsLost'])->name('won-vs-lost');
             Route::get('/agent-performance', [AnalyticsController::class, 'agentPerformance'])->name('agent-performance');
             Route::get('/task-completion-rate', [AnalyticsController::class, 'taskCompletionRate'])->name('task-completion-rate');

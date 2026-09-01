@@ -39,6 +39,11 @@ return [
         'base_url' => env('WHATSAPP_GATEWAY_URL', 'http://localhost:4000'),
         'token' => env('WHATSAPP_GATEWAY_TOKEN'),
         'timeout' => env('WHATSAPP_GATEWAY_TIMEOUT', 10),
+        // Default dialing code for local-format numbers; must match the gateway's
+        // WHATSAPP_COUNTRY_CODE and the frontend's NEXT_PUBLIC_WHATSAPP_COUNTRY_CODE
+        // (the paired WhatsApp account is a +94 Sri Lankan number).
+        'country_code' => env('WHATSAPP_COUNTRY_CODE', '94'),
     ],
 
 ];
+
