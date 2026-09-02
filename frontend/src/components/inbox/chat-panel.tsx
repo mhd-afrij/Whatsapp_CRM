@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -10,6 +10,8 @@ import {
   Copy,
   CornerUpLeft,
   Archive,
+  Bot,
+  BriefcaseBusiness,
   Download,
   FileText,
   Flag,
@@ -17,16 +19,24 @@ import {
   Info,
   Lock,
   Mail,
+  Mic,
   MoreVertical,
   Music,
   Paperclip,
+  Phone,
   Pin,
   Search,
   Send,
+  SmilePlus,
   Sparkles,
+  Square,
+  StickyNote,
+  Tag,
   Trash2,
+  UserRound,
   Video,
   Volume2,
+  Zap,
   X,
   XCircle,
 } from "lucide-react";
@@ -45,6 +55,7 @@ import {
 } from "@/hooks/use-conversations";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCreateNote } from "@/hooks/use-notes";
+import { useCreateDeal } from "@/hooks/use-deals";
 import { useComposerDraft } from "@/hooks/use-composer-draft";
 import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
 import { ApiError } from "@/lib/api-client";
@@ -64,9 +75,11 @@ import { useAuth } from "@/context/auth-context";
 import { MediaPreview } from "./media-preview";
 import { MessageReactions } from "./message-reactions";
 import { TemplatePicker, parseSlashCommand } from "./template-picker";
+import { LabelPicker } from "@/components/labels/label-picker";
 import { TypingIndicator } from "./typing-indicator";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/providers/toast-provider";
+import { useUsers } from "@/hooks/use-users";
 import { PRIORITY_OPTIONS } from "@/components/inbox/priority-selector";
 import { formatInboxDateSeparator, formatInboxTime, isSameInboxDay } from "@/lib/time-format";
 import { useMessageSearch } from "@/hooks/use-message-search";
@@ -76,6 +89,9 @@ const NEAR_BOTTOM_THRESHOLD_PX = 80;
 const NEAR_TOP_THRESHOLD_PX = 80;
 const COMPOSER_MIN_HEIGHT_PX = 42;
 const COMPOSER_MAX_HEIGHT_PX = 120;
+
+/** Broadcast so the chat header's "Add note" action can flip the composer into internal-note mode. */
+const COMPOSER_NOTE_MODE_EVENT = "crm:composer-note-mode";
 
 /** Matches the backend MediaController and gateway MEDIA_ALLOWED_MIME_TYPES / MAX_MEDIA_BYTES. */
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -93,6 +109,15 @@ const ACCEPTED_ATTACHMENT_TYPES = [
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ].join(",");
+
+/** Quick-set emojis offered by the composer's emoji button. */
+const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "🎉", "✅", "🙌", "👋", "🤔"];
+
+function formatRecordTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}:${remainder.toString().padStart(2, "0")}`;
+}
 
 function messageTypeForMime(mime: string): OutboundMessageType {
   if (mime.startsWith("image/")) return "image";
@@ -236,7 +261,7 @@ function MessageActionsMenu({
         type="button"
         aria-label="Message actions"
         onClick={() => setOpen((current) => !current)}
-        className="rounded-full border border-border bg-surface/95 p-1.5 text-muted shadow-sm opacity-0 transition-opacity hover:text-text group-hover:opacity-100 focus:opacity-100"
+        className="rounded-lg border border-white/[0.08] bg-[#111827]/95 p-1.5 text-slate-400 opacity-0 shadow-lg transition hover:bg-white/[0.08] hover:text-slate-100 group-hover:opacity-100 focus:opacity-100"
       >
         <MoreVertical className="h-4 w-4" />
       </button>
@@ -529,7 +554,100 @@ function DeleteMessageDialog({
   );
 }
 
-function MessageBubble({
+function MessageHoverBar({
+  message,
+  onReply,
+  onReact,
+}: {
+  message: Message;
+  onReply: (message: Message) => void;
+  onReact: (messageId: number, emoji: string, remove: boolean) => void;
+}) {
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const { user } = useAuth();
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showEmojiPicker]);
+
+  const handleCopy = async () => {
+    const text = message.body?.trim() || `[${message.message_type}]`;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // silent
+    }
+  };
+
+  const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+  return (
+    <div className="absolute -top-4 left-1 z-10 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      <div className="flex items-center gap-0.5 rounded-xl border border-white/[0.08] bg-[#111827]/95 px-1 shadow-lg backdrop-blur-sm">
+        {/* Emoji reaction */}
+        <div ref={pickerRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text transition-colors"
+            aria-label="React with emoji"
+          >
+            <SmilePlus className="h-3.5 w-3.5" />
+          </button>
+          {showEmojiPicker && (
+            <div className="absolute bottom-full left-0 mb-2 flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-1 shadow-lg z-30">
+              {QUICK_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => {
+                    const hasMyReaction = message.reactions?.some(
+                      (r) => r.emoji === emoji && r.user_id === Number(user?.id)
+                    );
+                    onReact(message.id, emoji, Boolean(hasMyReaction));
+                    setShowEmojiPicker(false);
+                  }}
+                  className="h-8 w-8 flex items-center justify-center rounded-full text-lg hover:bg-bg transition-colors"
+                  aria-label={`React with ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* Reply */}
+        <button
+          type="button"
+          onClick={() => onReply(message)}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text transition-colors"
+          aria-label="Reply"
+        >
+          <CornerUpLeft className="h-3.5 w-3.5" />
+        </button>
+        {/* Copy */}
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text transition-colors"
+          aria-label="Copy message"
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function MessageBubble({
   message,
   conversationId,
   allMessages,
@@ -577,10 +695,10 @@ function MessageBubble({
     >
       <div
         className={cn(
-          "w-fit min-w-[72px] max-w-[84%] rounded-2xl px-3 py-2 text-sm shadow-sm md:max-w-[68%] lg:max-w-[560px]",
+          "w-fit min-w-[76px] max-w-[80%] px-3.5 py-2.5 text-sm shadow-[0_14px_30px_rgba(0,0,0,0.18)]",
           isOutbound
-            ? "rounded-tr-sm bg-primary text-white"
-            : "rounded-tl-sm border border-primary/25 bg-primary-soft text-text",
+            ? "rounded-[16px_16px_4px_16px] bg-[#005c4b] text-white"
+            : "rounded-[16px_16px_16px_4px] bg-[#182233] text-slate-100",
           isReplyingTo
             ? isOutbound
               ? "ring-2 ring-primary-dark/70"
@@ -588,6 +706,11 @@ function MessageBubble({
             : undefined
         )}
       >
+        <MessageHoverBar
+          message={message}
+          onReply={onReply}
+          onReact={onReact}
+        />
         <MessageActionsMenu
           message={message}
           conversationId={conversationId}
@@ -610,7 +733,7 @@ function MessageBubble({
               // (translucent white over the green outbound bubble, a deeper green
               // tint over the soft-green inbound bubble) so it reads as a distinct block.
               "mb-1 block w-full rounded border-l-2 px-2 py-1 text-left text-xs",
-              isOutbound ? "border-white/50 bg-white/10" : "border-primary bg-bg/60"
+              isOutbound ? "border-white/40 bg-white/10" : "border-[#22C55E]/40 bg-white/[0.04]"
             )}
             onClick={() => onJumpToMessage(repliedTo.id)}
             title="Jump to replied message"
@@ -713,6 +836,136 @@ function ConfirmDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatusDropdown({
+  status,
+  onStatusChange,
+}: {
+  status: string;
+  onStatusChange: (status: "open" | "pending" | "closed") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const options = [
+    { value: "open" as const, label: "Open", color: "bg-primary" },
+    { value: "pending" as const, label: "Pending", color: "bg-warning" },
+    { value: "closed" as const, label: "Closed", color: "bg-muted" },
+  ];
+
+  const current = options.find((o) => o.value === status) ?? options[0];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-text hover:bg-bg transition-colors"
+      >
+        <span className={cn("h-2 w-2 rounded-full", current.color)} />
+        {current.label}
+        <ChevronDown className="h-3 w-3 text-muted" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 w-36 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                onStatusChange(option.value);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            >
+              <span className={cn("h-2 w-2 rounded-full", option.color)} />
+              {option.label}
+              {option.value === status && <span className="ml-auto text-primary">✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssignDropdown({
+  conversation,
+  users,
+  onAssign,
+}: {
+  conversation: ReturnType<typeof useConversation>["data"];
+  users: Array<{ id: number; name: string }> | undefined;
+  onAssign: (userId: number | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const assignedName = conversation?.assigned_user_id
+    ? users?.find((u) => u.id === conversation.assigned_user_id)?.name || "Assigned"
+    : "Unassigned";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-text hover:bg-bg transition-colors"
+      >
+        <UserRound className="h-3 w-3 text-muted" />
+        <span className="max-w-[80px] truncate">{assignedName}</span>
+        <ChevronDown className="h-3 w-3 text-muted" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 w-48 max-h-60 overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-lg">
+          <button
+            type="button"
+            onClick={() => { onAssign(null); setOpen(false); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+          >
+            Unassign
+          </button>
+          <div className="my-1 border-t border-border" />
+          {(users ?? []).map((user) => (
+            <button
+              key={user.id}
+              type="button"
+              onClick={() => { onAssign(user.id); setOpen(false); }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            >
+              <span className="min-w-0 truncate">{user.name}</span>
+              {user.id === conversation?.assigned_user_id && (
+                <span className="ml-auto text-primary">✓</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1038,7 +1291,7 @@ function ActionMenu({
   );
 }
 
-function Composer({
+export function Composer({
   conversationId,
   contactName,
   replyTo,
@@ -1059,15 +1312,22 @@ function Composer({
   const canCreateNote = usePermission("notes.create");
   const { draft, setDraft, clearDraft } = useComposerDraft(conversationId);
   const { mode, body } = draft;
-  const setMode = (next: "reply" | "note") => setDraft({ mode: next });
+  const setMode = useCallback((next: "reply" | "note") => setDraft({ mode: next }), [setDraft]);
   const setBody = (next: string) => setDraft({ body: next });
   const { startTyping, stopTyping } = useTypingIndicator(conversationId);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [attachment, setAttachment] = useState<{ file: File; previewUrl: string | null } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiRef = useRef<HTMLDivElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const discardRecordingRef = useRef(false);
   const sendMutation = useSendMessage(conversationId);
   const aiDraftMutation = useMutation({
     mutationFn: () => generateAiDraft(conversationId),
@@ -1088,6 +1348,122 @@ function Composer({
       return null;
     });
   }, []);
+
+  // Close the emoji picker on outside clicks.
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+    const listener = (event: MouseEvent) => {
+      if (emojiRef.current && !emojiRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener("mousedown", listener);
+    return () => document.removeEventListener("mousedown", listener);
+  }, [showEmojiPicker]);
+
+  // Let the chat header's "Add note" action flip this composer into internal-note mode.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ conversationId: number }>).detail;
+      if (detail?.conversationId !== conversationId) return;
+      setMode("note");
+      textareaRef.current?.focus();
+    };
+    window.addEventListener(COMPOSER_NOTE_MODE_EVENT, handler);
+    return () => window.removeEventListener(COMPOSER_NOTE_MODE_EVENT, handler);
+  }, [conversationId, setMode]);
+
+  // Voice-recording elapsed-time timer while a recording is in flight.
+  useEffect(() => {
+    if (!isRecording) return;
+    const timer = window.setInterval(() => setRecordSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [isRecording]);
+
+  // Tear down an in-flight recording if the composer unmounts mid-recording.
+  useEffect(
+    () => () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      if (recorderRef.current && recorderRef.current.state !== "inactive") {
+        recorderRef.current.stop();
+      }
+    },
+    []
+  );
+
+  const insertEmoji = (emoji: string) => {
+    setBody(`${body}${emoji}`);
+    setShowEmojiPicker(false);
+    textareaRef.current?.focus();
+  };
+
+  const startRecording = async () => {
+    if (!("mediaDevices" in navigator) || !navigator.mediaDevices?.getUserMedia) {
+      toast("Voice recording isn't supported in this browser.", "error");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = ["audio/webm", "audio/mp4", "audio/ogg"].find((mime) =>
+        MediaRecorder.isTypeSupported(mime)
+      );
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        recorderRef.current = null;
+        if (discardRecordingRef.current) return;
+        const mime = recorder.mimeType || mimeType || "audio/ogg";
+        if (!ACCEPTED_ATTACHMENT_TYPES.split(",").includes(mime)) {
+          toast(
+            "Voice notes recorded in this browser (.webm) aren't accepted by WhatsApp. Attach an .ogg, .mp3, or .m4a file instead.",
+            "error"
+          );
+          return;
+        }
+        const blob = new Blob(chunks, { type: mime });
+        if (blob.size > MAX_ATTACHMENT_BYTES) {
+          toast("Voice note exceeds the 25 MB upload limit.", "error");
+          return;
+        }
+        const extension = (mime.split("/")[1] ?? "ogg").replace("mp4", "m4a");
+        setAttachment({
+          file: new File([blob], `voice-note-${Date.now()}.${extension}`, { type: mime }),
+          previewUrl: null,
+        });
+      };
+      recorder.start();
+      discardRecordingRef.current = false;
+      recorderRef.current = recorder;
+      streamRef.current = stream;
+      setIsRecording(true);
+      setRecordSeconds(0);
+    } catch {
+      toast("Microphone access was denied.", "error");
+    }
+  };
+
+  const stopRecording = () => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+    recorder.stop();
+    setIsRecording(false);
+  };
+
+  const cancelRecording = () => {
+    discardRecordingRef.current = true;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    recorderRef.current = null;
+    setIsRecording(false);
+    setRecordSeconds(0);
+  };
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -1211,7 +1587,7 @@ function Composer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="sticky bottom-0 z-20 border-t border-border bg-surface px-3 pt-3 pb-[max(10px,env(safe-area-inset-bottom))]"
+      className="relative z-20 shrink-0 border-t border-white/[0.08] bg-[#0B1220]/98 px-3 py-3 shadow-[0_-18px_42px_rgba(0,0,0,0.28)] backdrop-blur"
     >
       {isNoteMode && (
         <p className="mb-2 text-xs font-medium text-warning">
@@ -1291,16 +1667,34 @@ function Composer({
         onChange={handleFileSelect}
       />
 
-      <div
-        className={cn(
-          "grid items-end gap-2",
-          canReply && canCreateNote
-            ? "grid-cols-[auto_auto_minmax(0,1fr)_42px]"
-            : canReply
-              ? "grid-cols-[auto_minmax(0,1fr)_42px]"
-              : "grid-cols-[minmax(0,1fr)_42px]"
-        )}
-      >
+      {canReply && !isNoteMode && isRecording && (
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/5 px-3 py-2">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[#FF3B30]" />
+          <span className="text-xs font-medium text-slate-100">
+            Recording voice note… {formatRecordTime(recordSeconds)}
+          </span>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={cancelRecording}
+              aria-label="Discard recording"
+              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/[0.06] hover:text-text"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={stopRecording}
+              aria-label="Stop and attach recording"
+              className="rounded-lg bg-[#22C55E] p-1.5 text-[#04130A] transition-colors hover:bg-[#16A34A]"
+            >
+              <Square className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex min-w-0 flex-wrap items-end gap-2 md:flex-nowrap">
         {canReply && canCreateNote && (
           <button
             type="button"
@@ -1323,7 +1717,7 @@ function Composer({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={isNoteMode || isUploading}
+              disabled={isNoteMode || isUploading || isRecording}
               aria-label="Attach media"
               className={cn(
                 "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
@@ -1332,10 +1726,69 @@ function Composer({
             >
               <Paperclip className="h-5 w-5" />
             </button>
-</>
+
+            <div className="relative hidden 2xl:block" ref={emojiRef}>
+              <button
+                type="button"
+                onClick={() => setShowEmojiPicker((open) => !open)}
+                disabled={isNoteMode || isUploading || isRecording}
+                aria-label="Insert emoji"
+                aria-expanded={showEmojiPicker}
+                className={cn(
+                  "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
+                  showEmojiPicker && "bg-bg text-text"
+                )}
+              >
+                <SmilePlus className="h-5 w-5" />
+              </button>
+              {showEmojiPicker && (
+                <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-xl border border-white/[0.08] bg-surface p-2 shadow-2xl animate-in slide-in-from-bottom-2 fade-in duration-100">
+                  <div className="grid grid-cols-8 gap-0.5">
+                    {QUICK_EMOJIS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => insertEmoji(emoji)}
+                        className="rounded-lg p-1.5 text-lg transition-transform hover:scale-110 hover:bg-white/[0.06]"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowTemplatePicker((open) => !open)}
+              disabled={isNoteMode || isUploading || isRecording}
+              aria-label="Saved replies"
+              aria-expanded={showTemplatePicker}
+              className={cn(
+                "hidden h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40 2xl:flex",
+                showTemplatePicker && "bg-bg text-text"
+              )}
+            >
+              <Zap className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={startRecording}
+              disabled={isNoteMode || isUploading || isRecording}
+              aria-label="Record a voice message"
+              className={cn(
+                "hidden h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40 2xl:flex",
+                isRecording && "text-danger"
+              )}
+            >
+              <Mic className="h-5 w-5" />
+            </button>
+          </>
         )}
 
-        <div className="relative min-w-0">
+        <div className="relative min-w-[220px] flex-1 basis-[260px]">
           {!isNoteMode && showTemplatePicker && (
             <TemplatePicker onSelect={handleTemplateSelect} onClose={() => setShowTemplatePicker(false)} />
           )}
@@ -1346,7 +1799,7 @@ function Composer({
               disabled={aiDraftMutation.isPending || isUploading}
               aria-label="Draft a reply with AI"
               title="Draft a reply with AI"
-              className="absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full text-primary transition-colors hover:bg-primary-soft/60 disabled:cursor-wait disabled:opacity-50"
+              className="absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-[#22C55E] transition-colors hover:bg-[#22C55E]/10 disabled:cursor-wait disabled:opacity-50"
             >
               <Sparkles className={cn("h-4 w-4", aiDraftMutation.isPending && "animate-pulse")} aria-hidden="true" />
             </button>
@@ -1363,7 +1816,7 @@ function Composer({
             }}
             rows={1}
             placeholder={isNoteMode ? "Write an internal note" : "Type a message or / for saved replies"}
-            className="min-h-[42px] w-full min-w-0 resize-none overflow-hidden rounded-2xl border border-border bg-bg px-3 py-2.5 pr-12 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+            className="min-h-[42px] w-full min-w-0 resize-none overflow-hidden rounded-xl border border-white/[0.08] bg-[#080F1D] px-3 py-2.5 pr-12 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-[#22C55E]/60 focus:ring-2 focus:ring-[#22C55E]/20"
           />
         </div>
 
@@ -1372,8 +1825,8 @@ function Composer({
           disabled={(!body.trim() && !attachment) || sendMutation.isPending || createNote.isPending || isUploading}
           aria-label={isNoteMode ? "Save note" : "Send message"}
           className={cn(
-            "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-white disabled:opacity-50",
-            isNoteMode ? "bg-warning hover:brightness-95" : "bg-primary hover:bg-primary-dark"
+            "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl font-semibold shadow-[0_10px_24px_rgba(34,197,94,0.16)] disabled:opacity-50",
+            isNoteMode ? "bg-warning text-[#080F1D] hover:brightness-95" : "bg-[#22C55E] text-[#04130A] hover:bg-[#16A34A]"
           )}
         >
           <Send className="h-5 w-5" />
@@ -1476,6 +1929,106 @@ function ForwardConversationDialog({
   );
 }
 
+export function HeaderIconButton({
+  icon: Icon,
+  label,
+  onClick,
+  hideOnSmall = false,
+}: {
+  icon: typeof Search;
+  label: string;
+  onClick?: () => void;
+  hideOnSmall?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.035] text-slate-400 transition hover:bg-white/[0.07] hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/30",
+        hideOnSmall ? "hidden 2xl:flex" : "flex"
+      )}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
+}
+
+export function ChatHeader({
+  conversation,
+  children,
+  onSearch,
+  onOpenContactInfo,
+  onCall,
+  onCreateDeal,
+  onAddNote,
+}: {
+  conversation: ReturnType<typeof useConversation>["data"];
+  children: ReactNode;
+  onSearch: () => void;
+  onOpenContactInfo?: () => void;
+  onCall: () => void;
+  onCreateDeal: () => void;
+  onAddNote: () => void;
+}) {
+  const online = conversation?.whatsapp_contact?.is_online === true;
+
+  return (
+    <header className="flex min-h-[80px] shrink-0 items-center justify-between gap-2 border-b border-white/[0.08] bg-[#0B1220]/95 px-4 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.18)] backdrop-blur">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <Link
+          href="/inbox"
+          aria-label="Back to conversation list"
+          className="-ml-1 rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-100 md:hidden"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Link>
+        {conversation && <Avatar name={contactLabel(conversation)} size="md" className="rounded-xl" />}
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate text-base font-semibold text-slate-50">{contactLabel(conversation)}</p>
+            <span className="hidden items-center gap-1 rounded-md border border-[#22C55E]/25 bg-[#22C55E]/10 px-1.5 py-0.5 text-[11px] font-semibold text-[#86EFAC] sm:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
+              {online ? "Online" : "Active"}
+            </span>
+          </div>
+          <p className="truncate text-xs text-slate-400">{contactSubtitle(conversation)}</p>
+        </div>
+      </div>
+
+      <div className="flex max-w-[46%] shrink-0 items-center justify-end gap-1.5 overflow-hidden xl:max-w-[56%]">
+        <div className="hidden min-w-0 items-center gap-1.5 overflow-hidden 2xl:flex">{children}</div>
+        <HeaderIconButton icon={Phone} label="Call customer" onClick={onCall} hideOnSmall />
+        <HeaderIconButton icon={Search} label="Search messages" onClick={onSearch} />
+        <HeaderIconButton icon={BriefcaseBusiness} label="Create deal" onClick={onCreateDeal} hideOnSmall />
+        <HeaderIconButton icon={StickyNote} label="Add note" onClick={onAddNote} hideOnSmall />
+        {onOpenContactInfo && <HeaderIconButton icon={Info} label="Open contact info" onClick={onOpenContactInfo} hideOnSmall />}
+      </div>
+    </header>
+  );
+}
+
+export function MessageList({
+  children,
+  scrollRef,
+  onScroll,
+}: {
+  children: ReactNode;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  onScroll: () => void;
+}) {
+  return (
+    <section
+      ref={scrollRef}
+      onScroll={onScroll}
+      className="message-list-bg min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-5 [scrollbar-color:rgba(148,163,184,.28)_transparent] [scrollbar-width:thin]"
+    >
+      {children}
+    </section>
+  );
+}
 export function ChatPanel({
   conversationId,
   onOpenContactInfo,
@@ -1487,7 +2040,7 @@ export function ChatPanel({
   const { data: messagesPage, isLoading, isError, refetch: refetchMessages } = useMessages(conversationId);
   const { data: workspace } = useWorkspaceSettings();
   const loadOlder = useLoadOlderMessages(conversationId);
-  const { close, reopen, markRead, markUnread, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar, clearMessages, deleteConv, block, unblock, report } =
+  const { close, reopen, markRead, markUnread, changePriority, archive, unarchive, pin, unpin, mute, unmute, star, unstar, clearMessages, deleteConv, block, unblock, report, assign } =
     useConversationActions(conversationId);
   const { isContactTyping, typingName } = useTypingIndicator(conversationId);
   const starMutation = useMessageStar(conversationId);
@@ -1497,6 +2050,11 @@ export function ChatPanel({
   const canClose = usePermission("conversations.close");
   const canReopen = usePermission("conversations.reopen");
   const canChangePriority = usePermission("conversations.change_priority");
+  const canAssign = usePermission("conversations.assign");
+  const canCreateNote = usePermission("notes.create");
+  const canManageLabels = usePermission("conversations.reply");
+  const createDealMutation = useCreateDeal();
+  const { data: users } = useUsers();
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [forwardTarget, setForwardTarget] = useState<Message | null>(null);
   const suppressAutoReadUntil = useRef(0);
@@ -1504,12 +2062,61 @@ export function ChatPanel({
   const [isAtTop, setIsAtTop] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showAiSummary, setShowAiSummary] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
+  const labelPopoverRef = useRef<HTMLDivElement>(null);
   const { data: searchResults } = useMessageSearch(conversationId, searchQuery);
   const scrollRef = useRef<HTMLDivElement>(null);
   const readMarker = useRef<number | null>(null);
   const [trackedConversationId, setTrackedConversationId] = useState<number | null>(null);
   const pendingScrollHeight = useRef<number | null>(null);
   const pendingOlderLoad = useRef(false);
+
+  const handleCallCustomer = () => {
+    const number = conversation?.whatsapp_contact?.phone_number;
+    if (!number) {
+      toast("No phone number available to call.", "error");
+      return;
+    }
+    toast(`Calling ${contactLabel(conversation)}… (${number})`);
+  };
+
+  const handleCreateDeal = () => {
+    const contact = conversation?.contact;
+    if (!contact?.id) {
+      toast("This conversation has no linked contact. Link one from the contact panel first.", "error");
+      return;
+    }
+    createDealMutation.mutate(
+      { contact_id: contact.id, title: `Deal with ${contactLabel(conversation)}` },
+      {
+        onSuccess: () => toast("Deal created and linked to this contact.", "success"),
+        onError: (error) =>
+          toast(error instanceof ApiError ? error.message : "Unable to create deal.", "error"),
+      }
+    );
+  };
+
+  const handleAddNote = () => {
+    if (!canCreateNote) {
+      toast("You don't have permission to add notes.", "error");
+      return;
+    }
+    window.dispatchEvent(
+      new CustomEvent(COMPOSER_NOTE_MODE_EVENT, { detail: { conversationId } })
+    );
+  };
+
+  useEffect(() => {
+    if (!showLabels) return;
+    const listener = (event: MouseEvent) => {
+      if (labelPopoverRef.current && !labelPopoverRef.current.contains(event.target as Node)) {
+        setShowLabels(false);
+      }
+    };
+    document.addEventListener("mousedown", listener);
+    return () => document.removeEventListener("mousedown", listener);
+  }, [showLabels]);
 
   const handleReact = useCallback(
     async (messageId: number, emoji: string, remove: boolean) => {
@@ -1664,16 +2271,16 @@ export function ChatPanel({
 
   if (isLoading) {
     return (
-      <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-surface">
-        <div className="flex h-16 items-center border-b border-border px-3">
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#080F1D]">
+        <div className="flex h-16 shrink-0 items-center border-b border-border px-3">
           <div className="h-4 w-28 rounded bg-border/60" />
         </div>
-        <div className="message-list-bg space-y-3 overflow-hidden p-4">
+        <div className="message-list-bg flex-1 space-y-3 overflow-hidden p-5">
           {Array.from({ length: 8 }).map((_, index) => (
             <div key={index} className="h-10 w-2/3 animate-pulse rounded-2xl bg-border/60" />
           ))}
         </div>
-        <div className="border-t border-border bg-surface px-3 py-3">
+        <div className="shrink-0 border-t border-border bg-surface px-3 py-3">
           <div className="h-11 rounded-2xl bg-bg/80" />
         </div>
       </div>
@@ -1682,11 +2289,11 @@ export function ChatPanel({
 
   if (isError) {
     return (
-      <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-surface">
-        <div className="flex h-16 items-center border-b border-border px-3">
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#080F1D]">
+        <div className="flex h-16 shrink-0 items-center border-b border-border px-3">
           <div className="h-4 w-28 rounded bg-border/60" />
         </div>
-        <div className="message-list-bg flex min-h-0 flex-1 items-center justify-center p-4">
+        <div className="message-list-bg flex min-h-0 flex-1 items-center justify-center p-5">
           <div className="flex flex-col items-center gap-3 text-center">
             <p className="text-sm text-danger">Unable to load messages.</p>
             <button
@@ -1698,7 +2305,7 @@ export function ChatPanel({
             </button>
           </div>
         </div>
-        <div className="border-t border-border bg-surface px-3 py-3">
+        <div className="shrink-0 border-t border-border bg-surface px-3 py-3">
           <div className="h-11 rounded-2xl bg-bg/80" />
         </div>
       </div>
@@ -1706,42 +2313,96 @@ export function ChatPanel({
   }
 
   return (
-    <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-surface">
-      <header className="flex h-16 items-center justify-between gap-2 border-b border-border px-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <Link
-            href="/inbox"
-            aria-label="Back to conversation list"
-            className="-ml-1 rounded-full p-2 text-muted hover:bg-bg hover:text-text md:hidden"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          {conversation && <Avatar name={contactLabel(conversation)} size="sm" />}
-          <div className="min-w-0">
-            <p className="truncate font-semibold text-text">{contactLabel(conversation)}</p>
-            <p className="truncate text-xs text-muted">{contactSubtitle(conversation)}</p>
-          </div>
-        </div>
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#080F1D]">
+      <ChatHeader
+        conversation={conversation}
+        onSearch={() => setShowSearch((v) => !v)}
+        onOpenContactInfo={onOpenContactInfo}
+        onCall={handleCallCustomer}
+        onCreateDeal={handleCreateDeal}
+        onAddNote={handleAddNote}
+      >
+        <StatusDropdown
+          status={conversation?.status ?? "open"}
+          onStatusChange={(s) => {
+            if (s === "closed") close.mutate();
+            else if (conversation?.status === "closed") reopen.mutate();
+          }}
+        />
+        {canAssign && (
+          <AssignDropdown
+            conversation={conversation}
+            users={users}
+            onAssign={(userId) => assign.mutate({ assigned_user_id: userId })}
+          />
+        )}
+      </ChatHeader>
 
-        <div className="flex items-center gap-1">
+      {/* Conversation toolbar: Search · Pin · Label · AI Summary · More */}
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-white/[0.08] bg-[#0B1220]/90 px-3 py-1.5 backdrop-blur">
+        <button
+          type="button"
+          onClick={() => setShowSearch((v) => !v)}
+          aria-label="Search messages"
+          title="Search messages"
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-100",
+            showSearch && "bg-white/[0.06] text-slate-100"
+          )}
+        >
+          <Search className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => (conversation?.pinned_at ? unpin.mutate() : pin.mutate())}
+          aria-label={conversation?.pinned_at ? "Unpin conversation" : "Pin conversation"}
+          title={conversation?.pinned_at ? "Unpin conversation" : "Pin conversation"}
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-100",
+            conversation?.pinned_at && "text-[#22C55E]"
+          )}
+        >
+          <Pin className={cn("h-4 w-4", conversation?.pinned_at && "rotate-45")} />
+        </button>
+        <div className="relative" ref={labelPopoverRef}>
           <button
             type="button"
-            onClick={() => setShowSearch((v) => !v)}
-            className="rounded-full p-2 text-muted hover:bg-bg hover:text-text"
-            aria-label="Search messages"
+            onClick={() => setShowLabels((v) => !v)}
+            aria-label="Labels"
+            aria-expanded={showLabels}
+            title="Labels"
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-100",
+              showLabels && "bg-white/[0.06] text-slate-100"
+            )}
           >
-            <Search className="h-5 w-5" />
+            <Tag className="h-4 w-4" />
           </button>
-          {onOpenContactInfo && (
-            <button
-              type="button"
-              onClick={onOpenContactInfo}
-              className="rounded-full p-2 text-muted hover:bg-bg hover:text-text xl:hidden"
-              aria-label="Open contact info"
-            >
-              <Info className="h-5 w-5" />
-            </button>
+          {showLabels && (
+            <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-xl border border-white/[0.08] bg-surface p-3 shadow-2xl">
+              <LabelPicker
+                entity="conversations"
+                entityId={conversationId}
+                currentLabels={conversation?.labels}
+                canEdit={canManageLabels}
+              />
+            </div>
           )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowAiSummary((v) => !v)}
+          aria-label="AI conversation summary"
+          aria-expanded={showAiSummary}
+          title="AI conversation summary"
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-100",
+            showAiSummary && "bg-white/[0.06] text-[#86EFAC]"
+          )}
+        >
+          <Sparkles className="h-4 w-4" />
+        </button>
+        <div className="ml-auto">
           <ActionMenu
             status={conversation?.status ?? "open"}
             priority={conversation?.priority ?? "normal"}
@@ -1778,9 +2439,31 @@ export function ChatPanel({
             onReport={(reason) => report.mutate(reason)}
           />
         </div>
-      </header>
+      </div>
 
-      <div className="relative flex min-h-0 flex-col overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {showAiSummary && (
+          <div className="shrink-0 border-b border-white/[0.08] bg-[#22C55E]/5 px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-[#86EFAC]">
+                <Sparkles className="h-3.5 w-3.5" />
+                AI summary
+              </span>
+              <span className="text-xs text-slate-300">
+                Customer is interested and likely needs a quotation with follow-up confirmation.
+              </span>
+              <span className="rounded-md bg-[#080F1D]/70 px-2 py-0.5 text-[11px] text-slate-400">
+                Positive
+              </span>
+              <span className="rounded-md bg-[#080F1D]/70 px-2 py-0.5 text-[11px] text-slate-400">
+                Score 82
+              </span>
+              <span className="rounded-md bg-[#080F1D]/70 px-2 py-0.5 text-[11px] text-amber-200">
+                Next: Quote
+              </span>
+            </div>
+          </div>
+        )}
         {showSearch && (
           <div className="shrink-0 border-b border-border bg-surface px-3 py-2">
             <div className="flex items-center gap-2">
@@ -1842,11 +2525,7 @@ export function ChatPanel({
             )}
           </div>
         )}
-        <section
-          ref={scrollRef}
-          onScroll={handleScroll}
-          className="message-list-bg min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4"
-        >
+        <MessageList scrollRef={scrollRef} onScroll={handleScroll}>
           {isAtTop && hasOlderMessages && (
             <div className="sticky top-0 z-10 mb-4 flex justify-center">
               <button
@@ -1877,8 +2556,8 @@ export function ChatPanel({
             return (
               <div key={message.id}>
                 {showSeparator && message.sent_at && (
-                  <div className="my-3 flex justify-center">
-                    <span className="rounded-full bg-surface/80 px-3 py-1 text-[11px] text-muted shadow-sm">
+                  <div className="my-4 flex justify-center">
+                    <span className="rounded-lg border border-white/[0.08] bg-[#111827]/90 px-3 py-1 text-[11px] font-medium text-slate-400 shadow-lg backdrop-blur">
                       {formatInboxDateSeparator(message.sent_at, workspace?.timezone)}
                     </span>
                   </div>
@@ -1914,7 +2593,7 @@ export function ChatPanel({
               </div>
             );
           })}
-        </section>
+        </MessageList>
 
         <TypingIndicator isTyping={isContactTyping} name={typingName} />
 
@@ -1967,3 +2646,11 @@ export function ChatPanel({
     </div>
   );
 }
+
+
+
+
+
+
+
+
