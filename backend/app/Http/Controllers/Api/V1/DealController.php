@@ -39,6 +39,10 @@ class DealController extends Controller
             $query->where('owner_user_id', $request->integer('owner_user_id'));
         }
 
+        if ($request->filled('contact_id')) {
+            $query->where('contact_id', $request->integer('contact_id'));
+        }
+
         // Multi-label filter, any-match (OR) - see ContactController::index for rationale.
         if ($request->filled('labels')) {
             $labelIds = array_map('intval', (array) $request->input('labels'));
@@ -55,6 +59,25 @@ class DealController extends Controller
             'total' => $paginator->total(),
             'last_page' => $paginator->lastPage(),
         ]);
+    }
+
+    /**
+     * GET /api/v1/deals/pipelines - list workspace pipelines with their stages.
+     */
+    public function pipelines(Request $request)
+    {
+        $this->authorize('viewAny', Deal::class);
+
+        $workspaceId = $request->user()->workspace_id;
+
+        $pipelines = \App\Models\Pipeline::query()
+            ->where('workspace_id', $workspaceId)
+            ->with(['stages' => fn ($q) => $q->orderBy('position')])
+            ->orderBy('is_default', 'desc')
+            ->orderBy('name')
+            ->get();
+
+        return $this->success($pipelines, 'OK');
     }
 
     /**
@@ -81,6 +104,8 @@ class DealController extends Controller
             'pipeline_id' => ['required', 'integer', Rule::exists('pipelines', 'id')],
             'pipeline_stage_id' => ['required', 'integer', Rule::exists('pipeline_stages', 'id')],
             'title' => ['required', 'string', 'max:255'],
+            'lead_source' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'lead_priority' => ['sometimes', 'string', Rule::in(['low', 'medium', 'high'])],
             'value_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'value_currency' => ['sometimes', 'string', 'size:3'],
             'probability_percent' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100'],
@@ -126,6 +151,8 @@ class DealController extends Controller
 
         $validator = Validator::make($request->all(), [
             'title' => ['sometimes', 'string', 'max:255'],
+            'lead_source' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'lead_priority' => ['sometimes', 'string', Rule::in(['low', 'medium', 'high'])],
             'value_amount' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'value_currency' => ['sometimes', 'string', 'size:3'],
             'probability_percent' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100'],

@@ -5,6 +5,7 @@ import {
   createDeal,
   deleteDeal,
   fetchDeal,
+  fetchDealPipelines,
   fetchDeals,
   markDealLost,
   markDealWon,
@@ -16,12 +17,22 @@ import {
 
 export const dealsKey = (filters: DealFilters) => ["deals", filters] as const;
 export const dealKey = (id: number) => ["deals", "detail", id] as const;
+export const dealPipelinesKey = ["deals", "pipelines"] as const;
 
-export function useDealList(filters: DealFilters) {
+export function useDealPipelines() {
+  return useQuery({
+    queryKey: dealPipelinesKey,
+    queryFn: () => fetchDealPipelines(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useDealList(filters: DealFilters, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: dealsKey(filters),
     queryFn: () => fetchDeals(filters),
     placeholderData: keepPreviousData,
+    enabled: options?.enabled ?? true,
   });
 }
 
