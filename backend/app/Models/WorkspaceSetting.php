@@ -10,6 +10,7 @@ class WorkspaceSetting extends Model
     protected $fillable = [
         'workspace_id', 'business_hours', 'notification_defaults', 'branding',
         'away_message_enabled', 'away_message', 'away_message_trigger',
+        'ai_provider', 'ai_model', 'ai_api_key', 'ai_business_context', 'ai_enabled',
     ];
 
     protected function casts(): array
@@ -19,6 +20,8 @@ class WorkspaceSetting extends Model
             'notification_defaults' => 'array',
             'branding' => 'array',
             'away_message_enabled' => 'boolean',
+            'ai_api_key' => 'encrypted',
+            'ai_enabled' => 'boolean',
         ];
     }
 

@@ -43,7 +43,7 @@ import {
   useTypingIndicator,
   messagesKey,
 } from "@/hooks/use-conversations";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCreateNote } from "@/hooks/use-notes";
 import { useComposerDraft } from "@/hooks/use-composer-draft";
 import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
@@ -58,6 +58,7 @@ import {
   fetchMediaUrl,
   fetchConversations,
   exportConversationChat,
+  generateAiDraft,
 } from "@/lib/conversations-api";
 import { useAuth } from "@/context/auth-context";
 import { MediaPreview } from "./media-preview";
@@ -1068,6 +1069,14 @@ function Composer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sendMutation = useSendMessage(conversationId);
+  const aiDraftMutation = useMutation({
+    mutationFn: () => generateAiDraft(conversationId),
+    onSuccess: (draft) => {
+      setBody(draft);
+      textareaRef.current?.focus();
+    },
+    onError: (error) => toast(error instanceof ApiError ? error.message : "AI draft is unavailable.", "error"),
+  });
   const createNote = useCreateNote({ conversation_id: conversationId });
   const { toast } = useToast();
 
@@ -1330,6 +1339,18 @@ function Composer({
           {!isNoteMode && showTemplatePicker && (
             <TemplatePicker onSelect={handleTemplateSelect} onClose={() => setShowTemplatePicker(false)} />
           )}
+          {!isNoteMode && (
+            <button
+              type="button"
+              onClick={() => aiDraftMutation.mutate()}
+              disabled={aiDraftMutation.isPending || isUploading}
+              aria-label="Draft a reply with AI"
+              title="Draft a reply with AI"
+              className="absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full text-primary transition-colors hover:bg-primary-soft/60 disabled:cursor-wait disabled:opacity-50"
+            >
+              <Sparkles className={cn("h-4 w-4", aiDraftMutation.isPending && "animate-pulse")} aria-hidden="true" />
+            </button>
+          )}
           <textarea
             ref={textareaRef}
             value={body}
@@ -1342,7 +1363,7 @@ function Composer({
             }}
             rows={1}
             placeholder={isNoteMode ? "Write an internal note" : "Type a message or / for saved replies"}
-            className="min-h-[42px] w-full min-w-0 resize-none overflow-hidden rounded-2xl border border-border bg-bg px-3 py-2.5 pr-4 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+            className="min-h-[42px] w-full min-w-0 resize-none overflow-hidden rounded-2xl border border-border bg-bg px-3 py-2.5 pr-12 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 

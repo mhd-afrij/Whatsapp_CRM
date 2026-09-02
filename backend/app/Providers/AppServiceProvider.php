@@ -88,5 +88,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('export', function (Request $request) {
             return Limit::perMinute(10)->by(optional($request->user())->id ?: $request->ip());
         });
+
+        // AI draft generation hits external provider APIs - throttle per user to protect BYO keys.
+        RateLimiter::for('ai-draft', function (Request $request) {
+            return Limit::perMinute(15)->by(optional($request->user())->id ?: $request->ip());
+        });
     }
 }
