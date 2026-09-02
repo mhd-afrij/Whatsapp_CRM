@@ -576,3 +576,10 @@ export async function exportConversationChat(conversation: Conversation): Promis
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
 }
+
+export async function generateAiDraft(conversationId: number): Promise<string> {
+  const response = await unwrap<{ draft: string }>(
+    apiClient.post(`/conversations/${conversationId}/ai-draft`)
+  );
+  return response.draft;
+}

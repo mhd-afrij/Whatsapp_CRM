@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  Bot,
   Building2,
   Clock,
   Copy,
@@ -37,6 +38,7 @@ const SETTINGS_LINKS: SettingsLink[] = [
   { href: "/settings/teams", label: "Teams", description: "Organize users into teams", icon: Users2, permission: "teams.view" },
   { href: "/settings/roles", label: "Roles & Permissions", description: "Configure access control", icon: KeyRound, permission: "roles.view" },
   { href: "/settings/whatsapp", label: "WhatsApp Connection", description: "Connect and manage WhatsApp", icon: Smartphone, permission: "whatsapp.connection.manage" },
+  { href: "/settings/ai", label: "AI Assistant", description: "Configure AI-powered draft replies", icon: Bot, permission: "workspace.settings.manage" },
   { href: "/settings/labels", label: "Labels", description: "Manage conversation labels", icon: Tag, permission: "labels.manage" },
   { href: "/settings/templates", label: "Saved Replies", description: "Reusable message templates", icon: Zap, permission: "templates.use" },
   { href: "/settings/sla", label: "SLA Rules", description: "Set response time targets", icon: Clock, permission: "workspace.settings.manage" },
