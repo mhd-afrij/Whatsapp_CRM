@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Api\V1\AiAssistantController;
 use App\Http\Controllers\Api\V1\AuditLogController;
+use App\Http\Controllers\Api\V1\AutomationRuleController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BusinessHoursController;
 use App\Http\Controllers\Api\V1\CalendarEventController;
@@ -275,6 +276,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('/{task}/comments', [TaskController::class, 'comments'])->name('comments.index');
             Route::post('/{task}/comments', [TaskController::class, 'storeComment'])->name('comments.store');
         });
+
+        Route::apiResource('automation-rules', AutomationRuleController::class)
+            ->except(['show'])
+            ->names('automation-rules');
 
         Route::prefix('notes')->name('notes.')->group(function () {
             Route::get('/', [InternalNoteController::class, 'index'])->name('index');
