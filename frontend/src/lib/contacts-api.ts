@@ -36,6 +36,14 @@ export interface DealSummary {
   value_currency: string;
 }
 
+export interface LeadSummary {
+  id: number;
+  stage: string;
+  temperature: string | null;
+  score: number;
+  source: string | null;
+}
+
 export type ContactStatus = "active" | "inactive";
 
 export type ContactPriority = "low" | "normal" | "high" | "urgent";
@@ -68,6 +76,7 @@ export interface Contact {
   conversations?: ConversationSummary[];
   activities?: ContactActivity[];
   deals?: DealSummary[];
+  leads?: LeadSummary[];
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

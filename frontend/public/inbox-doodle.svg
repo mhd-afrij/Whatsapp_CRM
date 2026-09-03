@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
+  <g fill="none" stroke="#000" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity="0.035">
+    <!-- Chat bubble top-left -->
+    <path d="M45 70 h35 v25 h-25 l-8 8 v-8 h-12 z" />
+    <!-- Phone -->
+    <rect x="140" y="35" width="24" height="40" rx="4" />
+    <line x1="148" y1="65" x2="156" y2="65" />
+    <!-- Camera top-right -->
+    <rect x="290" y="55" width="35" height="25" rx="4" />
+    <circle cx="307" cy="67" r="7" />
+    <circle cx="307" cy="67" r="3" />
+    <!-- Smile mid-left -->
+    <circle cx="75" cy="190" r="18" />
+    <circle cx="69" cy="185" r="2" fill="#000" />
+    <circle cx="81" cy="185" r="2" fill="#000" />
+    <path d="M67 196 q8 8 16 0" />
+    <!-- Paper plane mid-right -->
+    <path d="M310 180 l30-15 l-30-15 z" />
+    <line x1="310" y1="165" x2="340" y2="180" />
+    <!-- Heart center -->
+    <path d="M195 245 c0-8 12-16 12-4 s-12 12-12 4" />
+    <path d="M207 245 c0-8 12-16 12-4 s-12 12-12 4" />
+    <!-- Star bottom-left -->
+    <path d="M60 330 l4-12 4 12 12 0-9 6 3 12-10-7-10 7 3-12-9-6 z" />
+    <!-- Clock bottom-center -->
+    <circle cx="200" cy="355" r="14" />
+    <line x1="200" y1="346" x2="200" y2="355" />
+    <line x1="200" y1="355" x2="208" y2="358" />
+    <!-- Lightning bolt bottom-right -->
+    <path d="M330 310 l-6 14 h10 l-6 14" />
+    <!-- Headphones far right -->
+    <path d="M370 140 c0-12-10-20-20-20 s-20 8-20 20" />
+    <rect x="347" y="140" width="6" height="10" rx="2" />
+    <rect x="363" y="140" width="6" height="10" rx="2" />
+    <!-- Location pin far left -->
+    <path d="M30 300 c0-10 8-18 18-18 s18 8 18 18 c0 14-18 28-18 28 s-18-14-18-28" />
+    <circle cx="48" cy="298" r="5" />
+  </g>
+</svg>

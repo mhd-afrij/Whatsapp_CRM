@@ -1,9 +1,17 @@
 'use client';
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createLead, deleteLead, fetchLeads, updateLead, type LeadFilters, type LeadFormValues } from '@/lib/leads-api';
+import { createLead, deleteLead, fetchLead, fetchLeads, updateLead, type LeadFilters, type LeadFormValues } from '@/lib/leads-api';
 
 export const leadsKey = (filters: LeadFilters) => ['leads', filters] as const;
+
+export function useLead(id: number) {
+  return useQuery({
+    queryKey: ['leads', id],
+    queryFn: () => fetchLead(id),
+    enabled: Number.isFinite(id) && id > 0,
+  });
+}
 
 export function useLeadList(filters: LeadFilters) {
   return useQuery({ queryKey: leadsKey(filters), queryFn: () => fetchLeads(filters), placeholderData: keepPreviousData });

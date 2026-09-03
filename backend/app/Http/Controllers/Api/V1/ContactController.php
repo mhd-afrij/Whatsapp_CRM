@@ -126,6 +126,7 @@ class ContactController extends Controller
             'conversations' => fn ($q) => $q->orderByDesc('last_message_at')->limit(20),
             'activities' => fn ($q) => $q->orderByDesc('occurred_at')->limit(50),
             'deals',
+            'leads',
         ]);
 
         $contact->last_contacted_at = $this->bestLastContactedAt($contact);

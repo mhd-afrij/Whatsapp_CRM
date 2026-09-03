@@ -11,9 +11,9 @@ import { ApiError } from "@/lib/api-client";
 import { leadSchema, type LeadSchemaValues } from "@/lib/schemas";
 
 const SOURCE_OPTIONS = ["whatsapp", "manual", "import", "other"] as const;
-const STATUS_OPTIONS = ["new", "contacted", "qualified", "disqualified", "converted"] as const;
+const STAGE_OPTIONS = ["new", "contacted", "qualified", "disqualified", "converted"] as const;
 
-export function NewLeadModal({ onClose }: { onClose: () => void }) {
+export function NewLeadModal({ onClose, initialContactId }: { onClose: () => void; initialContactId?: number }) {
   const router = useRouter();
   const createLead = useCreateLead();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -26,7 +26,7 @@ export function NewLeadModal({ onClose }: { onClose: () => void }) {
     formState: { errors, isSubmitting },
   } = useForm<LeadSchemaValues>({
     resolver: zodResolver(leadSchema),
-    defaultValues: { contact_id: undefined as unknown as number, source: "manual", status: "new", notes: "" },
+    defaultValues: { contact_id: initialContactId ?? (undefined as unknown as number), source: "manual", stage: "new", notes: "" },
   });
 
   const contactId = useWatch({ control, name: "contact_id" });
@@ -37,7 +37,7 @@ export function NewLeadModal({ onClose }: { onClose: () => void }) {
       const lead = await createLead.mutateAsync({
         contact_id: values.contact_id,
         source: values.source,
-        status: values.status,
+        stage: values.stage,
         notes: values.notes || null,
       });
       onClose();
@@ -87,13 +87,13 @@ export function NewLeadModal({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm font-medium text-text">Status</label>
+              <label className="text-sm font-medium text-text">Stage</label>
               <select
-                {...register("status")}
+                {...register("stage")}
                 defaultValue="new"
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text"
               >
-                {STATUS_OPTIONS.map((s) => (
+                {STAGE_OPTIONS.map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>

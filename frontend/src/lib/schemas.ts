@@ -24,7 +24,7 @@ export type ContactSchemaValues = z.infer<typeof contactSchema>;
 export const leadSchema = z.object({
   contact_id: z.number({ message: "Select a contact" }).int().positive("Select a contact"),
   source: z.enum(["whatsapp", "manual", "import", "other"]),
-  status: z.enum(["new", "contacted", "qualified", "disqualified", "converted"]),
+  stage: z.enum(["new", "contacted", "qualified", "disqualified", "converted"]),
   notes: z.string().max(2000).optional().or(z.literal("")),
 });
 
