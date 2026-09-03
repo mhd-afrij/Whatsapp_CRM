@@ -1,5 +1,6 @@
 import { apiClient, unwrap } from '@/lib/api-client';
 import type { LabelSummary, Paginated, UserSummary } from '@/lib/conversations-api';
+import type { DealSummary } from '@/lib/contacts-api';
 
 export type LeadStage = 'new' | 'contacted' | 'qualified' | 'lost' | 'converted' | string;
 export type LeadTemperature = 'cold' | 'warm' | 'hot';
@@ -17,6 +18,7 @@ export interface Lead {
   owner: UserSummary | null;
   contact: { id: number; full_name: string | null; phone_number: string | null } | null;
   labels: LabelSummary[];
+  deals?: DealSummary[];
   converted_at: string | null;
   created_at: string;
 }
@@ -31,6 +33,7 @@ export async function fetchLeads(filters: LeadFilters): Promise<Paginated<Lead>>
   return { data: body.data, meta: body.meta ?? { per_page: 0, has_more: false } };
 }
 
+export async function fetchLead(id: number): Promise<Lead> { return unwrap(apiClient.get(`/leads/${id}`)); }
 export async function createLead(values: LeadFormValues): Promise<Lead> { return unwrap(apiClient.post('/leads', values)); }
 export async function updateLead(id: number, values: Partial<LeadFormValues>): Promise<Lead> { return unwrap(apiClient.patch(`/leads/${id}`, values)); }
 export async function deleteLead(id: number): Promise<null> { return unwrap(apiClient.delete(`/leads/${id}`)); }

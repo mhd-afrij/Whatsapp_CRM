@@ -42,6 +42,7 @@ import { useUsers } from "@/hooks/use-users";
 import { useWhatsappStatus } from "@/hooks/use-whatsapp-connection";
 import { ChatOverviewPanel } from "@/components/contacts/chat-overview-panel";
 import { ContactForm } from "@/components/contacts/contact-form";
+import { NewLeadModal } from "@/components/leads/new-lead-modal";
 import { LabelPicker } from "@/components/labels/label-picker";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -340,6 +341,7 @@ function ContactProfile({ id }: { id: number }) {
   const isOwner = !!contact && contact.owner_user_id != null && Number(user?.id) === contact.owner_user_id;
   const canEdit = hasBlanketEdit || (isOwner && canCreate);
   const canDelete = usePermission("contacts.delete");
+  const canCreateLead = usePermission("leads.manage");
 
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [editing, setEditing] = useState(() => searchParams.get("edit") === "1");
@@ -347,6 +349,7 @@ function ContactProfile({ id }: { id: number }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [showLeadModal, setShowLeadModal] = useState(false);
 
   // Notes editor state
   const [noteBody, setNoteBody] = useState("");
@@ -527,6 +530,11 @@ function ContactProfile({ id }: { id: number }) {
               {canEdit && !editing && (
                 <Button variant="outline" onClick={() => setEditing(true)}>
                   Edit
+                </Button>
+              )}
+              {canCreateLead && !(contact.leads && contact.leads.length > 0) && (
+                <Button variant="outline" onClick={() => setShowLeadModal(true)}>
+                  <Plus /> Create lead
                 </Button>
               )}
             </>
@@ -757,6 +765,38 @@ function ContactProfile({ id }: { id: number }) {
                     </p>
                   )}
                 </Card>
+
+                <Card title="Leads">
+                  {contact.leads && contact.leads.length > 0 ? (
+                    <ul className="space-y-1 text-sm">
+                      {contact.leads.map((l) => (
+                        <li key={l.id}>
+                          <Link href={`/leads/${l.id}`} className="text-primary hover:underline">
+                            Lead #{l.id}
+                          </Link>{" "}
+                          — {l.stage}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted">
+                      No leads for this contact yet.
+                      {canCreateLead && (
+                        <>
+                          {" "}
+                          <button
+                            type="button"
+                            onClick={() => setShowLeadModal(true)}
+                            className="text-primary hover:underline"
+                          >
+                            Create a lead
+                          </button>
+                          .
+                        </>
+                      )}
+                    </p>
+                  )}
+                </Card>
               </>
             )}
           </>
@@ -916,6 +956,8 @@ function ContactProfile({ id }: { id: number }) {
           defaultAssigneeId={contact.owner_user_id}
         />
       )}
+
+      {showLeadModal && <NewLeadModal onClose={() => setShowLeadModal(false)} initialContactId={id} />}
     </div>
   );
 }

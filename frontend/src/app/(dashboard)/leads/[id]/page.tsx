@@ -9,9 +9,9 @@ import { usePermission } from "@/hooks/use-permission";
 import { useLead, useUpdateLead, useDeleteLead } from "@/hooks/use-leads";
 import { LabelPicker } from "@/components/labels/label-picker";
 import { ApiError } from "@/lib/api-client";
-import type { LeadStatus } from "@/lib/leads-api";
+import type { LeadStage } from "@/lib/leads-api";
 
-const STATUS_OPTIONS: LeadStatus[] = ["new", "contacted", "qualified", "disqualified", "converted"];
+const STATUS_OPTIONS: LeadStage[] = ["new", "contacted", "qualified", "disqualified", "converted"];
 
 function DetailSkeleton() {
   return (
@@ -36,10 +36,10 @@ function LeadDetail({ id }: { id: number }) {
     return <p className="text-sm text-danger">Unable to load this lead. It may not exist or you may lack access.</p>;
   }
 
-  const onStatusChange = async (status: LeadStatus) => {
+  const onStatusChange = async (status: LeadStage) => {
     setError(null);
     try {
-      await updateMutation.mutateAsync({ status });
+      await updateMutation.mutateAsync({ stage: status });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Unable to update lead status.");
     }
@@ -98,8 +98,8 @@ function LeadDetail({ id }: { id: number }) {
             <dt className="text-muted">Status</dt>
             <dd>
               <select
-                value={lead.status}
-                onChange={(e) => onStatusChange(e.target.value as LeadStatus)}
+                value={lead.stage}
+                onChange={(e) => onStatusChange(e.target.value as LeadStage)}
                 disabled={updateMutation.isPending}
                 className="rounded-md border border-border bg-bg px-2 py-1 text-sm text-text"
               >

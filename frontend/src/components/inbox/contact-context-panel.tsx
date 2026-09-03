@@ -34,6 +34,8 @@ import {
   useMoveDealStage,
   useUpdateDeal,
 } from "@/hooks/use-deals";
+import { useCreateLead } from "@/hooks/use-leads";
+import type { LeadSummary } from "@/lib/contacts-api";
 import { LabelPicker } from "@/components/labels/label-picker";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/providers/toast-provider";
@@ -246,6 +248,7 @@ const leadSelectClass =
 function LeadInfoCard({
   contactId,
   contactName,
+  contactLeads,
   users,
   canAssign,
   assignedName,
@@ -255,6 +258,7 @@ function LeadInfoCard({
 }: {
   contactId: number;
   contactName: string;
+  contactLeads?: LeadSummary[];
   users: Array<{ id: number; name: string }>;
   canAssign: boolean;
   assignedName: string;
@@ -267,6 +271,7 @@ function LeadInfoCard({
   const dealList = useDealList({ contact_id: contactId, per_page: 1 }, { enabled: contactId > 0 });
   const { data: pipelines } = useDealPipelines();
   const createDeal = useCreateDeal();
+  const createLead = useCreateLead();
 
   const dealId = dealList.data?.data[0]?.id ?? 0;
   const updateDeal = useUpdateDeal(dealId);
@@ -275,6 +280,23 @@ function LeadInfoCard({
   const moveDealStage = useMoveDealStage();
 
   const deal = dealList.data?.data[0] ?? null;
+  const lead = contactLeads?.[0] ?? null;
+
+  const handleCreateLead = () => {
+    createLead.mutate(
+      {
+        contact_id: contactId,
+        stage: "new",
+        source: "manual",
+        notes: null,
+      },
+      {
+        onSuccess: () => toast("Lead created.", "success"),
+        onError: (err) =>
+          toast(err instanceof ApiError ? err.message : "Unable to create lead.", "error"),
+      }
+    );
+  };
 
   const handleCreateDeal = () => {
     const pipeline =
@@ -352,6 +374,33 @@ function LeadInfoCard({
         ) : undefined
       }
     >
+      {lead ? (
+        <div className="space-y-1.5 rounded-lg border border-white/[0.08] bg-[#080F1D] p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-slate-500">Linked lead</p>
+            <Badge color={lead.stage === "converted" ? "green" : lead.stage === "qualified" ? "blue" : "yellow"}>
+              {lead.stage}
+            </Badge>
+          </div>
+          <Link
+            href={`/leads/${lead.id}`}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#22C55E] hover:underline"
+          >
+            <UserRound className="h-3 w-3" />
+            Lead #{lead.id}
+          </Link>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={handleCreateLead}
+          disabled={createLead.isPending}
+          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#22C55E] px-3 py-1.5 text-[11px] font-bold text-[#04130A] transition hover:bg-[#22C55E]/90 disabled:opacity-50"
+        >
+          <Plus className="h-3 w-3" />
+          {createLead.isPending ? "Creating…" : "Create Lead"}
+        </button>
+      )}
       {!deal ? (
         <div className="rounded-lg border border-dashed border-white/[0.08] bg-[#080F1D] p-3 text-center">
           <p className="text-[11px] text-slate-500">No linked deal for this contact.</p>
@@ -955,6 +1004,7 @@ export function CustomerProfile({
           <LeadInfoCard
             contactId={contactId ?? 0}
             contactName={contactDisplay}
+            contactLeads={contact?.leads}
             users={users ?? []}
             canAssign={canAssign}
             assignedName={assignedName}
