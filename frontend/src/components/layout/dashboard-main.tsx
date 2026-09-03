@@ -13,7 +13,7 @@ export function DashboardMain({ children }: { children: ReactNode }) {
   return (
     <main
       className={cn(
-        "min-h-0 flex-1 bg-[#080F1D]",
+        "min-h-0 flex-1 bg-bg",
         isFullScreen ? "overflow-hidden" : "overflow-y-auto overflow-x-hidden p-4 sm:p-6"
       )}
     >

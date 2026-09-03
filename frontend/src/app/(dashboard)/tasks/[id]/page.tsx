@@ -215,7 +215,7 @@ function TaskDetail({ id }: { id: number }) {
 
 export default function TaskDetailPage() {
   const params = useParams<{ id: string }>();
-  const id = Number(params.id);
+  const id = Number(params?.id);
 
   return (
     <RequirePermission permission="tasks.manage">

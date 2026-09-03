@@ -295,7 +295,7 @@ function CampaignDetail({ id }: { id: number }) {
 function CampaignDetailPageInner() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const id = Number(params.id);
+  const id = Number(params?.id);
 
   if (!Number.isFinite(id)) {
     return <ErrorState message="Invalid campaign id." onRetry={() => router.push("/campaigns")} />;

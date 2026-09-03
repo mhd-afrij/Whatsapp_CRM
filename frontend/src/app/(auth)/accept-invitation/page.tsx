@@ -37,7 +37,7 @@ function AcceptInvitationForm() {
   const { toast } = useToast();
   const { refresh } = useAuth();
   const searchParams = useSearchParams();
-  const token = searchParams.get("token") ?? "";
+  const token = searchParams?.get("token") ?? "";
   const [formError, setFormError] = useState<string | null>(null);
 
   const {

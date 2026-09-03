@@ -14,6 +14,7 @@ import {
   type DealFilters,
   type DealFormValues,
 } from "@/lib/deals-api";
+import { fetchPipelineBoard } from "@/lib/pipelines-api";
 
 export const dealsKey = (filters: DealFilters) => ["deals", filters] as const;
 export const dealKey = (id: number) => ["deals", "detail", id] as const;
@@ -24,6 +25,14 @@ export function useDealPipelines() {
     queryKey: dealPipelinesKey,
     queryFn: () => fetchDealPipelines(),
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function usePipelineBoard(pipelineId: number) {
+  return useQuery({
+    queryKey: ["pipelines", "board", pipelineId],
+    queryFn: () => fetchPipelineBoard(pipelineId),
+    enabled: Number.isFinite(pipelineId) && pipelineId > 0,
   });
 }
 

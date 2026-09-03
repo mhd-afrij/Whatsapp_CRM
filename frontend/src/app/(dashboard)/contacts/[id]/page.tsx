@@ -344,7 +344,7 @@ function ContactProfile({ id }: { id: number }) {
   const canCreateLead = usePermission("leads.manage");
 
   const [activeTab, setActiveTab] = useState<TabId>("overview");
-  const [editing, setEditing] = useState(() => searchParams.get("edit") === "1");
+  const [editing, setEditing] = useState(() => searchParams?.get("edit") === "1");
   const [formError, setFormError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);

@@ -25,7 +25,7 @@ export function InboxLayout({
   const isThreadOpen = /\/inbox\/[^/]+/.test(pathname ?? "");
 
   return (
-    <div className="grid h-full min-h-0 w-full min-w-0 grid-rows-[minmax(0,1fr)] overflow-hidden border border-white/[0.08] bg-[#080F1D] shadow-[0_24px_80px_rgba(0,0,0,0.32)] md:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(500px,1fr)_330px]">
+    <div className="grid h-full min-h-0 w-full min-w-0 grid-rows-[minmax(0,1fr)] overflow-hidden border border-border bg-bg shadow-[0_24px_80px_rgba(0,0,0,0.32)] md:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(500px,1fr)_330px]">
       <aside
         className={cn(
           "min-h-0 min-w-0 overflow-hidden border-r border-white/[0.08]",
@@ -45,7 +45,7 @@ export function InboxLayout({
       </section>
 
       {conversationId && (
-        <aside className="hidden h-full min-h-0 w-[330px] min-w-[330px] overflow-hidden border-l border-white/[0.08] bg-[#0B1220] 2xl:block">
+        <aside className="hidden h-full min-h-0 w-[330px] min-w-[330px] overflow-hidden border-l border-border bg-surface 2xl:block">
           <ContactContextPanel conversationId={conversationId} />
         </aside>
       )}

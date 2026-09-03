@@ -10,7 +10,7 @@ import { ContactContextDrawer } from "@/components/inbox/contact-context-drawer"
 export default function ConversationPage() {
   const params = useParams<{ conversationId: string }>();
   const [panelOpen, setPanelOpen] = useState(false);
-  const conversationId = Number(params.conversationId);
+  const conversationId = Number(params?.conversationId);
 
   if (!conversationId || Number.isNaN(conversationId)) {
     return (

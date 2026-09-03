@@ -1,7 +1,7 @@
 import { apiClient, unwrap } from "@/lib/api-client";
 import type { LabelSummary } from "@/lib/conversations-api";
 
-export type LabelEntityType = "contacts" | "deals" | "conversations";
+export type LabelEntityType = "contacts" | "leads" | "deals" | "conversations";
 
 export interface LabelFormValues {
   name: string;
