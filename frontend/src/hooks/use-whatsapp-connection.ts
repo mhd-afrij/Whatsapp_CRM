@@ -9,6 +9,7 @@ import {
   disconnectWhatsapp,
   fetchWhatsappConnectionHistory,
   fetchWhatsappStatus,
+  logoutWhatsapp,
   reconnectWhatsapp,
   type WhatsappStatus,
 } from "@/lib/whatsapp-api";
@@ -32,21 +33,35 @@ export function useWhatsappStatus(options: { enabled?: boolean } = {}) {
     queryKey: WHATSAPP_STATUS_KEY,
     queryFn: fetchWhatsappStatus,
     refetchInterval: isConnected ? false : 5_000,
+    refetchOnWindowFocus: true,
+    staleTime: 2_000,
     enabled,
   });
 
   useEffect(() => {
     if (!socket || !enabled || !user?.workspace_id) return;
 
-    socket.emit("join", `workspace:${user.workspace_id}`);
-
     const handleUpdate = (payload: WhatsappStatus) => {
       queryClient.setQueryData(WHATSAPP_STATUS_KEY, payload);
       queryClient.invalidateQueries({ queryKey: WHATSAPP_HISTORY_KEY });
     };
+    const refreshStatus = () => {
+      void queryClient.invalidateQueries({ queryKey: WHATSAPP_STATUS_KEY });
+      void queryClient.refetchQueries({ queryKey: WHATSAPP_STATUS_KEY });
+    };
+    const joinRoom = () => {
+      socket.emit("join", `workspace:${user.workspace_id}`);
+    };
 
+    joinRoom();
+    socket.on("connect", joinRoom);
+    socket.on("connect", refreshStatus);
+    socket.on("disconnect", refreshStatus);
     socket.on("connection.updated", handleUpdate);
     return () => {
+      socket.off("connect", joinRoom);
+      socket.off("connect", refreshStatus);
+      socket.off("disconnect", refreshStatus);
       socket.off("connection.updated", handleUpdate);
     };
   }, [socket, queryClient, enabled, user?.workspace_id]);
@@ -68,11 +83,13 @@ export function useWhatsappActions() {
     queryClient.invalidateQueries({ queryKey: WHATSAPP_STATUS_KEY });
     queryClient.invalidateQueries({ queryKey: WHATSAPP_HISTORY_KEY });
     void queryClient.refetchQueries({ queryKey: WHATSAPP_STATUS_KEY });
+    void queryClient.refetchQueries({ queryKey: WHATSAPP_HISTORY_KEY });
   };
 
   const connect = useMutation({ mutationFn: connectWhatsapp, onSuccess: invalidate });
   const disconnect = useMutation({ mutationFn: disconnectWhatsapp, onSuccess: invalidate });
+  const logout = useMutation({ mutationFn: logoutWhatsapp, onSuccess: invalidate });
   const reconnect = useMutation({ mutationFn: reconnectWhatsapp, onSuccess: invalidate });
 
-  return { connect, disconnect, reconnect };
+  return { connect, disconnect, logout, reconnect };
 }

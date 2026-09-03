@@ -1,36 +1,50 @@
-# Root repository ignores
-# NOTE: repo directories are `backend/`/`frontend/` (lowercase) on disk, but
-# legacy `Backend/`/`Frontend/` paths are still tracked. Patterns below match
-# at any depth and are case-insensitive on Windows, so they cover both.
+# Local environmental noise
+.env
+.env.local
+.env.*.local
 
-# Dependencies (Cline/IDE indexing: exclude these in the tool's settings too)
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Node
 node_modules/
-vendor/
-
-# Build / generated output
 dist/
-build/
+dist-ssr/
+*.local
 coverage/
-.next/
-out/
-.venv/
 
-# Laravel runtime artifacts (git keeps the dirs via their own .gitignore)
-storage/logs/
-storage/framework/cache/
-storage/framework/sessions/
-storage/framework/views/
-bootstrap/cache/*.php
+# Backend (Laravel / PHP) runtime artifacts
+Backend/api/vendor/
+backend/api/vendor/
+Backend/node_modules/
+Backend/api/storage/logs/
+Backend/api/storage/framework/cache/
+Backend/api/storage/framework/sessions/
+Backend/api/storage/framework/views/
+Backend/api/bootstrap/cache/*.php
+backend/storage/logs/
+backend/storage/framework/cache/
+backend/storage/framework/sessions/
+backend/storage/framework/views/
+backend/bootstrap/cache/*.php
+
+# WhatsApp sync
+backend/whatsapp-sync/node_modules/
+whatsapp-gateway/node_modules/
+
+# Databases / runtime data
+dump.rdb
+*.sqlite
+*.sqlite3
+test-results/
+media-storage/
+
+# Leftover tooling artifacts
+.codex-pr4-resolved/
 
 # Logs
 *.log
-
-# Test artifacts
-e2e/test-results/
-
-# WhatsApp gateway runtime
-whatsapp-gateway/media-storage/
-
-# OS / editor
-.DS_Store
-Thumbs.db

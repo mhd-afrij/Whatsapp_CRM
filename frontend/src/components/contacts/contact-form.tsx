@@ -67,7 +67,6 @@ export function ContactForm({
 
   useEffect(() => {
     if (defaultValues?.custom_fields) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing external prop values into local form state on mount/update
       setCustomFieldValues(defaultValues.custom_fields);
     }
   }, [defaultValues?.custom_fields]);
@@ -96,6 +95,8 @@ export function ContactForm({
     await onSubmit({
       full_name: values.full_name ?? null,
       email: values.email ? values.email : null,
+      company: values.company ? values.company : null,
+      job_title: values.job_title ? values.job_title : null,
       phone_number,
       address: values.address ? values.address : null,
       city: values.city ? values.city : null,

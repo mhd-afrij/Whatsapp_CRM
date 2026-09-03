@@ -436,6 +436,70 @@ export function createInternalWhatsappRouter(): Router {
   );
 
   /**
+   * POST /internal/whatsapp/media/upload
+   * Receives a multipart `file` (plus a `workspaceId` form field), validates
+   * it against the same allow-list/size cap as inbound media, stores it via
+   * the shared StorageClient, and returns only a storage key + metadata -
+   * never a raw bucket URL. The Laravel caller (MediaController) then passes
+   * the returned key as `mediaRef` when dispatching the outbound message, and
+   * the send worker reads the bytes back through StorageClient::getObject.
+   */
+  router.post(
+    '/media/upload',
+    uploadSingleFile('file'),
+    async (req: Request, res: Response) => {
+      const workspaceId = z.coerce.number().int().positive().safeParse(req.body?.workspaceId);
+      if (!workspaceId.success) {
+        res.status(400).json({ success: false, message: 'workspaceId is required', data: null });
+        return;
+      }
+
+      if (!req.file) {
+        res.status(400).json({ success: false, message: 'No file uploaded (expected a multipart field named "file")', data: null });
+        return;
+      }
+
+      try {
+        validateMedia(req.file.mimetype, req.file.size);
+      } catch (err) {
+        res.status(415).json({
+          success: false,
+          message: err instanceof Error ? err.message : 'Media validation failed',
+          data: null,
+        });
+        return;
+      }
+
+      try {
+        const checksumSha256 = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+        const extension = (req.file.mimetype.split('/')[1] ?? 'bin').replace(/[^a-z0-9]/gi, '');
+        const key = `${workspaceId.data}/outbound/${crypto.randomUUID()}.${extension}`;
+
+        const storagePath = await getStorageClient().putObject(
+          key,
+          req.file.buffer,
+          req.file.mimetype,
+        );
+
+        res.status(201).json({
+          success: true,
+          message: 'Media uploaded',
+          data: {
+            storagePath,
+            mimeType: req.file.mimetype,
+            fileName: req.file.originalname || null,
+            sizeBytes: req.file.size,
+            checksumSha256,
+          },
+        });
+      } catch (err) {
+        logger.error({ err }, 'Failed to store outbound media upload');
+        res.status(500).json({ success: false, message: 'Failed to store media', data: null });
+      }
+    },
+  );
+
+  /**
    * GET /internal/whatsapp/media/:mediaId/url?workspaceId=
    * Returns a short-lived signed URL (or, in local-disk dev mode, a
    * server-side file path the caller streams itself) for a message_media

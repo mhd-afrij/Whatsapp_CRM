@@ -25,10 +25,6 @@ export interface WhatsappConnectionEvent {
   occurred_at: string;
 }
 
-export async function fetchWhatsappStatus(): Promise<WhatsappStatus> {
-  return unwrap(apiClient.get("/whatsapp/status"));
-}
-
 export interface WhatsappHealth {
   status: string;
   whatsapp: {
@@ -40,6 +36,10 @@ export interface WhatsappHealth {
     redis: "ok" | "error";
     mysql: "ok" | "error";
   };
+}
+
+export async function fetchWhatsappStatus(): Promise<WhatsappStatus> {
+  return unwrap(apiClient.get("/whatsapp/status"));
 }
 
 export async function fetchWhatsappHealth(): Promise<WhatsappHealth> {
@@ -56,6 +56,10 @@ export async function connectWhatsapp(): Promise<WhatsappStatus> {
 
 export async function disconnectWhatsapp(): Promise<WhatsappStatus> {
   return unwrap(apiClient.post("/whatsapp/disconnect"));
+}
+
+export async function logoutWhatsapp(): Promise<WhatsappStatus> {
+  return unwrap(apiClient.post("/whatsapp/logout"));
 }
 
 export async function reconnectWhatsapp(): Promise<WhatsappStatus> {

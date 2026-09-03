@@ -26,7 +26,6 @@ class Conversation extends Model
         'workspace_id', 'whatsapp_contact_id', 'contact_id', 'status', 'priority', 'assigned_user_id',
         'assigned_team_id', 'last_message_at', 'last_message_preview', 'unread_count',
         'closed_at', 'closed_by', 'archived_at', 'pinned_at', 'muted_until', 'starred_at',
-        'blocked_at', 'reported_at', 'report_reason',
     ];
 
     protected function casts(): array
@@ -38,8 +37,6 @@ class Conversation extends Model
             'pinned_at' => 'datetime',
             'muted_until' => 'datetime',
             'starred_at' => 'datetime',
-            'blocked_at' => 'datetime',
-            'reported_at' => 'datetime',
             'unread_count' => 'integer',
         ];
     }
