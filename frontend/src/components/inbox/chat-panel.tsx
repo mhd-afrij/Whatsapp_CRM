@@ -697,8 +697,8 @@ export function MessageBubble({
         className={cn(
           "w-fit min-w-[76px] max-w-[80%] px-3.5 py-2.5 text-sm shadow-[0_14px_30px_rgba(0,0,0,0.18)]",
           isOutbound
-            ? "rounded-[16px_16px_4px_16px] bg-[#005c4b] text-white"
-            : "rounded-[16px_16px_16px_4px] bg-[#182233] text-slate-100",
+            ? "rounded-[16px_16px_4px_16px] bg-outgoing-bubble text-white"
+            : "rounded-[16px_16px_16px_4px] bg-incoming-bubble text-text",
           isReplyingTo
             ? isOutbound
               ? "ring-2 ring-primary-dark/70"

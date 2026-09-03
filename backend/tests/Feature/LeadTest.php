@@ -19,8 +19,8 @@ class LeadTest extends TestCase
     {
         $this->seedRbac(); $agent = $this->userWithRole('Agent');
         $contact = Contact::factory()->create(['workspace_id' => $agent->workspace_id]);
-        $this->asUser($agent)->postJson('/api/v1/leads', ['contact_id' => $contact->id, 'source' => 'whatsapp', 'temperature' => 'hot'])->assertCreated();
-        $this->asUser($agent)->getJson('/api/v1/leads?temperature=hot')->assertOk()->assertJsonPath('meta.total', 1);
+        $this->asUser($agent)->postJson('/api/v1/leads', ['contact_id' => $contact->id, 'source' => 'whatsapp', 'stage' => 'new'])->assertCreated();
+        $this->asUser($agent)->getJson('/api/v1/leads?stage=new')->assertOk()->assertJsonPath('meta.total', 1);
     }
 
     public function test_viewer_without_lead_permission_is_rejected(): void

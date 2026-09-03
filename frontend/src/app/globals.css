@@ -2,21 +2,21 @@
 @import "tw-animate-css";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #f0f2f5;
+  --foreground: #111b21;
 
   /* CRM brand palette (light) */
-  --color-primary: #16a34a;
-  --color-primary-dark: #15803d;
-  --color-primary-soft: #dcfce7;
-  --color-bg: #f8fafc;
+  --color-primary: #075e54;
+  --color-primary-dark: #054c43;
+  --color-primary-soft: #dcf8c6;
+  --color-bg: #f0f2f5;
   --color-surface: #ffffff;
-  --color-border: #e2e8f0;
-  --color-text: #0f172a;
-  --color-muted: #64748b;
-  --color-success: #16a34a;
-  --color-success-light: #dcfce7;
-  --color-success-dark: #15803d;
+  --color-border: #d1d7db;
+  --color-text: #111b21;
+  --color-muted: #667781;
+  --color-success: #25d366;
+  --color-success-light: #dcf8c6;
+  --color-success-dark: #075e54;
   --color-warning: #f59e0b;
   --color-warning-light: #fef3c7;
   --color-warning-dark: #d97706;
@@ -29,7 +29,9 @@
 
   /* Chat/message-list background: deliberately a step darker than --color-surface
      so white inbound bubbles and green outbound bubbles stand out clearly. */
-  --color-chat-bg: #e6ebf0;
+  --color-chat-bg: #f0f2f5;
+  --color-incoming-bubble: #ffffff;
+  --color-outgoing-bubble: #dcf8c6;
 
   /* Chart categorical series (validated palette, see dataviz skill references/palette.md) */
   --chart-series-1: #2a78d6; /* blue */
@@ -59,28 +61,33 @@
   --color-warning: var(--color-warning);
   --color-danger: var(--color-danger);
   --color-info: var(--color-info);
+  --color-chat-bg: var(--color-chat-bg);
+  --color-incoming-bubble: var(--color-incoming-bubble);
+  --color-outgoing-bubble: var(--color-outgoing-bubble);
 }
 
 .dark {
-  --background: #0b1220;
-  --foreground: #f1f5f9;
+  --background: #111b21;
+  --foreground: #e9edef;
 
   /* CRM brand palette (dark) */
-  --color-primary: #22c55e;
-  --color-primary-dark: #16a34a;
-  --color-primary-soft: #14532d;
-  --color-bg: #0b1220;
-  --color-surface: #0f172a;
-  --color-border: #1e293b;
-  --color-text: #f1f5f9;
-  --color-muted: #94a3b8;
+  --color-primary: #25d366;
+  --color-primary-dark: #128c7e;
+  --color-primary-soft: #2a3942;
+  --color-bg: #111b21;
+  --color-surface: #202c33;
+  --color-border: #2a3942;
+  --color-text: #e9edef;
+  --color-muted: #8696a0;
   --color-success: #22c55e;
   --color-warning: #fbbf24;
   --color-danger: #f87171;
   --color-info: #60a5fa;
 
   /* Chat/message-list background: darker than --color-surface so bubbles pop. */
-  --color-chat-bg: #0a0f1a;
+  --color-chat-bg: #111b21;
+  --color-incoming-bubble: #2a3942;
+  --color-outgoing-bubble: #005c4b;
 
   /* Chart categorical series (dark-mode step, see dataviz skill references/palette.md) */
   --chart-series-1: #3987e5;
@@ -93,18 +100,18 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light):not(.dark) {
-    --background: #0b1220;
-    --foreground: #f1f5f9;
+    --background: #111b21;
+    --foreground: #e9edef;
 
     /* CRM brand palette (dark) */
-    --color-primary: #22c55e;
-    --color-primary-dark: #16a34a;
-    --color-primary-soft: #14532d;
-    --color-bg: #0b1220;
-    --color-surface: #0f172a;
-    --color-border: #1e293b;
-    --color-text: #f1f5f9;
-    --color-muted: #94a3b8;
+    --color-primary: #25d366;
+    --color-primary-dark: #128c7e;
+    --color-primary-soft: #2a3942;
+    --color-bg: #111b21;
+    --color-surface: #202c33;
+    --color-border: #2a3942;
+    --color-text: #e9edef;
+    --color-muted: #8696a0;
     --color-success: #22c55e;
     --color-success-light: #14532d;
     --color-success-dark: #22c55e;
@@ -119,7 +126,9 @@
     --color-info-dark: #60a5fa;
 
     /* Chat/message-list background: darker than --color-surface so bubbles pop. */
-    --color-chat-bg: #0a0f1a;
+    --color-chat-bg: #111b21;
+  --color-incoming-bubble: #2a3942;
+  --color-outgoing-bubble: #005c4b;
 
     /* Chart categorical series (dark-mode step, see dataviz skill references/palette.md) */
     --chart-series-1: #3987e5;
@@ -152,7 +161,7 @@ body {
   background-color: var(--color-chat-bg);
   background-image: radial-gradient(
     circle at 1px 1px,
-    color-mix(in srgb, #22c55e 16%, transparent) 1px,
+    color-mix(in srgb, var(--color-primary) 16%, transparent) 1px,
     transparent 0
   );
   background-size: 24px 24px;

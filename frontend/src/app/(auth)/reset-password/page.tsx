@@ -15,8 +15,8 @@ function ResetPasswordForm() {
   const router = useRouter();
   const { toast } = useToast();
   const searchParams = useSearchParams();
-  const token = searchParams.get("token") ?? "";
-  const emailFromQuery = searchParams.get("email") ?? "";
+  const token = searchParams?.get("token") ?? "";
+  const emailFromQuery = searchParams?.get("email") ?? "";
   const [formError, setFormError] = useState<string | null>(null);
 
   const {

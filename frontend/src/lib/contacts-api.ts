@@ -39,7 +39,6 @@ export interface DealSummary {
 export interface LeadSummary {
   id: number;
   stage: string;
-  temperature: string | null;
   score: number;
   source: string | null;
 }

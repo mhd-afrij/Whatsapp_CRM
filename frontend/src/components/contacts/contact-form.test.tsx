@@ -49,11 +49,14 @@ describe("ContactForm validation", () => {
     expect(onSubmit).toHaveBeenCalledWith({
       full_name: "Jane Doe",
       email: null,
+      company: null,
+      job_title: null,
       phone_number: null,
       address: null,
       city: null,
       country: null,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      custom_fields: undefined,
     });
   });
 
