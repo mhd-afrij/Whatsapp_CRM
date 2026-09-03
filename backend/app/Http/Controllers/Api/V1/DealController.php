@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Deal;
 use App\Models\DealStageHistory;
 use App\Models\Label;
+use App\Models\Pipeline;
 use App\Models\PipelineStage;
 use App\Support\AuditLogger;
 use Illuminate\Http\Request;
@@ -70,7 +71,7 @@ class DealController extends Controller
 
         $workspaceId = $request->user()->workspace_id;
 
-        $pipelines = \App\Models\Pipeline::query()
+        $pipelines = Pipeline::query()
             ->where('workspace_id', $workspaceId)
             ->with(['stages' => fn ($q) => $q->orderBy('position')])
             ->orderBy('is_default', 'desc')

@@ -55,7 +55,7 @@ import {
 } from "@/hooks/use-conversations";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCreateNote } from "@/hooks/use-notes";
-import { useCreateDeal } from "@/hooks/use-deals";
+import { useCreateDeal, useDealPipelines } from "@/hooks/use-deals";
 import { useComposerDraft } from "@/hooks/use-composer-draft";
 import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
 import { ApiError } from "@/lib/api-client";
@@ -845,7 +845,7 @@ function StatusDropdown({
   onStatusChange,
 }: {
   status: string;
-  onStatusChange: (status: "open" | "pending" | "closed") => void;
+  onStatusChange: (status: "open" | "closed") => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -863,11 +863,11 @@ function StatusDropdown({
 
   const options = [
     { value: "open" as const, label: "Open", color: "bg-primary" },
-    { value: "pending" as const, label: "Pending", color: "bg-warning" },
     { value: "closed" as const, label: "Closed", color: "bg-muted" },
   ];
 
-  const current = options.find((o) => o.value === status) ?? options[0];
+  const currentStatus = status === "closed" ? "closed" : "open";
+  const current = options.find((o) => o.value === currentStatus) ?? options[0];
 
   return (
     <div ref={ref} className="relative">
@@ -894,7 +894,7 @@ function StatusDropdown({
             >
               <span className={cn("h-2 w-2 rounded-full", option.color)} />
               {option.label}
-              {option.value === status && <span className="ml-auto text-primary">✓</span>}
+              {option.value === currentStatus && <span className="ml-auto text-primary">✓</span>}
             </button>
           ))}
         </div>
@@ -2054,6 +2054,7 @@ export function ChatPanel({
   const canCreateNote = usePermission("notes.create");
   const canManageLabels = usePermission("conversations.reply");
   const createDealMutation = useCreateDeal();
+  const { data: pipelines } = useDealPipelines();
   const { data: users } = useUsers();
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [forwardTarget, setForwardTarget] = useState<Message | null>(null);
@@ -2087,8 +2088,19 @@ export function ChatPanel({
       toast("This conversation has no linked contact. Link one from the contact panel first.", "error");
       return;
     }
+    const pipeline = pipelines?.find((p) => p.is_default) ?? pipelines?.[0] ?? null;
+    const stage = pipeline?.stages?.[0] ?? null;
+    if (!pipeline || !stage) {
+      toast("No pipeline is configured. Add one in Settings first.", "error");
+      return;
+    }
     createDealMutation.mutate(
-      { contact_id: contact.id, title: `Deal with ${contactLabel(conversation)}` },
+      {
+        contact_id: contact.id,
+        pipeline_id: pipeline.id,
+        pipeline_stage_id: stage.id,
+        title: `Deal with ${contactLabel(conversation)}`,
+      },
       {
         onSuccess: () => toast("Deal created and linked to this contact.", "success"),
         onError: (error) =>
@@ -2646,7 +2658,6 @@ export function ChatPanel({
     </div>
   );
 }
-
 
 
 

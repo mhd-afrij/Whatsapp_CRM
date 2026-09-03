@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Api\V1\AiAssistantController;
-use App\Http\Controllers\Api\V1\AutomationRuleController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BusinessHoursController;
@@ -64,10 +63,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     });
 
     Route::middleware(['auth:sanctum', 'active'])->group(function () {
-        Route::get('/automation-rules', [AutomationRuleController::class, 'index'])->middleware('permission:workspace.settings.manage')->name('automation-rules.index');
-        Route::post('/automation-rules', [AutomationRuleController::class, 'store'])->middleware('permission:workspace.settings.manage')->name('automation-rules.store');
-        Route::patch('/automation-rules/{automationRule}', [AutomationRuleController::class, 'update'])->middleware('permission:workspace.settings.manage')->name('automation-rules.update');
-        Route::delete('/automation-rules/{automationRule}', [AutomationRuleController::class, 'destroy'])->middleware('permission:workspace.settings.manage')->name('automation-rules.destroy');
         Route::get('/ai-assistant/settings', [AiAssistantController::class, 'settings'])->middleware('permission:workspace.settings.manage')->name('ai.settings');
         Route::patch('/ai-assistant/settings', [AiAssistantController::class, 'updateSettings'])->middleware('permission:workspace.settings.manage')->name('ai.settings.update');
         Route::post('/ai-assistant/test', [AiAssistantController::class, 'test'])->middleware('permission:workspace.settings.manage')->name('ai.test');
