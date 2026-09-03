@@ -16,7 +16,7 @@ class Deal extends Model
 
     protected $fillable = [
         'workspace_id', 'lead_id', 'contact_id', 'pipeline_id', 'pipeline_stage_id', 'title',
-        'value_amount', 'value_currency', 'probability_percent', 'owner_user_id',
+        'lead_source', 'lead_priority', 'value_amount', 'value_currency', 'probability_percent', 'owner_user_id',
         'expected_close_date', 'status', 'lost_reason', 'closed_at',
     ];
 

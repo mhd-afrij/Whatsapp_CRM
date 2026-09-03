@@ -242,6 +242,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::prefix('deals')->name('deals.')->middleware('permission:deals.manage')->group(function () {
             Route::get('/', [DealController::class, 'index'])->name('index');
             Route::post('/', [DealController::class, 'store'])->name('store');
+            Route::get('/pipelines', [DealController::class, 'pipelines'])->name('pipelines');
             Route::get('/{deal}', [DealController::class, 'show'])->name('show');
             Route::patch('/{deal}', [DealController::class, 'update'])->name('update');
             Route::patch('/{deal}/stage', [DealController::class, 'moveStage'])->name('stage');

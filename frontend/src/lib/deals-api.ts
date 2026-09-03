@@ -40,6 +40,8 @@ export interface Deal {
   pipeline_id: number;
   pipeline_stage_id: number;
   title: string;
+  lead_source: string | null;
+  lead_priority: "low" | "medium" | "high";
   value_amount: string | number | null;
   value_currency: string;
   probability_percent: number | null;
@@ -63,6 +65,7 @@ export interface DealFilters {
   pipeline_stage_id?: number;
   status?: DealStatus;
   owner_user_id?: number;
+  contact_id?: number;
   per_page?: number;
   page?: number;
   /** Any-match (OR) label filter. */
@@ -74,11 +77,29 @@ export interface DealFormValues {
   pipeline_id?: number;
   pipeline_stage_id?: number;
   title?: string;
+  lead_source?: string | null;
+  lead_priority?: "low" | "medium" | "high";
   value_amount?: number | null;
   value_currency?: string;
   probability_percent?: number | null;
   owner_user_id?: number | null;
   expected_close_date?: string | null;
+}
+
+export interface DealPipelineStage {
+  id: number;
+  name: string;
+  position: number;
+  probability_percent: number | null;
+  is_won_stage: boolean;
+  is_lost_stage: boolean;
+}
+
+export interface DealPipeline {
+  id: number;
+  name: string;
+  is_default: boolean;
+  stages: DealPipelineStage[];
 }
 
 interface PaginatedApiResponse<T> {
@@ -101,6 +122,10 @@ async function unwrapPaginated<T>(
 
 export async function fetchDeals(filters: DealFilters): Promise<Paginated<Deal>> {
   return unwrapPaginated<Deal>(apiClient.get("/deals", { params: filters }));
+}
+
+export async function fetchDealPipelines(): Promise<DealPipeline[]> {
+  return unwrap(apiClient.get("/deals/pipelines"));
 }
 
 export async function fetchDeal(id: number): Promise<Deal> {

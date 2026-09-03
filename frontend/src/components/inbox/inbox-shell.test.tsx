@@ -24,7 +24,7 @@ describe("InboxShell", () => {
 
     expect(screen.getByTestId("conversation-list-panel")).toBeInTheDocument();
     expect(screen.getByTestId("thread-panel")).toBeInTheDocument();
-    expect(container.firstChild).toHaveClass("rounded-2xl", "bg-surface");
+    expect(container.firstChild).toHaveClass("grid", "h-full", "overflow-hidden");
   });
 
   it("keeps the conversation list visible on desktop even when a thread is open", () => {

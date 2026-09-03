@@ -1,26 +1,65 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ConversationListPanel } from "@/components/inbox/conversation-list-panel";
+import { ContactContextPanel } from "@/components/inbox/contact-context-panel";
+
+export function ConversationSidebar() {
+  return <ConversationListPanel />;
+}
 
 /**
- * Minimal inbox shell: left list plus the active panel. The route decides what
- * the active panel is, but the shell keeps the layout readable and consistent.
+ * Three-pane inbox shell. The customer profile sticks to the right side on wide
+ * screens and collapses into a slide-over drawer on smaller viewports.
  */
-export function InboxShell({ children }: { children: ReactNode }) {
+export function InboxLayout({
+  children,
+  conversationId,
+}: {
+  children: ReactNode;
+  conversationId?: number | null;
+}) {
   const pathname = usePathname();
   const isThreadOpen = /\/inbox\/[^/]+/.test(pathname ?? "");
 
   return (
-    <div className="grid h-full min-h-0 w-full min-w-0 overflow-hidden rounded-2xl border border-border bg-surface md:grid-cols-[clamp(280px,24vw,300px)_minmax(0,1fr)]">
-      <div className={cn("min-h-0 min-w-0", isThreadOpen ? "hidden md:block" : "block")}>
-        <ConversationListPanel />
-      </div>
-      <div className={cn("min-h-0 min-w-0 w-full", isThreadOpen ? "block" : "hidden md:block")}>
+    <div className="grid h-full min-h-0 w-full min-w-0 grid-rows-[minmax(0,1fr)] overflow-hidden border border-white/[0.08] bg-[#080F1D] shadow-[0_24px_80px_rgba(0,0,0,0.32)] md:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(500px,1fr)_330px]">
+      <aside
+        className={cn(
+          "min-h-0 min-w-0 overflow-hidden border-r border-white/[0.08]",
+          isThreadOpen ? "hidden md:block" : "block"
+        )}
+      >
+        <ConversationSidebar />
+      </aside>
+
+      <section
+        className={cn(
+          "flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden",
+          isThreadOpen ? "flex" : "hidden md:flex"
+        )}
+      >
         {children}
-      </div>
+      </section>
+
+      {conversationId && (
+        <aside className="hidden h-full min-h-0 w-[330px] min-w-[330px] overflow-hidden border-l border-white/[0.08] bg-[#0B1220] 2xl:block">
+          <ContactContextPanel conversationId={conversationId} />
+        </aside>
+      )}
     </div>
   );
+}
+
+/** Backwards-compatible export used by the existing inbox route. */
+export function InboxShell({
+  children,
+  conversationId,
+}: {
+  children: ReactNode;
+  conversationId?: number | null;
+}) {
+  return <InboxLayout conversationId={conversationId}>{children}</InboxLayout>;
 }

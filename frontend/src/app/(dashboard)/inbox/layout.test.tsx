@@ -27,11 +27,11 @@ describe("InboxLayout", () => {
     expect(screen.getByTestId("inbox-shell")).toBeInTheDocument();
     expect(screen.getByTestId("inbox-child")).toBeInTheDocument();
     expect(container.firstChild).toHaveClass(
+      "relative",
       "flex",
-      "h-[calc(100dvh-0px)]",
+      "h-[calc(100%+2rem)]",
       "min-h-0",
       "w-full",
-      "flex-1",
       "-m-4",
       "sm:-m-6"
     );
