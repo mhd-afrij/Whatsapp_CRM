@@ -16,9 +16,9 @@ export function ContactContextDrawer({
 }: ContactContextDrawerProps) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[330px] sm:w-[330px] p-0">
+      <SheetContent side="right" className="w-[360px] p-0">
         <SheetHeader className="sr-only">
-          <SheetTitle>Contact Information</SheetTitle>
+          <SheetTitle>Customer Details</SheetTitle>
         </SheetHeader>
         <div className="h-full min-w-0 overflow-hidden">
           <ContactContextPanel conversationId={conversationId} />
