@@ -38,8 +38,8 @@ export function DashboardHeroChart({ data, isLoading, isError }: DashboardHeroCh
         </div>
       </div>
       <div className="p-4 sm:p-5">
-        {isLoading ? <div className="h-72 animate-pulse rounded-xl bg-border/60" /> : isError ? <div className="flex h-72 items-center justify-center text-sm text-danger">Unable to load pipeline performance.</div> : !hasData ? <div className="flex h-72 items-center justify-center text-sm text-muted">No closed deal value for this period yet.</div> : (
-          <ResponsiveContainer width="100%" height={288}>
+        {isLoading ? <div className="h-52 animate-pulse rounded-xl bg-border/60" /> : isError ? <div className="flex h-52 items-center justify-center text-sm text-danger">Unable to load pipeline performance.</div> : !hasData ? <div className="flex h-52 items-center justify-center text-sm text-muted">No closed deal value for this period yet.</div> : (
+          <ResponsiveContainer width="100%" height={208}>
             <AreaChart data={data ?? []} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
               <defs><linearGradient id="wonValueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--chart-series-3)" stopOpacity={0.35} /><stop offset="95%" stopColor="var(--chart-series-3)" stopOpacity={0} /></linearGradient><linearGradient id="lostValueGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--chart-series-5)" stopOpacity={0.22} /><stop offset="95%" stopColor="var(--chart-series-5)" stopOpacity={0} /></linearGradient></defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
