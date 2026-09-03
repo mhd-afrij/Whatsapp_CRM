@@ -17,20 +17,20 @@ export const NOTIFICATIONS_KEY = ["notifications"] as const;
 /**
  * Powers the notification bell: recent notifications + unread count, live via the
  * gateway's `notification.created` event (room `workspace:{id}:user:{id}`, see
- * whatsapp-gateway's emitNotificationCreated / docs/EVENT_CATALOG.md), with the same
- * poll-fallback pattern used by useWhatsappStatus - only polls on an
- * interval when the socket itself isn't connected.
+ * whatsapp-gateway's emitNotificationCreated / docs/EVENT_CATALOG.md). Polling remains
+ * enabled while connected as a fallback for notifications whose realtime relay was missed.
  */
 export function useNotifications(enabled: boolean) {
   const { user } = useAuth();
-  const { socket, isConnected } = useSocket();
+  const { socket } = useSocket();
   const queryClient = useQueryClient();
 
   const query = useQuery<NotificationListResult>({
     queryKey: NOTIFICATIONS_KEY,
     queryFn: () => fetchNotifications({ per_page: 20 }),
     enabled,
-    refetchInterval: isConnected ? 60_000 : 15_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
   });
 
   useEffect(() => {
