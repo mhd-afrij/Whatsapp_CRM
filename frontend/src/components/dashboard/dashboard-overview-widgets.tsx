@@ -30,7 +30,7 @@ function localToday() {
 }
 
 function Panel({ title, eyebrow, children, action }: { title: string; eyebrow?: string; children: React.ReactNode; action?: React.ReactNode }) {
-  return <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5"><div className="mb-4 flex items-start justify-between gap-3"><div>{eyebrow && <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">{eyebrow}</p>}<h2 className="mt-1 text-sm font-bold text-text">{title}</h2></div>{action}</div>{children}</section>;
+  return <section className="rounded-2xl border border-border bg-surface p-3 shadow-sm sm:p-4"><div className="mb-3 flex items-start justify-between gap-3"><div>{eyebrow && <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">{eyebrow}</p>}<h2 className="mt-0.5 text-sm font-bold text-text">{title}</h2></div>{action}</div>{children}</section>;
 }
 
 function formatCount(value: number | undefined) { return value == null ? "--" : value.toLocaleString(); }
