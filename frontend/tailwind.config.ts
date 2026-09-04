@@ -25,6 +25,11 @@ const config: Config = {
         warning: "var(--color-warning)",
         danger: "var(--color-danger)",
         info: "var(--color-info)",
+        accent: {
+          DEFAULT: "var(--color-accent)",
+          text: "var(--color-accent-text)",
+          muted: "var(--color-accent-muted)",
+        },
       },
     },
   },

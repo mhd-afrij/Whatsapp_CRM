@@ -61,7 +61,7 @@ function CollapsibleSection({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <section className="mb-3 overflow-hidden rounded-xl border border-white/[0.08] bg-[#111827]">
+    <section className="mb-3 overflow-hidden rounded-xl border border-border bg-bg">
       <div className="flex items-center gap-2 px-4 py-3">
         <button
           type="button"
@@ -69,20 +69,20 @@ function CollapsibleSection({
           aria-expanded={open}
           className="flex min-w-0 flex-1 items-center gap-2 text-left transition hover:opacity-80"
         >
-          <Icon className="h-3.5 w-3.5 shrink-0 text-[#22C55E]" />
-          <span className="flex-1 truncate text-[11px] font-bold uppercase tracking-wide text-slate-400">
+          <Icon className="h-3.5 w-3.5 shrink-0 text-accent" />
+          <span className="flex-1 truncate text-[11px] font-bold uppercase tracking-wide text-muted">
             {title}
           </span>
           <ChevronDown
             className={cn(
-              "h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform duration-200",
+              "h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-200",
               open && "rotate-180"
             )}
           />
         </button>
         {action && <div className="shrink-0">{action}</div>}
       </div>
-      {open && <div className="border-t border-white/[0.06] px-4 pb-4 pt-3">{children}</div>}
+      {open && <div className="border-t border-border px-4 pb-4 pt-3">{children}</div>}
     </section>
   );
 }
@@ -90,14 +90,14 @@ function CollapsibleSection({
 function DetailRow({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-1 py-1">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="text-[10px] font-medium uppercase tracking-wide text-muted">{label}</span>
       <span
         className={cn(
-          "min-w-0 break-words text-xs font-medium text-slate-200",
+          "min-w-0 break-words text-xs font-medium text-text",
           mono && "font-mono"
         )}
       >
-        {value || <span className="text-slate-600">—</span>}
+        {value || <span className="text-muted">—</span>}
       </span>
     </div>
   );
@@ -105,11 +105,11 @@ function DetailRow({ label, value, mono }: { label: string; value: ReactNode; mo
 
 function Badge({ children, color = "slate" }: { children: ReactNode; color?: string }) {
   const colorMap: Record<string, string> = {
-    slate: "border-white/[0.08] bg-white/[0.04] text-slate-300",
-    green: "border-[#22C55E]/20 bg-[#22C55E]/10 text-[#86EFAC]",
-    amber: "border-amber-500/20 bg-amber-500/10 text-amber-200",
-    red: "border-red-500/20 bg-red-500/10 text-red-300",
-    blue: "border-blue-500/20 bg-blue-500/10 text-blue-300",
+    slate: "border-border bg-bg text-text",
+    green: "border-accent/20 bg-accent/10 text-accent-muted",
+    amber: "border-warning/20 bg-warning/10 text-warning",
+    red: "border-danger/20 bg-danger/10 text-danger",
+    blue: "border-info/20 bg-info/10 text-info",
   };
   return (
     <span className={cn("inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold", colorMap[color])}>
@@ -136,26 +136,26 @@ function CustomerProfileHeader({
   onMessage: () => void;
 }) {
   return (
-    <div className="border-b border-white/[0.08] bg-[#0B1220]/95 px-4 py-4 backdrop-blur">
+    <div className="border-b border-border bg-surface/95 px-4 py-4 backdrop-blur">
       <div className="flex items-center gap-3">
         <div className="relative shrink-0">
           <Avatar name={name} size="lg" className="rounded-xl" />
           <span
             className={cn(
-              "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#0B1220]",
-              isOnline ? "bg-[#22C55E]" : "bg-slate-500"
+              "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface",
+              isOnline ? "bg-accent" : "bg-muted"
             )}
             title={isOnline ? "Online" : "Offline"}
           />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-50">{name}</p>
+          <p className="truncate text-sm font-semibold text-text">{name}</p>
           <div className="mt-0.5 flex items-center gap-1.5">
-            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", isOnline ? "bg-[#22C55E]" : "bg-slate-500")} />
-            <span className="truncate text-[11px] text-slate-400">{isOnline ? "Online" : "Offline"}</span>
+            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", isOnline ? "bg-accent" : "bg-muted")} />
+            <span className="truncate text-[11px] text-muted">{isOnline ? "Online" : "Offline"}</span>
           </div>
           {phoneNumber && (
-            <p className="mt-1 truncate font-mono text-xs text-slate-400">{phoneNumber}</p>
+            <p className="mt-1 truncate font-mono text-xs text-muted">{phoneNumber}</p>
           )}
         </div>
       </div>
@@ -163,7 +163,7 @@ function CustomerProfileHeader({
         <button
           type="button"
           onClick={onCall}
-          className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.08] hover:text-slate-50"
+          className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-bg px-3 py-2 text-xs font-semibold text-text transition hover:bg-border hover:text-text"
         >
           <Phone className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">Call</span>
@@ -171,7 +171,7 @@ function CustomerProfileHeader({
         <button
           type="button"
           onClick={onMessage}
-          className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.08] hover:text-slate-50"
+          className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-bg px-3 py-2 text-xs font-semibold text-text transition hover:bg-border hover:text-text"
         >
           <MessageSquare className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">WhatsApp</span>
@@ -202,7 +202,7 @@ function CustomerDetailsCard({
 }) {
   return (
     <CollapsibleSection title="Customer Details" icon={UserRound}>
-      <dl className="divide-y divide-white/[0.05]">
+      <dl className="divide-y divide-border">
         <DetailRow label="Name" value={name} />
         <DetailRow label="Phone" value={phoneNumber} mono />
         <DetailRow label="Email" value={email} />
@@ -243,7 +243,7 @@ const DEAL_STATUSES = [
 ] as const;
 
 const leadSelectClass =
-  "w-full rounded-lg border border-white/[0.08] bg-[#080F1D] px-2.5 py-1.5 text-xs text-slate-100 outline-none focus:border-[#22C55E]/50 focus:ring-1 focus:ring-[#22C55E]/20 disabled:opacity-50";
+  "w-full rounded-lg border border-border bg-bg px-2.5 py-1.5 text-xs text-text outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 disabled:opacity-50";
 
 function LeadInfoCard({
   contactId,
@@ -375,16 +375,16 @@ function LeadInfoCard({
       }
     >
       {lead ? (
-        <div className="space-y-1.5 rounded-lg border border-white/[0.08] bg-[#080F1D] p-3">
+        <div className="space-y-1.5 rounded-lg border border-border bg-bg p-3">
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-slate-500">Linked lead</p>
+            <p className="text-[11px] text-muted">Linked lead</p>
             <Badge color={lead.stage === "converted" ? "green" : lead.stage === "qualified" ? "blue" : "yellow"}>
               {lead.stage}
             </Badge>
           </div>
           <Link
             href={`/leads/${lead.id}`}
-            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#22C55E] hover:underline"
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-accent hover:underline"
           >
             <UserRound className="h-3 w-3" />
             Lead #{lead.id}
@@ -395,20 +395,20 @@ function LeadInfoCard({
           type="button"
           onClick={handleCreateLead}
           disabled={createLead.isPending}
-          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#22C55E] px-3 py-1.5 text-[11px] font-bold text-[#04130A] transition hover:bg-[#22C55E]/90 disabled:opacity-50"
+          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-bold text-accent-text transition hover:bg-accent/90 disabled:opacity-50"
         >
           <Plus className="h-3 w-3" />
           {createLead.isPending ? "Creating…" : "Create Lead"}
         </button>
       )}
       {!deal ? (
-        <div className="rounded-lg border border-dashed border-white/[0.08] bg-[#080F1D] p-3 text-center">
-          <p className="text-[11px] text-slate-500">No linked deal for this contact.</p>
+        <div className="rounded-lg border border-dashed border-border bg-bg p-3 text-center">
+          <p className="text-[11px] text-muted">No linked deal for this contact.</p>
           <button
             type="button"
             onClick={handleCreateDeal}
             disabled={createDeal.isPending || !pipelines?.length}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[#22C55E] px-3 py-1.5 text-[11px] font-bold text-[#04130A] transition hover:bg-[#22C55E]/90 disabled:opacity-50"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-bold text-accent-text transition hover:bg-accent/90 disabled:opacity-50"
           >
             <Plus className="h-3 w-3" />
             {createDeal.isPending ? "Creating…" : "Create Deal"}
@@ -417,7 +417,7 @@ function LeadInfoCard({
       ) : (
         <div className="space-y-2.5">
           <div>
-            <label className="mb-1 block text-[11px] text-slate-500">Lead Status</label>
+            <label className="mb-1 block text-[11px] text-muted">Lead Status</label>
             {isOpenDeal ? (
               <select
                 value={deal.status}
@@ -431,7 +431,7 @@ function LeadInfoCard({
                 ))}
               </select>
             ) : (
-              <p className="text-xs font-semibold text-slate-200">
+              <p className="text-xs font-semibold text-text">
                 {deal.status === "won" ? "Won" : "Lost"}
               </p>
             )}
@@ -439,7 +439,7 @@ function LeadInfoCard({
 
           {isOpenDeal && (
             <div>
-              <label className="mb-1 block text-[11px] text-slate-500">Stage</label>
+              <label className="mb-1 block text-[11px] text-muted">Stage</label>
               <select
                 value={deal.pipeline_stage_id}
                 onChange={(e) => handleStage(Number(e.target.value))}
@@ -456,7 +456,7 @@ function LeadInfoCard({
           )}
 
           <div>
-            <label className="mb-1 block text-[11px] text-slate-500">Lead Source</label>
+            <label className="mb-1 block text-[11px] text-muted">Lead Source</label>
             <select
               value={deal.lead_source ?? "whatsapp"}
               onChange={(e) => handleField({ lead_source: e.target.value })}
@@ -471,7 +471,7 @@ function LeadInfoCard({
           </div>
 
           <div>
-            <label className="mb-1 block text-[11px] text-slate-500">Priority</label>
+            <label className="mb-1 block text-[11px] text-muted">Priority</label>
             <select
               value={deal.lead_priority ?? "medium"}
               onChange={(e) =>
@@ -488,7 +488,7 @@ function LeadInfoCard({
           </div>
 
           <div>
-            <label className="mb-1 block text-[11px] text-slate-500">Assigned Agent</label>
+            <label className="mb-1 block text-[11px] text-muted">Assigned Agent</label>
             {canAssign ? (
               <select
                 value={assignedUserId ?? ""}
@@ -510,7 +510,7 @@ function LeadInfoCard({
                 ))}
               </select>
             ) : (
-              <p className="text-xs text-slate-200">{assignedName}</p>
+              <p className="text-xs text-text">{assignedName}</p>
             )}
           </div>
         </div>
@@ -591,7 +591,7 @@ function NotesCard({
             setAdding(true);
             setTimeout(() => textareaRef.current?.focus(), 50);
           }}
-          className="flex h-5 w-5 items-center justify-center rounded-md text-slate-500 transition hover:bg-white/[0.08] hover:text-slate-200"
+          className="flex h-5 w-5 items-center justify-center rounded-md text-muted transition hover:bg-border hover:text-text"
         >
           <Plus className="h-3 w-3" />
         </button>
@@ -599,28 +599,28 @@ function NotesCard({
     >
       <div className="space-y-2">
         {adding && (
-          <div className="rounded-lg border border-[#22C55E]/25 bg-[#080F1D] p-2">
+          <div className="rounded-lg border border-accent/25 bg-bg p-2">
             <textarea
               ref={textareaRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder="Write a note..."
               rows={3}
-              className="w-full resize-none rounded-md border-0 bg-transparent px-2 py-1 text-xs text-slate-100 outline-none placeholder:text-slate-600"
+              className="w-full resize-none rounded-md border-0 bg-transparent px-2 py-1 text-xs text-text outline-none placeholder:text-muted"
             />
             <div className="mt-1.5 flex gap-1.5">
               <button
                 type="button"
                 onClick={handleSubmit}
                 disabled={isCreating || !draft.trim()}
-                className="rounded-md bg-[#22C55E] px-2.5 py-1 text-[10px] font-bold text-[#04130A] disabled:opacity-50"
+                className="rounded-md bg-accent px-2.5 py-1 text-[10px] font-bold text-accent-text disabled:opacity-50"
               >
                 Save
               </button>
               <button
                 type="button"
                 onClick={() => { setAdding(false); setDraft(""); }}
-                className="rounded-md border border-white/[0.08] px-2.5 py-1 text-[10px] font-semibold text-slate-400 transition hover:bg-white/[0.06]"
+                className="rounded-md border border-border px-2.5 py-1 text-[10px] font-semibold text-muted transition hover:bg-border"
               >
                 Cancel
               </button>
@@ -629,16 +629,16 @@ function NotesCard({
         )}
 
         {notes.length === 0 && !adding && (
-          <p className="py-2 text-center text-[11px] text-slate-500">No notes yet</p>
+          <p className="py-2 text-center text-[11px] text-muted">No notes yet</p>
         )}
 
         {notes.slice(0, 5).map((note) => (
-          <div key={note.id} className="rounded-lg border border-white/[0.06] bg-[#080F1D] p-2">
-            <div className="flex items-center justify-between text-[10px] text-slate-500">
+          <div key={note.id} className="rounded-lg border border-border bg-bg p-2">
+            <div className="flex items-center justify-between text-[10px] text-muted">
               <span>{note.author?.name ?? "Unknown"}</span>
               <span>{new Date(note.created_at).toLocaleDateString()}</span>
             </div>
-            <p className="mt-1 whitespace-pre-wrap text-xs text-slate-200 leading-relaxed">
+            <p className="mt-1 whitespace-pre-wrap text-xs text-text leading-relaxed">
               {note.body}
             </p>
           </div>
@@ -682,26 +682,26 @@ function ConversationHistory({
     <CollapsibleSection title="Conversation History" icon={History}>
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#22C55E]/10">
-            <MessageSquare className="h-3 w-3 text-[#22C55E]" />
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent/10">
+            <MessageSquare className="h-3 w-3 text-accent" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs text-slate-200">
+            <p className="truncate text-xs text-text">
               {lastMessagePreview ?? "No messages yet"}
             </p>
-            <p className="text-[10px] text-slate-500">
+            <p className="text-[10px] text-muted">
               {formatRelative(lastMessageAt)}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-[10px] text-slate-500">
+        <div className="flex items-center gap-3 text-[10px] text-muted">
           <span className="flex items-center gap-1">
-            <span className={cn("h-1.5 w-1.5 rounded-full", status === "open" ? "bg-[#22C55E]" : "bg-slate-500")} />
+            <span className={cn("h-1.5 w-1.5 rounded-full", status === "open" ? "bg-accent" : "bg-muted")} />
             {status === "open" ? "Active" : "Closed"}
           </span>
           {unreadCount > 0 && (
             <span className="flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              <span className="h-1.5 w-1.5 rounded-full bg-warning" />
               {unreadCount} unread
             </span>
           )}
@@ -718,10 +718,10 @@ function ConversationHistory({
 function OrdersCard() {
   return (
     <CollapsibleSection title="Orders" icon={Package} defaultOpen={false}>
-      <div className="rounded-lg border border-dashed border-white/[0.08] bg-[#080F1D] p-4 text-center">
-        <Package className="mx-auto h-6 w-6 text-slate-600" />
-        <p className="mt-2 text-[11px] text-slate-500">No orders yet</p>
-        <p className="mt-0.5 text-[10px] text-slate-600">
+      <div className="rounded-lg border border-dashed border-border bg-bg p-4 text-center">
+        <Package className="mx-auto h-6 w-6 text-muted" />
+        <p className="mt-2 text-[11px] text-muted">No orders yet</p>
+        <p className="mt-0.5 text-[10px] text-muted">
           Orders will appear here once linked to this contact.
         </p>
       </div>
@@ -759,7 +759,7 @@ function ActivityTimeline({
         icon: UserCheck,
         text: `Assigned to ${assignedName}`,
         time: "",
-        color: "text-blue-400",
+        color: "text-info",
       });
     }
 
@@ -769,7 +769,7 @@ function ActivityTimeline({
         icon: Tag,
         text: `Label "${label.name}" added`,
         time: "",
-        color: "text-[#22C55E]",
+        color: "text-accent",
       });
     });
 
@@ -779,7 +779,7 @@ function ActivityTimeline({
         icon: StickyNote,
         text: `Note added by ${note.author?.name ?? "Unknown"}`,
         time: new Date(note.created_at).toLocaleDateString(),
-        color: "text-amber-400",
+        color: "text-warning",
       });
     });
 
@@ -799,7 +799,7 @@ function ActivityTimeline({
   if (activities.length === 0) {
     return (
       <CollapsibleSection title="Activity" icon={Activity} defaultOpen={false}>
-        <p className="py-2 text-center text-[11px] text-slate-500">No activity recorded</p>
+        <p className="py-2 text-center text-[11px] text-muted">No activity recorded</p>
       </CollapsibleSection>
     );
   }
@@ -807,15 +807,15 @@ function ActivityTimeline({
   return (
     <CollapsibleSection title="Activity" icon={Activity} defaultOpen={false}>
       <div className="relative space-y-2 pl-3">
-        <div className="absolute left-[7px] top-1 bottom-1 w-px bg-white/[0.06]" />
+        <div className="absolute left-[7px] top-1 bottom-1 w-px bg-bg" />
         {activities.map((item) => (
           <div key={item.id} className="relative flex items-start gap-2.5">
-            <div className="absolute left-0 top-0.5 h-[15px] w-[15px] rounded-full border-2 border-[#111827] bg-[#080F1D]">
+            <div className="absolute left-0 top-0.5 h-[15px] w-[15px] rounded-full border-2 border-border bg-bg">
               <item.icon className={cn("mx-auto mt-[2px] h-2.5 w-2.5", item.color)} />
             </div>
             <div className="min-w-0 flex-1 pl-1">
-              <p className="text-[11px] text-slate-300">{item.text}</p>
-              {item.time && <p className="text-[10px] text-slate-600">{item.time}</p>}
+              <p className="text-[11px] text-text">{item.text}</p>
+              {item.time && <p className="text-[10px] text-muted">{item.time}</p>}
             </div>
           </div>
         ))}
@@ -830,12 +830,12 @@ function ActivityTimeline({
 
 function PanelSkeleton() {
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0B1220]">
-      <div className="h-36 shrink-0 animate-pulse border-b border-white/[0.08] bg-white/[0.03]" />
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface">
+      <div className="h-36 shrink-0 animate-pulse border-b border-border bg-bg" />
       <div className="space-y-3 overflow-hidden p-3">
-        <div className="h-24 animate-pulse rounded-xl bg-white/[0.03]" />
-        <div className="h-32 animate-pulse rounded-xl bg-white/[0.03]" />
-        <div className="h-20 animate-pulse rounded-xl bg-white/[0.03]" />
+        <div className="h-24 animate-pulse rounded-xl bg-bg" />
+        <div className="h-32 animate-pulse rounded-xl bg-bg" />
+        <div className="h-20 animate-pulse rounded-xl bg-bg" />
       </div>
     </div>
   );
@@ -868,19 +868,19 @@ export function CustomerTimeline({
   ].slice(0, 5);
 
   if (items.length === 0) {
-    return <p className="text-sm text-slate-400">No recent CRM activity.</p>;
+    return <p className="text-sm text-muted">No recent CRM activity.</p>;
   }
 
   return (
     <div className="space-y-3">
       {items.map((item) => (
         <div key={item.id} className="flex gap-2.5">
-          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#22C55E]/10 text-[#22C55E]">
+          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
             <item.icon className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0">
-            <p className="line-clamp-2 text-sm text-slate-100">{item.title}</p>
-            <p className="mt-0.5 text-[11px] text-slate-500">{item.meta}</p>
+            <p className="line-clamp-2 text-sm text-text">{item.title}</p>
+            <p className="mt-0.5 text-[11px] text-muted">{item.meta}</p>
           </div>
         </div>
       ))}
@@ -956,19 +956,19 @@ export function CustomerProfile({
 
   if (collapsed) {
     return (
-      <aside className="sticky top-0 flex h-full w-14 shrink-0 flex-col items-center gap-3 overflow-hidden border-l border-white/[0.08] bg-[#0B1220] px-2 py-3 transition-[width] duration-300 ease-out">
+      <aside className="sticky top-0 flex h-full w-14 shrink-0 flex-col items-center gap-3 overflow-hidden border-l border-border bg-surface px-2 py-3 transition-[width] duration-300 ease-out">
         <button
           type="button"
           onClick={onToggle}
           aria-label="Open customer information"
           title="Open customer information"
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.035] text-slate-300 transition hover:bg-white/[0.07] hover:text-slate-50"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-bg text-text transition hover:bg-border hover:text-text"
         >
           <ChevronRight className="h-4 w-4 rotate-180" />
         </button>
         <Avatar name={contactDisplay} size="sm" className="rounded-xl" />
         <span
-          className={cn("h-2 w-2 rounded-full", isOnline ? "bg-[#22C55E]" : "bg-slate-500")}
+          className={cn("h-2 w-2 rounded-full", isOnline ? "bg-accent" : "bg-muted")}
           title={conversation.status}
         />
       </aside>
@@ -979,7 +979,7 @@ export function CustomerProfile({
   const taskItems = tasks?.data ?? [];
 
   return (
-    <aside className="flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden bg-[#0B1220] transition-[width,transform,opacity] duration-300 ease-out">
+    <aside className="flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden bg-surface transition-[width,transform,opacity] duration-300 ease-out">
       <div className="shrink-0">
         <CustomerProfileHeader
           name={contactDisplay}
@@ -1044,9 +1044,9 @@ export function CustomerProfile({
           {contactId && (
             <Link
               href={`/contacts/${contactId}`}
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/[0.07]"
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-border bg-bg px-3 py-2 text-xs font-semibold text-text transition hover:bg-border"
             >
-              <UserRound className="h-3.5 w-3.5 text-slate-400" />
+              <UserRound className="h-3.5 w-3.5 text-muted" />
               View full contact
             </Link>
           )}

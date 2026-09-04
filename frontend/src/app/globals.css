@@ -27,6 +27,14 @@
   --color-info-light: #dbeafe;
   --color-info-dark: #1d4ed8;
 
+  /* Chat accent (WhatsApp green). --color-accent is the green used for action
+     buttons, online/badge indicators and focus rings; --color-accent-text is the
+     text color that sits ON a solid accent background; --color-accent-muted is
+     accent used as readable text on a light/dark surface (badges, links). */
+  --color-accent: #0b6e4f;
+  --color-accent-text: #ffffff;
+  --color-accent-muted: #128c7e;
+
   /* Chat/message-list background: deliberately a step darker than --color-surface
      so white inbound bubbles and green outbound bubbles stand out clearly. */
   --color-chat-bg: #f0f2f5;
@@ -64,6 +72,9 @@
   --color-warning: var(--color-warning);
   --color-danger: var(--color-danger);
   --color-info: var(--color-info);
+  --color-accent: var(--color-accent);
+  --color-accent-text: var(--color-accent-text);
+  --color-accent-muted: var(--color-accent-muted);
   --color-chat-bg: var(--color-chat-bg);
   --color-incoming-bubble: var(--color-incoming-bubble);
   --color-outgoing-bubble: var(--color-outgoing-bubble);
@@ -87,9 +98,14 @@
   --color-warning: #fbbf24;
   --color-info: #53bdeb;
 
-  /* Chat/message-list background: authentic WhatsApp colors. */
-  --color-chat-bg: #0b141a;
-  --color-incoming-bubble: #202c33;
+  /* Chat accent (WhatsApp green) */
+  --color-accent: #22c55e;
+  --color-accent-text: #04130a;
+  --color-accent-muted: #86efac;
+
+  /* Chat/message-list background: darker than --color-surface so bubbles pop. */
+  --color-chat-bg: #111b21;
+  --color-incoming-bubble: #2a3942;
   --color-outgoing-bubble: #005c4b;
   --color-outgoing-text: #e9edef;
 

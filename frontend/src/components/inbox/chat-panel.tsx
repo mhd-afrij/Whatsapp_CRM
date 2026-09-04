@@ -262,16 +262,8 @@ function MessageActionsMenu({
       <button
         type="button"
         aria-label="Message actions"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((current) => !current);
-        }}
-        className={cn(
-          "rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 shadow-sm",
-          isOutbound
-            ? "text-white/70 hover:text-white bg-[#005c4b]/80"
-            : "text-[#8696a0] hover:text-[#e9edef] bg-[#202c33]/80"
-        )}
+        onClick={() => setOpen((current) => !current)}
+        className="rounded-lg border border-border bg-surface/95 p-1.5 text-muted opacity-0 shadow-lg transition hover:bg-border hover:text-text group-hover:opacity-100 focus:opacity-100"
       >
         <ChevronDown className="h-3.5 w-3.5" />
       </button>
@@ -600,8 +592,41 @@ function MessageHoverBar({
   const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
   return (
-    <div className="flex items-center gap-1 rounded-full border border-white/[0.08] bg-[#202c33]/90 px-1.5 py-0.5 shadow-md backdrop-blur-sm">
-      <div ref={pickerRef} className="relative">
+    <div className="absolute -top-4 left-1 z-10 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+      <div className="flex items-center gap-0.5 rounded-xl border border-border bg-surface/95 px-1 shadow-lg backdrop-blur-sm">
+        {/* Emoji reaction */}
+        <div ref={pickerRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text transition-colors"
+            aria-label="React with emoji"
+          >
+            <SmilePlus className="h-3.5 w-3.5" />
+          </button>
+          {showEmojiPicker && (
+            <div className="absolute bottom-full left-0 mb-2 flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-1 shadow-lg z-30">
+              {QUICK_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => {
+                    const hasMyReaction = message.reactions?.some(
+                      (r) => r.emoji === emoji && r.user_id === Number(user?.id)
+                    );
+                    onReact(message.id, emoji, Boolean(hasMyReaction));
+                    setShowEmojiPicker(false);
+                  }}
+                  className="h-8 w-8 flex items-center justify-center rounded-full text-lg hover:bg-bg transition-colors"
+                  aria-label={`React with ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* Reply */}
         <button
           type="button"
           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
@@ -746,7 +771,7 @@ export function MessageBubble({
               // (translucent white over the green outbound bubble, a deeper green
               // tint over the soft-green inbound bubble) so it reads as a distinct block.
               "mb-1 block w-full rounded border-l-2 px-2 py-1 text-left text-xs",
-              isOutbound ? "border-outgoing-text/30 bg-outgoing-text/[0.07]" : "border-[#22C55E]/40 bg-white/[0.04]"
+              isOutbound ? "border-outgoing-text/30 bg-outgoing-text/[0.07]" : "border-accent/40 bg-bg"
             )}
             onClick={() => onJumpToMessage(repliedTo.id)}
             title="Jump to replied message"
@@ -1608,7 +1633,7 @@ export function Composer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="relative z-20 shrink-0 border-t border-[#222d34] bg-[#202c33] px-3 py-2.5 shadow-sm"
+      className="relative z-20 shrink-0 border-t border-border bg-surface/98 px-3 py-3 shadow-[0_-18px_42px_rgba(0,0,0,0.28)] backdrop-blur"
     >
       {isNoteMode && (
         <p className="mb-2 text-xs font-medium text-amber-400">
@@ -1689,9 +1714,9 @@ export function Composer({
       />
 
       {canReply && !isNoteMode && isRecording && (
-        <div className="mb-2 flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-rose-500" />
-          <span className="text-xs font-medium text-[#e9edef]">
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-accent/20 bg-accent/5 px-3 py-2">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-danger" />
+          <span className="text-xs font-medium text-text">
             Recording voice note… {formatRecordTime(recordSeconds)}
           </span>
           <div className="ml-auto flex items-center gap-1">
@@ -1699,7 +1724,7 @@ export function Composer({
               type="button"
               onClick={cancelRecording}
               aria-label="Discard recording"
-              className="rounded-lg p-1.5 text-[#8696a0] transition-colors hover:bg-white/[0.06] hover:text-[#e9edef]"
+              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-border hover:text-text"
             >
               <X className="h-4 w-4" />
             </button>
@@ -1707,7 +1732,7 @@ export function Composer({
               type="button"
               onClick={stopRecording}
               aria-label="Stop and attach recording"
-              className="rounded-lg bg-[#00a884] p-1.5 text-white transition-colors hover:bg-[#008f6f]"
+              className="rounded-lg bg-accent p-1.5 text-accent-text transition-colors hover:bg-accent/90"
             >
               <Square className="h-3.5 w-3.5" />
             </button>
@@ -1750,14 +1775,14 @@ export function Composer({
                 <SmilePlus className="h-5 w-5" />
               </button>
               {showEmojiPicker && (
-                <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-xl border border-white/[0.08] bg-[#202c33] p-2 shadow-2xl animate-in slide-in-from-bottom-2 fade-in duration-100">
+                <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-xl border border-border bg-surface p-2 shadow-2xl animate-in slide-in-from-bottom-2 fade-in duration-100">
                   <div className="grid grid-cols-8 gap-0.5">
                     {QUICK_EMOJIS.map((emoji) => (
                       <button
                         key={emoji}
                         type="button"
                         onClick={() => insertEmoji(emoji)}
-                        className="rounded-lg p-1.5 text-lg transition-transform hover:scale-110 hover:bg-white/[0.06]"
+                        className="rounded-lg p-1.5 text-lg transition-transform hover:scale-110 hover:bg-border"
                       >
                         {emoji}
                       </button>
@@ -1820,7 +1845,7 @@ export function Composer({
               disabled={aiDraftMutation.isPending || isUploading}
               aria-label="Draft a reply with AI"
               title="Draft a reply with AI"
-              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-lg text-[#00a884] transition-colors hover:bg-white/[0.08] disabled:cursor-wait disabled:opacity-50"
+              className="absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-accent transition-colors hover:bg-accent/10 disabled:cursor-wait disabled:opacity-50"
             >
               <Sparkles className={cn("h-4 w-4", aiDraftMutation.isPending && "animate-pulse")} aria-hidden="true" />
             </button>
@@ -1836,8 +1861,8 @@ export function Composer({
               }
             }}
             rows={1}
-            placeholder={isNoteMode ? "Write an internal note..." : "Type a message..."}
-            className="min-h-[42px] max-h-[140px] w-full min-w-0 resize-none overflow-y-auto rounded-lg bg-[#2a3942] px-3.5 py-2.5 pr-10 text-[14.5px] text-[#e9edef] placeholder:text-[#8696a0] leading-relaxed outline-none border-none focus:ring-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            placeholder={isNoteMode ? "Write an internal note" : "Type a message or / for saved replies"}
+            className="min-h-[42px] w-full min-w-0 resize-none overflow-hidden rounded-xl border border-border bg-surface px-3 py-2.5 pr-12 text-sm text-text placeholder:text-muted outline-none transition focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
           />
         </div>
 
@@ -1846,8 +1871,8 @@ export function Composer({
           disabled={(!body.trim() && !attachment) || sendMutation.isPending || createNote.isPending || isUploading}
           aria-label={isNoteMode ? "Save note" : "Send message"}
           className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-semibold shadow-md transition disabled:opacity-40 active:scale-95",
-            isNoteMode ? "bg-amber-400 text-[#080F1D] hover:bg-amber-300" : "bg-[#00a884] text-white hover:bg-[#008f6f]"
+            "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl font-semibold shadow-[0_10px_24px_rgba(34,197,94,0.16)] disabled:opacity-50",
+            isNoteMode ? "bg-warning text-black/70 hover:brightness-95" : "bg-accent text-accent-text hover:bg-accent/90"
           )}
         >
           <Send className="h-4 w-4" />
@@ -1968,8 +1993,8 @@ export function HeaderIconButton({
       aria-label={label}
       title={label}
       className={cn(
-        "h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.035] text-slate-400 transition hover:bg-white/[0.07] hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/30",
-        hideOnSmall ? "hidden lg:flex" : "flex"
+        "h-9 w-9 items-center justify-center rounded-xl border border-border bg-bg text-muted transition hover:bg-border hover:text-text focus:outline-none focus:ring-2 focus:ring-accent/30",
+        hideOnSmall ? "hidden 2xl:flex" : "flex"
       )}
     >
       <Icon className="h-4 w-4" />
@@ -1997,25 +2022,25 @@ export function ChatHeader({
   const online = conversation?.whatsapp_contact?.is_online === true;
 
   return (
-    <header className="flex min-h-[72px] shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] bg-[#0B1220]/95 px-4 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.18)] backdrop-blur">
+    <header className="flex min-h-[80px] shrink-0 items-center justify-between gap-2 border-b border-border bg-surface/95 px-4 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.18)] backdrop-blur">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Link
           href="/inbox"
           aria-label="Back to conversation list"
-          className="-ml-1 rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-100 md:hidden"
+          className="-ml-1 rounded-xl p-2 text-muted transition hover:bg-border hover:text-text md:hidden"
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
         {conversation && <Avatar name={contactLabel(conversation)} size="md" className="rounded-xl shrink-0" />}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
-            <p className="truncate text-base font-semibold text-slate-50">{contactLabel(conversation)}</p>
-            <span className="hidden items-center gap-1 rounded-md border border-[#22C55E]/25 bg-[#22C55E]/10 px-1.5 py-0.5 text-[11px] font-semibold text-[#86EFAC] sm:inline-flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
+            <p className="truncate text-base font-semibold text-text">{contactLabel(conversation)}</p>
+            <span className="hidden items-center gap-1 rounded-md border border-accent/25 bg-accent/10 px-1.5 py-0.5 text-[11px] font-semibold text-accent-muted sm:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
               {online ? "Online" : "Active"}
             </span>
           </div>
-          <p className="truncate text-xs text-slate-400">{contactSubtitle(conversation)}</p>
+          <p className="truncate text-xs text-muted">{contactSubtitle(conversation)}</p>
         </div>
       </div>
 
@@ -2304,7 +2329,7 @@ export function ChatPanel({
 
   if (isLoading) {
     return (
-      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#080F1D]">
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-chat-bg">
         <div className="flex h-16 shrink-0 items-center border-b border-border px-3">
           <div className="h-4 w-28 rounded bg-border/60" />
         </div>
@@ -2322,7 +2347,7 @@ export function ChatPanel({
 
   if (isError) {
     return (
-      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#080F1D]">
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-chat-bg">
         <div className="flex h-16 shrink-0 items-center border-b border-border px-3">
           <div className="h-4 w-28 rounded bg-border/60" />
         </div>
@@ -2346,7 +2371,7 @@ export function ChatPanel({
   }
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#080F1D]">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-chat-bg">
       <ChatHeader
         conversation={conversation}
         onSearch={() => setShowSearch((v) => !v)}
@@ -2372,15 +2397,15 @@ export function ChatPanel({
       </ChatHeader>
 
       {/* Conversation toolbar: Search · Pin · Label · AI Summary · More */}
-      <div className="flex shrink-0 items-center gap-0.5 border-b border-white/[0.08] bg-[#0B1220]/90 px-3 py-1.5 backdrop-blur">
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-border bg-surface/90 px-3 py-1.5 backdrop-blur">
         <button
           type="button"
           onClick={() => setShowSearch((v) => !v)}
           aria-label="Search messages"
           title="Search messages"
           className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-100",
-            showSearch && "bg-white/[0.06] text-slate-100"
+            "flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-border hover:text-text",
+            showSearch && "bg-bg text-text"
           )}
         >
           <Search className="h-4 w-4" />
@@ -2391,8 +2416,8 @@ export function ChatPanel({
           aria-label={conversation?.pinned_at ? "Unpin conversation" : "Pin conversation"}
           title={conversation?.pinned_at ? "Unpin conversation" : "Pin conversation"}
           className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-100",
-            conversation?.pinned_at && "text-[#22C55E]"
+            "flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-border hover:text-text",
+            conversation?.pinned_at && "text-accent"
           )}
         >
           <Pin className={cn("h-4 w-4", conversation?.pinned_at && "rotate-45")} />
@@ -2405,14 +2430,14 @@ export function ChatPanel({
             aria-expanded={showLabels}
             title="Labels"
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-100",
-              showLabels && "bg-white/[0.06] text-slate-100"
+              "flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-border hover:text-text",
+              showLabels && "bg-bg text-text"
             )}
           >
             <Tag className="h-4 w-4" />
           </button>
           {showLabels && (
-            <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-xl border border-white/[0.08] bg-surface p-3 shadow-2xl">
+            <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-xl border border-border bg-surface p-3 shadow-2xl">
               <LabelPicker
                 entity="conversations"
                 entityId={conversationId}
@@ -2429,8 +2454,8 @@ export function ChatPanel({
           aria-expanded={showAiSummary}
           title="AI conversation summary"
           className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-slate-100",
-            showAiSummary && "bg-white/[0.06] text-[#86EFAC]"
+            "flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-border hover:text-text",
+            showAiSummary && "bg-bg text-accent-muted"
           )}
         >
           <Sparkles className="h-4 w-4" />
@@ -2476,22 +2501,22 @@ export function ChatPanel({
 
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         {showAiSummary && (
-          <div className="shrink-0 border-b border-white/[0.08] bg-[#22C55E]/5 px-4 py-2.5">
+          <div className="shrink-0 border-b border-border bg-accent/5 px-4 py-2.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-[#86EFAC]">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-accent-muted">
                 <Sparkles className="h-3.5 w-3.5" />
                 AI summary
               </span>
-              <span className="text-xs text-slate-300">
+              <span className="text-xs text-text">
                 Customer is interested and likely needs a quotation with follow-up confirmation.
               </span>
-              <span className="rounded-md bg-[#080F1D]/70 px-2 py-0.5 text-[11px] text-slate-400">
+              <span className="rounded-md bg-surface/70 px-2 py-0.5 text-[11px] text-muted">
                 Positive
               </span>
-              <span className="rounded-md bg-[#080F1D]/70 px-2 py-0.5 text-[11px] text-slate-400">
+              <span className="rounded-md bg-surface/70 px-2 py-0.5 text-[11px] text-muted">
                 Score 82
               </span>
-              <span className="rounded-md bg-[#080F1D]/70 px-2 py-0.5 text-[11px] text-amber-200">
+              <span className="rounded-md bg-surface/70 px-2 py-0.5 text-[11px] text-warning">
                 Next: Quote
               </span>
             </div>
@@ -2589,8 +2614,8 @@ export function ChatPanel({
             return (
               <div key={message.id}>
                 {showSeparator && message.sent_at && (
-                  <div className="my-3 flex justify-center sticky top-2 z-10">
-                    <span className="rounded-lg bg-[#182229]/95 border border-[#222d34]/60 px-3 py-1 text-[11.5px] font-medium text-[#8696a0] shadow-sm uppercase tracking-wider">
+                  <div className="my-4 flex justify-center">
+                    <span className="rounded-lg border border-border bg-surface/90 px-3 py-1 text-[11px] font-medium text-muted shadow-lg backdrop-blur">
                       {formatInboxDateSeparator(message.sent_at, workspace?.timezone)}
                     </span>
                   </div>
