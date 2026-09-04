@@ -284,10 +284,6 @@ export async function transaction<T>(
   }
 }
 
-export function getCircuitBreakerState(): Readonly<CircuitBreakerState> {
-  return { ...circuitBreaker };
-}
-
 export function isHealthy(): boolean {
   return circuitBreaker.state !== 'open' && pool !== null;
 }

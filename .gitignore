@@ -18,22 +18,13 @@ dist-ssr/
 coverage/
 
 # Backend (Laravel / PHP) runtime artifacts
-Backend/api/vendor/
-backend/api/vendor/
-Backend/node_modules/
-Backend/api/storage/logs/
-Backend/api/storage/framework/cache/
-Backend/api/storage/framework/sessions/
-Backend/api/storage/framework/views/
-Backend/api/bootstrap/cache/*.php
 backend/storage/logs/
 backend/storage/framework/cache/
 backend/storage/framework/sessions/
 backend/storage/framework/views/
 backend/bootstrap/cache/*.php
 
-# WhatsApp sync
-backend/whatsapp-sync/node_modules/
+# WhatsApp gateway
 whatsapp-gateway/node_modules/
 
 # Databases / runtime data

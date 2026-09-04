@@ -23,9 +23,8 @@ function getInitialTheme(): Theme {
   if (typeof window === "undefined") return "light";
   const stored = localStorage.getItem("theme") as Theme | null;
   if (stored) return stored;
-  if (typeof window.matchMedia === "function") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
+  // Keep the CRM light by default. Dark mode is opt-in so the inbox list does
+  // not unexpectedly change when the operating system uses a dark theme.
   return "light";
 }
 
@@ -43,10 +42,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!mounted) return;
     const root = document.documentElement;
-    // Toggle both marker classes so the `prefers-color-scheme` fallback in
-    // globals.css only applies when no explicit theme has been chosen. Without
-    // the `.light` class a user who picks Light while their OS is dark would be
-    // overridden by the media query and stuck in dark mode.
+    // Toggle both marker classes so every surface follows the explicit choice.
     root.classList.toggle("dark", theme === "dark");
     root.classList.toggle("light", theme !== "dark");
     localStorage.setItem("theme", theme);

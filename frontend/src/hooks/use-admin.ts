@@ -7,7 +7,6 @@ import {
   createTeam,
   deleteRole,
   deleteTeam,
-  fetchAdminUser,
   fetchAdminUsers,
   fetchPermissionCatalog,
   fetchRoles,
@@ -32,14 +31,6 @@ export function useAdminUsers(params: AdminUserListParams) {
   return useQuery({
     queryKey: usersKey(params),
     queryFn: () => fetchAdminUsers(params),
-  });
-}
-
-export function useAdminUser(id: number | null) {
-  return useQuery({
-    queryKey: ["admin-user", id],
-    queryFn: () => fetchAdminUser(id as number),
-    enabled: id !== null,
   });
 }
 

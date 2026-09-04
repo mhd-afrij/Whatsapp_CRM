@@ -1,1 +1,0 @@
-export { ChatHeader, HeaderIconButton } from "./chat-panel";

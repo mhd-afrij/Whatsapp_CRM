@@ -46,11 +46,6 @@ function getS3Client(): S3Client {
   return s3Client;
 }
 
-/** Test/DI helper: overrides the singleton S3 client. */
-export function setS3ClientForTesting(override: S3Client | null): void {
-  s3Client = override;
-}
-
 /**
  * Resolves a storage key (as persisted in message_media.storage_path) to a
  * temporary, authorized access method. Does NOT perform any authorization

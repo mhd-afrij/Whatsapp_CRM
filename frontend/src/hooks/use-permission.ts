@@ -12,8 +12,3 @@ export function usePermission(permission: string): boolean {
   const { can } = useAuth();
   return can(permission);
 }
-
-export function usePermissions(): { can: (permission: string) => boolean } {
-  const { can } = useAuth();
-  return { can };
-}

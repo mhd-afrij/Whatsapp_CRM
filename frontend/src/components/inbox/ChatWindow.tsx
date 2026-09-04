@@ -1,1 +1,0 @@
-export { ChatPanel, ChatPanel as ChatWindow } from "./chat-panel";

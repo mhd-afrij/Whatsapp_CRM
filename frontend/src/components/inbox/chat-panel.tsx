@@ -692,8 +692,15 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "self-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 px-1",
-          isOutbound ? "order-first" : "order-last"
+          "w-fit min-w-[76px] max-w-[80%] px-3.5 py-2.5 text-sm shadow-[0_14px_30px_rgba(0,0,0,0.18)]",
+          isOutbound
+            ? "rounded-[16px_16px_4px_16px] bg-outgoing-bubble text-outgoing-text"
+            : "rounded-[16px_16px_16px_4px] bg-incoming-bubble text-text",
+          isReplyingTo
+            ? isOutbound
+              ? "ring-2 ring-primary-dark/70"
+              : "ring-2 ring-primary/50"
+            : undefined
         )}
       >
         <MessageHoverBar
@@ -735,8 +742,11 @@ export function MessageBubble({
           <button
             type="button"
             className={cn(
-              "mb-1 block w-full rounded border-l-4 px-2 py-1 text-left text-xs",
-              isOutbound ? "border-emerald-300 bg-black/20 text-[#e9edef]" : "border-emerald-500 bg-black/20 text-[#e9edef]"
+              // WhatsApp-style quote strip: a subtle tint behind the quoted text
+              // (translucent white over the green outbound bubble, a deeper green
+              // tint over the soft-green inbound bubble) so it reads as a distinct block.
+              "mb-1 block w-full rounded border-l-2 px-2 py-1 text-left text-xs",
+              isOutbound ? "border-outgoing-text/30 bg-outgoing-text/[0.07]" : "border-[#22C55E]/40 bg-white/[0.04]"
             )}
             onClick={() => onJumpToMessage(repliedTo.id)}
             title="Jump to replied message"
@@ -757,17 +767,16 @@ export function MessageBubble({
         <div className="relative text-[14.2px] leading-[19px]">
           {message.body && <span className="whitespace-pre-wrap break-words">{message.body}</span>}
 
-          <span className="float-right ml-2 mt-1 -mb-0.5 inline-flex items-center gap-1 select-none h-3.5">
-            <span className={cn("text-[11px] leading-none", isOutbound ? "text-white/60" : "text-[#8696a0]")}>
-              {formatInboxTime(message.sent_at, timeZone)}
-            </span>
-            {isOutbound && (
-              <MessageStatusTick
-                status={message.status}
-                deliveredAt={message.delivered_at}
-                readAt={message.read_at}
-              />
-            )}
+        <MessageReactions
+          reactions={message.reactions}
+          currentUserId={user?.id ? Number(user.id) : undefined}
+          onAddReaction={(emoji) => onReact(message.id, emoji, false)}
+          onRemoveReaction={(emoji) => onReact(message.id, emoji, true)}
+        />
+
+        <div className="mt-1 flex items-center justify-end gap-1">
+          <span className={cn("text-[10px] leading-none", isOutbound ? "text-outgoing-text/70" : "text-muted")}>
+            {formatInboxTime(message.sent_at, timeZone)}
           </span>
         </div>
 

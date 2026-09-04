@@ -89,12 +89,4 @@ export class DispatchRepository {
       id,
     ]);
   }
-
-  async findById(id: number): Promise<DispatchRow | null> {
-    const [rows] = await query<DispatchRow[]>(
-      'SELECT * FROM message_dispatch_queue WHERE id = ? LIMIT 1',
-      [id],
-    );
-    return rows[0] ?? null;
-  }
 }

@@ -10,22 +10,20 @@ Evidence:
 - The frontend default API URL points at `http://localhost:8000/api/v1` served by `backend/`.
 - The gateway calls `http://backend:8000/api/internal` on the compose network.
 - The top-level README documents `backend/` as the Laravel 12 REST API.
-- No deployment, compose, frontend, or gateway reference outside `backend/api/` points to `backend/api/`.
+- No deployment, compose, frontend, or gateway reference points to `backend/api/` (removed).
 
 `backend/` owns CRM business logic: auth, RBAC, users, teams, contacts, deals, tasks, notes, notifications, analytics, workspace settings, and the backend side of conversation actions.
 
-## Deprecated Folder
+## Removed Legacy Folder
 
-`backend/api/` is a deprecated legacy Laravel application snapshot. It contains its own routes, migrations, controllers, services, tests, and composer files that overlap with the active `backend/` application.
+`backend/api/` was a deprecated legacy Laravel application snapshot (duplicate routes, migrations, controllers, services, tests, and composer files that overlapped the active `backend/` application). It was not wired into Docker Compose, Nginx, the frontend, or the WhatsApp gateway.
 
-It is not currently wired into Docker Compose, Nginx, the frontend, or the WhatsApp gateway. Do not add new features there.
+It was removed as part of the dead-code cleanup. The full history remains available in git; the original audit note is archived at `docs/archive/backend-api-audit.md`.
 
-An audit note is stored at `docs/archive/backend-api-audit.md` so future maintainers know why the folder is not part of the runtime path.
+A similar legacy folder, `backend/whatsapp-sync/`, was also removed (superseded by the active `whatsapp-gateway/` service).
 
 ## Maintenance Rules
 
 - Add new Laravel API features only under `backend/`.
-- Do not duplicate controllers, models, policies, migrations, or services between `backend/` and `backend/api/`.
-- If a useful implementation exists only in `backend/api/`, port it into `backend/` with tests, then leave a note in the relevant PR or changelog.
-- Deployment scripts must continue to reference `backend/`, never `backend/api/`.
-- Before deleting `backend/api/`, create a tagged repository backup or artifact archive and run the full backend, gateway, frontend, and e2e suites.
+- Keep a single source of truth for controllers, models, policies, migrations, and services under `backend/` — never reintroduce a parallel legacy snapshot.
+- Deployment scripts must continue to reference `backend/` and `whatsapp-gateway/`.

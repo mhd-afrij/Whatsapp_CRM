@@ -1,1 +1,0 @@
-export { Composer, Composer as MessageComposer } from "./chat-panel";

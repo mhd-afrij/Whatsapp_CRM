@@ -88,8 +88,3 @@ export function getStorageClient(): StorageClient {
 
   return client;
 }
-
-/** Test/DI helper: overrides the singleton storage client. */
-export function setStorageClientForTesting(override: StorageClient | null): void {
-  client = override;
-}
