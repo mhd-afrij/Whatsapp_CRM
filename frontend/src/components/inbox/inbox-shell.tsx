@@ -16,7 +16,6 @@ export function ConversationSidebar() {
  */
 export function InboxLayout({
   children,
-  conversationId,
 }: {
   children: ReactNode;
   conversationId?: number | null;
@@ -25,11 +24,12 @@ export function InboxLayout({
   const isThreadOpen = /\/inbox\/[^/]+/.test(pathname ?? "");
 
   return (
-    <div className="grid h-full min-h-0 w-full min-w-0 grid-rows-[minmax(0,1fr)] overflow-hidden border border-border bg-bg shadow-[0_24px_80px_rgba(0,0,0,0.32)] md:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(500px,1fr)_330px]">
+    <div className="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-bg">
       <aside
         className={cn(
-          "min-h-0 min-w-0 overflow-hidden border-r border-white/[0.08]",
-          isThreadOpen ? "hidden md:block" : "block"
+          "h-full min-h-0 shrink-0 border-r border-border bg-surface transition-all duration-200",
+          "w-full md:w-[320px] lg:w-[340px] xl:w-[360px]",
+          isThreadOpen ? "hidden md:flex flex-col" : "flex flex-col"
         )}
       >
         <ConversationSidebar />
@@ -37,18 +37,12 @@ export function InboxLayout({
 
       <section
         className={cn(
-          "flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden",
+          "h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-bg",
           isThreadOpen ? "flex" : "hidden md:flex"
         )}
       >
         {children}
       </section>
-
-      {conversationId && (
-        <aside className="hidden h-full min-h-0 w-[330px] min-w-[330px] overflow-hidden border-l border-border bg-surface 2xl:block">
-          <ContactContextPanel conversationId={conversationId} />
-        </aside>
-      )}
     </div>
   );
 }

@@ -22,8 +22,13 @@ describe("ConversationPage", () => {
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
     expect(screen.getByTestId("contact-context-panel")).toBeInTheDocument();
     expect(container.firstChild).toHaveClass(
-      "grid",
-      "xl:grid-cols-[minmax(0,1fr)_clamp(300px,22vw,330px)]"
+      "relative",
+      "flex",
+      "h-full",
+      "min-h-0",
+      "w-full",
+      "flex-1",
+      "overflow-hidden"
     );
   });
 });

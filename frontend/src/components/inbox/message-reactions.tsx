@@ -93,6 +93,8 @@ export function MessageReactions({
   const [showPicker, setShowPicker] = useState(false);
   const summary = summarizeReactions(reactions, currentUserId);
 
+  if (summary.length === 0) return null;
+
   const handleReactionClick = (reaction: ReactionSummary) => {
     if (reaction.hasMyReaction && onRemoveReaction) {
       onRemoveReaction(reaction.emoji);
@@ -102,17 +104,17 @@ export function MessageReactions({
   };
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1 rounded-full bg-[#202c33] border border-[#111b21] px-1.5 py-0.5 shadow-md">
       {summary.map((reaction) => (
         <button
           key={reaction.emoji}
           type="button"
           onClick={() => handleReactionClick(reaction)}
           className={cn(
-            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none transition-colors",
+            "inline-flex items-center gap-1 rounded-full px-1 text-[11px] leading-none transition-colors",
             reaction.hasMyReaction
-              ? "border-primary/30 bg-primary/10 text-primary"
-              : "border-border bg-bg text-text hover:bg-bg/80"
+              ? "text-emerald-400 font-semibold"
+              : "text-[#8696a0] hover:text-[#e9edef]"
           )}
           title={`${reaction.emoji} reacted ${reaction.count} time${reaction.count === 1 ? "" : "s"}`}
         >
@@ -123,14 +125,6 @@ export function MessageReactions({
 
       {onAddReaction && (
         <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowPicker(!showPicker)}
-            className="inline-flex items-center justify-center h-6 w-6 rounded-full border border-border bg-bg text-muted hover:text-text transition-colors"
-            aria-label="Add reaction"
-          >
-            <SmilePlus className="h-3.5 w-3.5" />
-          </button>
           {showPicker && (
             <ReactionPicker
               onSelect={onAddReaction}

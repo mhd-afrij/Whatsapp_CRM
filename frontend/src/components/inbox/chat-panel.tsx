@@ -215,6 +215,7 @@ function ReplyMediaThumb({
 function MessageActionsMenu({
   message,
   conversationId,
+  isOutbound,
   onReply,
   onJumpToReply,
   onStarToggle,
@@ -223,6 +224,7 @@ function MessageActionsMenu({
 }: {
   message: Message;
   conversationId: number;
+  isOutbound?: boolean;
   onReply: (message: Message) => void;
   onJumpToReply: (messageId: number) => void;
   onStarToggle: (message: Message) => void;
@@ -256,18 +258,26 @@ function MessageActionsMenu({
   };
 
   return (
-    <div ref={ref} className="absolute right-2 top-2 z-10">
+    <div ref={ref} className="absolute right-1 top-1 z-10">
       <button
         type="button"
         aria-label="Message actions"
-        onClick={() => setOpen((current) => !current)}
-        className="rounded-lg border border-white/[0.08] bg-[#111827]/95 p-1.5 text-slate-400 opacity-0 shadow-lg transition hover:bg-white/[0.08] hover:text-slate-100 group-hover:opacity-100 focus:opacity-100"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((current) => !current);
+        }}
+        className={cn(
+          "rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 shadow-sm",
+          isOutbound
+            ? "text-white/70 hover:text-white bg-[#005c4b]/80"
+            : "text-[#8696a0] hover:text-[#e9edef] bg-[#202c33]/80"
+        )}
       >
-        <MoreVertical className="h-4 w-4" />
+        <ChevronDown className="h-3.5 w-3.5" />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-44 overflow-hidden rounded-2xl border border-border bg-surface py-1 shadow-lg">
+        <div className="absolute right-0 top-full mt-1 w-44 overflow-hidden rounded-xl border border-white/[0.08] bg-[#202c33] py-1 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-100">
           <button
             type="button"
             onClick={() => {
@@ -590,59 +600,46 @@ function MessageHoverBar({
   const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
   return (
-    <div className="absolute -top-4 left-1 z-10 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-      <div className="flex items-center gap-0.5 rounded-xl border border-white/[0.08] bg-[#111827]/95 px-1 shadow-lg backdrop-blur-sm">
-        {/* Emoji reaction */}
-        <div ref={pickerRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text transition-colors"
-            aria-label="React with emoji"
-          >
-            <SmilePlus className="h-3.5 w-3.5" />
-          </button>
-          {showEmojiPicker && (
-            <div className="absolute bottom-full left-0 mb-2 flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-1 shadow-lg z-30">
-              {QUICK_REACTIONS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => {
-                    const hasMyReaction = message.reactions?.some(
-                      (r) => r.emoji === emoji && r.user_id === Number(user?.id)
-                    );
-                    onReact(message.id, emoji, Boolean(hasMyReaction));
-                    setShowEmojiPicker(false);
-                  }}
-                  className="h-8 w-8 flex items-center justify-center rounded-full text-lg hover:bg-bg transition-colors"
-                  aria-label={`React with ${emoji}`}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        {/* Reply */}
+    <div className="flex items-center gap-1 rounded-full border border-white/[0.08] bg-[#202c33]/90 px-1.5 py-0.5 shadow-md backdrop-blur-sm">
+      <div ref={pickerRef} className="relative">
         <button
           type="button"
-          onClick={() => onReply(message)}
-          className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text transition-colors"
-          aria-label="Reply"
+          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          className="flex h-6 w-6 items-center justify-center rounded-full text-[#8696a0] hover:bg-white/[0.08] hover:text-[#e9edef] transition-colors"
+          aria-label="React with emoji"
         >
-          <CornerUpLeft className="h-3.5 w-3.5" />
+          <SmilePlus className="h-3.5 w-3.5" />
         </button>
-        {/* Copy */}
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text transition-colors"
-          aria-label="Copy message"
-        >
-          <Copy className="h-3.5 w-3.5" />
-        </button>
+        {showEmojiPicker && (
+          <div className="absolute bottom-full left-0 mb-2 flex items-center gap-1 rounded-full border border-white/[0.08] bg-[#202c33] px-2 py-1 shadow-xl z-30 animate-in fade-in zoom-in-95 duration-100">
+            {QUICK_REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => {
+                  const hasMyReaction = message.reactions?.some(
+                    (r) => r.emoji === emoji && r.user_id === Number(user?.id)
+                  );
+                  onReact(message.id, emoji, Boolean(hasMyReaction));
+                  setShowEmojiPicker(false);
+                }}
+                className="h-7 w-7 flex items-center justify-center rounded-full text-base hover:bg-white/[0.1] transition-colors"
+                aria-label={`React with ${emoji}`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+      <button
+        type="button"
+        onClick={() => onReply(message)}
+        className="flex h-6 w-6 items-center justify-center rounded-full text-[#8696a0] hover:bg-white/[0.08] hover:text-[#e9edef] transition-colors"
+        aria-label="Reply"
+      >
+        <CornerUpLeft className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
@@ -691,19 +688,12 @@ export function MessageBubble({
   return (
     <div
       id={`message-${message.id}`}
-      className={cn("group relative flex min-w-0", isOutbound ? "justify-end" : "justify-start")}
+      className={cn("group relative flex items-end min-w-0 px-2 py-0.5", isOutbound ? "justify-end" : "justify-start")}
     >
       <div
         className={cn(
-          "w-fit min-w-[76px] max-w-[80%] px-3.5 py-2.5 text-sm shadow-[0_14px_30px_rgba(0,0,0,0.18)]",
-          isOutbound
-            ? "rounded-[16px_16px_4px_16px] bg-outgoing-bubble text-white"
-            : "rounded-[16px_16px_16px_4px] bg-incoming-bubble text-text",
-          isReplyingTo
-            ? isOutbound
-              ? "ring-2 ring-primary-dark/70"
-              : "ring-2 ring-primary/50"
-            : undefined
+          "self-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 px-1",
+          isOutbound ? "order-first" : "order-last"
         )}
       >
         <MessageHoverBar
@@ -711,9 +701,25 @@ export function MessageBubble({
           onReply={onReply}
           onReact={onReact}
         />
+      </div>
+
+      <div
+        className={cn(
+          "relative max-w-[85%] sm:max-w-[70%] min-w-[72px] px-2.5 pt-1.5 pb-1 text-[14.2px] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]",
+          isOutbound
+            ? "rounded-lg rounded-tr-none bg-outgoing-bubble text-[#e9edef]"
+            : "rounded-lg rounded-tl-none bg-incoming-bubble text-[#e9edef] dark:text-[#e9edef]",
+          isReplyingTo
+            ? isOutbound
+              ? "ring-2 ring-emerald-400"
+              : "ring-2 ring-emerald-500"
+            : undefined
+        )}
+      >
         <MessageActionsMenu
           message={message}
           conversationId={conversationId}
+          isOutbound={isOutbound}
           onReply={onReply}
           onJumpToReply={onJumpToMessage}
           onStarToggle={onStarToggle}
@@ -722,23 +728,23 @@ export function MessageBubble({
         />
 
         {isOutbound && message.sender && (
-          <p className="mb-0.5 text-xs font-semibold opacity-80">{message.sender.name}</p>
+          <p className="mb-0.5 text-[11px] font-semibold text-emerald-400/90">{message.sender.name}</p>
         )}
 
         {repliedTo && (
           <button
             type="button"
             className={cn(
-              // WhatsApp-style quote strip: a subtle tint behind the quoted text
-              // (translucent white over the green outbound bubble, a deeper green
-              // tint over the soft-green inbound bubble) so it reads as a distinct block.
-              "mb-1 block w-full rounded border-l-2 px-2 py-1 text-left text-xs",
-              isOutbound ? "border-white/40 bg-white/10" : "border-[#22C55E]/40 bg-white/[0.04]"
+              "mb-1 block w-full rounded border-l-4 px-2 py-1 text-left text-xs",
+              isOutbound ? "border-emerald-300 bg-black/20 text-[#e9edef]" : "border-emerald-500 bg-black/20 text-[#e9edef]"
             )}
             onClick={() => onJumpToMessage(repliedTo.id)}
             title="Jump to replied message"
           >
-            {repliedTo.body ?? `[${repliedTo.message_type}]`}
+            <p className="text-[11px] font-medium text-emerald-400">
+              {repliedTo.direction === "outbound" ? "You" : "Contact"}
+            </p>
+            <p className="truncate text-xs opacity-90">{repliedTo.body ?? `[${repliedTo.message_type}]`}</p>
           </button>
         )}
 
@@ -748,27 +754,33 @@ export function MessageBubble({
           </div>
         )}
 
-        {message.body && <p className="whitespace-pre-wrap break-words">{message.body}</p>}
+        <div className="relative text-[14.2px] leading-[19px]">
+          {message.body && <span className="whitespace-pre-wrap break-words">{message.body}</span>}
 
-        <MessageReactions
-          reactions={message.reactions}
-          currentUserId={user?.id ? Number(user.id) : undefined}
-          onAddReaction={(emoji) => onReact(message.id, emoji, false)}
-          onRemoveReaction={(emoji) => onReact(message.id, emoji, true)}
-        />
-
-        <div className="mt-1 flex items-center justify-end gap-1">
-          <span className={cn("text-[10px] leading-none", isOutbound ? "text-white/70" : "text-muted")}>
-            {formatInboxTime(message.sent_at, timeZone)}
+          <span className="float-right ml-2 mt-1 -mb-0.5 inline-flex items-center gap-1 select-none h-3.5">
+            <span className={cn("text-[11px] leading-none", isOutbound ? "text-white/60" : "text-[#8696a0]")}>
+              {formatInboxTime(message.sent_at, timeZone)}
+            </span>
+            {isOutbound && (
+              <MessageStatusTick
+                status={message.status}
+                deliveredAt={message.delivered_at}
+                readAt={message.read_at}
+              />
+            )}
           </span>
-          {isOutbound && (
-            <MessageStatusTick
-              status={message.status}
-              deliveredAt={message.delivered_at}
-              readAt={message.read_at}
-            />
-          )}
         </div>
+
+        {message.reactions && message.reactions.length > 0 && (
+          <div className="absolute -bottom-2.5 right-2 z-10">
+            <MessageReactions
+              reactions={message.reactions}
+              currentUserId={user?.id ? Number(user.id) : undefined}
+              onAddReaction={(emoji) => onReact(message.id, emoji, false)}
+              onRemoveReaction={(emoji) => onReact(message.id, emoji, true)}
+            />
+          </div>
+        )}
       </div>
 
       {deleteTarget && (
@@ -1587,16 +1599,16 @@ export function Composer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="relative z-20 shrink-0 border-t border-white/[0.08] bg-[#0B1220]/98 px-3 py-3 shadow-[0_-18px_42px_rgba(0,0,0,0.28)] backdrop-blur"
+      className="relative z-20 shrink-0 border-t border-[#222d34] bg-[#202c33] px-3 py-2.5 shadow-sm"
     >
       {isNoteMode && (
-        <p className="mb-2 text-xs font-medium text-warning">
+        <p className="mb-2 text-xs font-medium text-amber-400">
           Internal note mode. Only your team can see this.
         </p>
       )}
 
       {!isNoteMode && isClosed && (
-        <p className="mb-2 text-xs font-medium text-muted">
+        <p className="mb-2 text-xs font-medium text-[#8696a0]">
           {canReopen ? "This conversation is closed. Sending a reply will reopen it." : "This conversation is closed."}
         </p>
       )}
@@ -1604,21 +1616,21 @@ export function Composer({
       {!isNoteMode && replyTo && (
         <div
           key={replyTo.id}
-          className="mb-2 flex items-stretch overflow-hidden rounded-2xl border border-border bg-bg shadow-sm animate-in slide-in-from-bottom-1 fade-in duration-150"
+          className="mb-2 flex items-stretch overflow-hidden rounded-xl border border-white/[0.08] bg-[#111b21] shadow-sm animate-in slide-in-from-bottom-1 fade-in duration-150"
         >
           <div
             className={cn(
               "w-1 shrink-0",
-              replyTo.direction === "outbound" ? "bg-primary" : "bg-muted"
+              replyTo.direction === "outbound" ? "bg-[#00a884]" : "bg-[#8696a0]"
             )}
           />
           <div className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2">
             <ReplyMediaThumb conversationId={conversationId} message={replyTo} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-primary">
+              <p className="truncate text-xs font-semibold text-[#00a884]">
                 {replyTo.direction === "outbound" ? "You" : contactName}
               </p>
-              <p className="truncate text-xs text-muted">
+              <p className="truncate text-xs text-[#8696a0]">
                 {replyTo.body ??
                   (replyTo.media ? mediaTypeLabel(replyTo.media.mime_type) : `[${replyTo.message_type}]`)}
               </p>
@@ -1627,7 +1639,7 @@ export function Composer({
               type="button"
               onClick={onClearReply}
               aria-label="Cancel reply"
-              className="shrink-0 rounded-full p-1.5 text-muted transition-colors hover:bg-border/60 hover:text-text"
+              className="shrink-0 rounded-full p-1.5 text-[#8696a0] transition-colors hover:bg-white/[0.08] hover:text-[#e9edef]"
             >
               <X className="h-4 w-4" />
             </button>
@@ -1636,23 +1648,23 @@ export function Composer({
       )}
 
       {!isNoteMode && attachment && (
-        <div className="mb-2 flex items-center gap-2 rounded-2xl border border-border bg-bg px-3 py-2 text-xs text-text">
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-[#111b21] px-3 py-2 text-xs text-[#e9edef]">
           {attachment.previewUrl ? (
             <img
               src={attachment.previewUrl}
               alt="Attachment preview"
-              className="h-10 w-10 shrink-0 rounded-lg border border-border object-cover"
+              className="h-10 w-10 shrink-0 rounded-lg border border-white/[0.08] object-cover"
             />
           ) : (
-            <FileText className="h-5 w-5 shrink-0 text-muted" />
+            <FileText className="h-5 w-5 shrink-0 text-[#8696a0]" />
           )}
           <span className="min-w-0 flex-1 truncate">{attachment.file.name}</span>
-          <span className="shrink-0 text-muted">{formatBytes(attachment.file.size)}</span>
+          <span className="shrink-0 text-[#8696a0]">{formatBytes(attachment.file.size)}</span>
           <button
             type="button"
             onClick={clearAttachment}
             aria-label="Remove attachment"
-            className="shrink-0 text-muted hover:text-text"
+            className="shrink-0 text-[#8696a0] hover:text-[#e9edef]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -1668,9 +1680,9 @@ export function Composer({
       />
 
       {canReply && !isNoteMode && isRecording && (
-        <div className="mb-2 flex items-center gap-2 rounded-xl border border-[#22C55E]/20 bg-[#22C55E]/5 px-3 py-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-[#FF3B30]" />
-          <span className="text-xs font-medium text-slate-100">
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-rose-500" />
+          <span className="text-xs font-medium text-[#e9edef]">
             Recording voice note… {formatRecordTime(recordSeconds)}
           </span>
           <div className="ml-auto flex items-center gap-1">
@@ -1678,7 +1690,7 @@ export function Composer({
               type="button"
               onClick={cancelRecording}
               aria-label="Discard recording"
-              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/[0.06] hover:text-text"
+              className="rounded-lg p-1.5 text-[#8696a0] transition-colors hover:bg-white/[0.06] hover:text-[#e9edef]"
             >
               <X className="h-4 w-4" />
             </button>
@@ -1686,7 +1698,7 @@ export function Composer({
               type="button"
               onClick={stopRecording}
               aria-label="Stop and attach recording"
-              className="rounded-lg bg-[#22C55E] p-1.5 text-[#04130A] transition-colors hover:bg-[#16A34A]"
+              className="rounded-lg bg-[#00a884] p-1.5 text-white transition-colors hover:bg-[#008f6f]"
             >
               <Square className="h-3.5 w-3.5" />
             </button>
@@ -1694,40 +1706,27 @@ export function Composer({
         </div>
       )}
 
-      <div className="flex min-w-0 flex-wrap items-end gap-2 md:flex-nowrap">
-        {canReply && canCreateNote && (
+      <div className="flex min-w-0 items-center gap-2">
+        {canCreateNote && (
           <button
             type="button"
             onClick={() => setMode(isNoteMode ? "reply" : "note")}
             aria-label={isNoteMode ? "Switch to reply mode" : "Switch to internal note mode"}
             className={cn(
-              "flex h-[42px] items-center justify-center gap-2 rounded-full border text-xs font-medium",
+              "flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition",
               isNoteMode
-                ? "w-[42px] border-warning bg-warning/10 text-warning"
-                : "border-border bg-bg px-3 text-muted hover:text-text"
+                ? "border-amber-400/50 bg-amber-400/15 text-amber-400 hover:bg-amber-400/25"
+                : "border-white/[0.08] bg-white/[0.04] text-[#8696a0] hover:bg-white/[0.08] hover:text-[#e9edef]"
             )}
           >
             <Lock className="h-3.5 w-3.5" />
-            {!isNoteMode && "Reply"}
+            <span>{isNoteMode ? "Note" : "Reply"}</span>
           </button>
         )}
 
         {canReply && (
           <>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isNoteMode || isUploading || isRecording}
-              aria-label="Attach media"
-              className={cn(
-                "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
-                attachment && "text-primary"
-              )}
-            >
-              <Paperclip className="h-5 w-5" />
-            </button>
-
-            <div className="relative hidden 2xl:block" ref={emojiRef}>
+            <div className="relative hidden md:block" ref={emojiRef}>
               <button
                 type="button"
                 onClick={() => setShowEmojiPicker((open) => !open)}
@@ -1735,14 +1734,14 @@ export function Composer({
                 aria-label="Insert emoji"
                 aria-expanded={showEmojiPicker}
                 className={cn(
-                  "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
-                  showEmojiPicker && "bg-bg text-text"
+                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/[0.08] hover:text-[#e9edef] disabled:cursor-not-allowed disabled:opacity-40",
+                  showEmojiPicker && "text-[#00a884] bg-white/[0.08]"
                 )}
               >
                 <SmilePlus className="h-5 w-5" />
               </button>
               {showEmojiPicker && (
-                <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-xl border border-white/[0.08] bg-surface p-2 shadow-2xl animate-in slide-in-from-bottom-2 fade-in duration-100">
+                <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-xl border border-white/[0.08] bg-[#202c33] p-2 shadow-2xl animate-in slide-in-from-bottom-2 fade-in duration-100">
                   <div className="grid grid-cols-8 gap-0.5">
                     {QUICK_EMOJIS.map((emoji) => (
                       <button
@@ -1761,13 +1760,26 @@ export function Composer({
 
             <button
               type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isNoteMode || isUploading || isRecording}
+              aria-label="Attach media"
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/[0.08] hover:text-[#e9edef] disabled:cursor-not-allowed disabled:opacity-40",
+                attachment && "text-[#00a884] bg-white/[0.08]"
+              )}
+            >
+              <Paperclip className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
               onClick={() => setShowTemplatePicker((open) => !open)}
               disabled={isNoteMode || isUploading || isRecording}
               aria-label="Saved replies"
               aria-expanded={showTemplatePicker}
               className={cn(
-                "hidden h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40 2xl:flex",
-                showTemplatePicker && "bg-bg text-text"
+                "hidden h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/[0.08] hover:text-[#e9edef] disabled:cursor-not-allowed disabled:opacity-40 md:flex",
+                showTemplatePicker && "text-[#00a884] bg-white/[0.08]"
               )}
             >
               <Zap className="h-5 w-5" />
@@ -1779,8 +1791,8 @@ export function Composer({
               disabled={isNoteMode || isUploading || isRecording}
               aria-label="Record a voice message"
               className={cn(
-                "hidden h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text disabled:cursor-not-allowed disabled:opacity-40 2xl:flex",
-                isRecording && "text-danger"
+                "hidden h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/[0.08] hover:text-[#e9edef] disabled:cursor-not-allowed disabled:opacity-40 lg:flex",
+                isRecording && "text-rose-500"
               )}
             >
               <Mic className="h-5 w-5" />
@@ -1788,7 +1800,7 @@ export function Composer({
           </>
         )}
 
-        <div className="relative min-w-[220px] flex-1 basis-[260px]">
+        <div className="relative min-w-0 flex-1">
           {!isNoteMode && showTemplatePicker && (
             <TemplatePicker onSelect={handleTemplateSelect} onClose={() => setShowTemplatePicker(false)} />
           )}
@@ -1799,7 +1811,7 @@ export function Composer({
               disabled={aiDraftMutation.isPending || isUploading}
               aria-label="Draft a reply with AI"
               title="Draft a reply with AI"
-              className="absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-[#22C55E] transition-colors hover:bg-[#22C55E]/10 disabled:cursor-wait disabled:opacity-50"
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-lg text-[#00a884] transition-colors hover:bg-white/[0.08] disabled:cursor-wait disabled:opacity-50"
             >
               <Sparkles className={cn("h-4 w-4", aiDraftMutation.isPending && "animate-pulse")} aria-hidden="true" />
             </button>
@@ -1815,8 +1827,8 @@ export function Composer({
               }
             }}
             rows={1}
-            placeholder={isNoteMode ? "Write an internal note" : "Type a message or / for saved replies"}
-            className="min-h-[42px] w-full min-w-0 resize-none overflow-hidden rounded-xl border border-white/[0.08] bg-[#080F1D] px-3 py-2.5 pr-12 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-[#22C55E]/60 focus:ring-2 focus:ring-[#22C55E]/20"
+            placeholder={isNoteMode ? "Write an internal note..." : "Type a message..."}
+            className="min-h-[42px] max-h-[140px] w-full min-w-0 resize-none overflow-y-auto rounded-lg bg-[#2a3942] px-3.5 py-2.5 pr-10 text-[14.5px] text-[#e9edef] placeholder:text-[#8696a0] leading-relaxed outline-none border-none focus:ring-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
         </div>
 
@@ -1825,11 +1837,11 @@ export function Composer({
           disabled={(!body.trim() && !attachment) || sendMutation.isPending || createNote.isPending || isUploading}
           aria-label={isNoteMode ? "Save note" : "Send message"}
           className={cn(
-            "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl font-semibold shadow-[0_10px_24px_rgba(34,197,94,0.16)] disabled:opacity-50",
-            isNoteMode ? "bg-warning text-[#080F1D] hover:brightness-95" : "bg-[#22C55E] text-[#04130A] hover:bg-[#16A34A]"
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-semibold shadow-md transition disabled:opacity-40 active:scale-95",
+            isNoteMode ? "bg-amber-400 text-[#080F1D] hover:bg-amber-300" : "bg-[#00a884] text-white hover:bg-[#008f6f]"
           )}
         >
-          <Send className="h-5 w-5" />
+          <Send className="h-4 w-4" />
         </button>
       </div>
 
@@ -1935,9 +1947,9 @@ export function HeaderIconButton({
   onClick,
   hideOnSmall = false,
 }: {
-  icon: typeof Search;
+  icon: typeof Phone;
   label: string;
-  onClick?: () => void;
+  onClick: () => void;
   hideOnSmall?: boolean;
 }) {
   return (
@@ -1948,7 +1960,7 @@ export function HeaderIconButton({
       title={label}
       className={cn(
         "h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.035] text-slate-400 transition hover:bg-white/[0.07] hover:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#22C55E]/30",
-        hideOnSmall ? "hidden 2xl:flex" : "flex"
+        hideOnSmall ? "hidden lg:flex" : "flex"
       )}
     >
       <Icon className="h-4 w-4" />
@@ -1976,7 +1988,7 @@ export function ChatHeader({
   const online = conversation?.whatsapp_contact?.is_online === true;
 
   return (
-    <header className="flex min-h-[80px] shrink-0 items-center justify-between gap-2 border-b border-white/[0.08] bg-[#0B1220]/95 px-4 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.18)] backdrop-blur">
+    <header className="flex min-h-[72px] shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] bg-[#0B1220]/95 px-4 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.18)] backdrop-blur">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <Link
           href="/inbox"
@@ -1985,8 +1997,8 @@ export function ChatHeader({
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        {conversation && <Avatar name={contactLabel(conversation)} size="md" className="rounded-xl" />}
-        <div className="min-w-0">
+        {conversation && <Avatar name={contactLabel(conversation)} size="md" className="rounded-xl shrink-0" />}
+        <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <p className="truncate text-base font-semibold text-slate-50">{contactLabel(conversation)}</p>
             <span className="hidden items-center gap-1 rounded-md border border-[#22C55E]/25 bg-[#22C55E]/10 px-1.5 py-0.5 text-[11px] font-semibold text-[#86EFAC] sm:inline-flex">
@@ -1998,8 +2010,8 @@ export function ChatHeader({
         </div>
       </div>
 
-      <div className="flex max-w-[46%] shrink-0 items-center justify-end gap-1.5 overflow-hidden xl:max-w-[56%]">
-        <div className="hidden min-w-0 items-center gap-1.5 overflow-hidden 2xl:flex">{children}</div>
+      <div className="flex shrink-0 items-center justify-end gap-1.5">
+        <div className="hidden min-w-0 items-center gap-1.5 md:flex">{children}</div>
         <HeaderIconButton icon={Phone} label="Call customer" onClick={onCall} hideOnSmall />
         <HeaderIconButton icon={Search} label="Search messages" onClick={onSearch} />
         <HeaderIconButton icon={BriefcaseBusiness} label="Create deal" onClick={onCreateDeal} hideOnSmall />
@@ -2568,8 +2580,8 @@ export function ChatPanel({
             return (
               <div key={message.id}>
                 {showSeparator && message.sent_at && (
-                  <div className="my-4 flex justify-center">
-                    <span className="rounded-lg border border-white/[0.08] bg-[#111827]/90 px-3 py-1 text-[11px] font-medium text-slate-400 shadow-lg backdrop-blur">
+                  <div className="my-3 flex justify-center sticky top-2 z-10">
+                    <span className="rounded-lg bg-[#182229]/95 border border-[#222d34]/60 px-3 py-1 text-[11.5px] font-medium text-[#8696a0] shadow-sm uppercase tracking-wider">
                       {formatInboxDateSeparator(message.sent_at, workspace?.timezone)}
                     </span>
                   </div>
@@ -2585,7 +2597,7 @@ export function ChatPanel({
                     }
                   }}
                   title="Double-click or press Enter to reply"
-                  className="w-full text-left outline-none"
+                  className="w-full text-left outline-none mb-1"
                 >
                   <MessageBubble
                     message={message}

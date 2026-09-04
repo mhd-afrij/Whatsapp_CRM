@@ -3,10 +3,15 @@ import { emitMessageCreated } from '../lib/socket-server';
 import { normalizeInboundMessage } from './message-normalizer';
 import { MessageRepository, isDuplicateEntryError } from './message-repository';
 import { enqueueMediaDownload } from '../queues/media-download.queue';
-import type { BaileysMessagesUpsert, BaileysRawMessage } from './baileys-socket';
+import type {
+  BaileysMessagesUpsert,
+  BaileysMessagingHistorySet,
+  BaileysRawMessage,
+} from './baileys-socket';
 
 const repository = new MessageRepository();
 
+/** Handles live inbound messages or batch appends. */
 export async function handleMessagesUpsert(
   workspaceId: number,
   payload: BaileysMessagesUpsert,
@@ -14,40 +19,53 @@ export async function handleMessagesUpsert(
   if (payload.type !== 'notify' && payload.type !== 'append') return;
 
   for (const raw of payload.messages) {
-    if (raw.key.fromMe) continue; // outbound echoes are tracked via the dispatch pipeline instead
-    await processOneInboundMessage(workspaceId, raw);
+    await processOneMessage(workspaceId, raw);
   }
 }
 
-async function processOneInboundMessage(workspaceId: number, raw: BaileysRawMessage): Promise<void> {
+/** Handles full/recent historical message sync from Baileys. */
+export async function handleMessagingHistorySet(
+  workspaceId: number,
+  payload: BaileysMessagingHistorySet,
+): Promise<void> {
+  if (Array.isArray(payload.contacts) && payload.contacts.length > 0) {
+    try {
+      const { handleContactsUpsert } = await import('./contacts-pipeline');
+      await handleContactsUpsert(workspaceId, payload.contacts);
+    } catch (err) {
+      logger.error({ err, workspaceId }, 'Error syncing contacts from history sync');
+    }
+  }
+
+  if (Array.isArray(payload.messages) && payload.messages.length > 0) {
+    logger.info({ workspaceId, count: payload.messages.length }, 'Processing historical WhatsApp messages');
+    for (const raw of payload.messages) {
+      await processOneMessage(workspaceId, raw);
+    }
+  }
+}
+
+async function processOneMessage(workspaceId: number, raw: BaileysRawMessage): Promise<void> {
   const whatsappMessageId = raw.key.id ?? 'unknown';
 
   try {
-    const result = normalizeInboundMessage(raw);
-
     const waJid = raw.key.remoteJid;
-    if (!waJid) {
-      await repository.recordProcessingFailure(workspaceId, 'validation', 'Missing remoteJid on inbound message', {
-        raw,
-      });
+    if (!waJid || waJid === 'status@broadcast' || waJid.endsWith('@broadcast')) {
       return;
     }
 
-    const contact = await repository.findOrCreateWhatsappContact(workspaceId, waJid, raw.pushName ?? null);
-    const conversation = await repository.findOrCreateConversation(workspaceId, contact.id);
+    const result = normalizeInboundMessage(raw);
 
     if (!result.ok) {
-      // Unsupported/unknown type: still recorded, never silently dropped.
-      if (result.reason === 'encrypted_message_undecryptable') {
-        logger.warn(
-          { workspaceId, whatsappMessageId, waJid: raw.key.remoteJid },
-          'Skipping undecryptable Signal Protocol message (missing session or stale pre-key bundle)',
-        );
+      // Protocol sync signals, empty stanzas, or undecryptable tokens: skip silently
+      if (result.isInternal) {
         return;
       }
-      logger.warn({ workspaceId, whatsappMessageId, reason: result.reason }, 'Unsupported inbound message type');
+      logger.warn({ workspaceId, whatsappMessageId, reason: result.reason }, 'Recording unsupported message');
       try {
-        const inserted = await repository.insertInboundMessage(workspaceId, conversation.id, {
+        const contact = await repository.findOrCreateWhatsappContact(workspaceId, waJid, raw.pushName ?? null);
+        const conversation = await repository.findOrCreateConversation(workspaceId, contact.id);
+        await repository.insertInboundMessage(workspaceId, conversation.id, {
           whatsappMessageId,
           waJid,
           pushName: raw.pushName ?? null,
@@ -55,12 +73,10 @@ async function processOneInboundMessage(workspaceId: number, raw: BaileysRawMess
           body: null,
           sentAt: new Date(),
         });
-        if (!inserted) {
-          return; // duplicate, no-op
-        }
       } catch (err) {
-        if (isDuplicateEntryError(err)) return;
-        throw err;
+        if (!isDuplicateEntryError(err)) {
+          logger.warn({ err }, 'Failed to insert unsupported message placeholder');
+        }
       }
       await repository.recordProcessingFailure(workspaceId, 'persist', `Unsupported message: ${result.reason}`, {
         whatsappMessageId,
@@ -68,20 +84,34 @@ async function processOneInboundMessage(workspaceId: number, raw: BaileysRawMess
       return;
     }
 
-    let insertResult;
+    const isFromMe = Boolean(raw.key.fromMe);
+    const contact = await repository.findOrCreateWhatsappContact(workspaceId, waJid, raw.pushName ?? null);
+    const conversation = await repository.findOrCreateConversation(workspaceId, contact.id);
+
+    let insertResult: { messageId: number } | null = null;
     try {
-      insertResult = await repository.insertInboundMessage(workspaceId, conversation.id, result.normalized);
+      if (isFromMe) {
+        insertResult = await repository.insertOutboundMessage(workspaceId, conversation.id, {
+          whatsappMessageId,
+          body: result.normalized.body,
+          messageType: result.normalized.messageType,
+          repliedToWhatsappMessageId: result.normalized.repliedToWhatsappMessageId,
+          status: 'delivered',
+          sentAt: result.normalized.sentAt,
+        });
+      } else {
+        insertResult = await repository.insertInboundMessage(workspaceId, conversation.id, result.normalized);
+      }
     } catch (err) {
       if (isDuplicateEntryError(err)) {
-        logger.info({ whatsappMessageId }, 'Duplicate inbound message ignored (idempotent no-op)');
-        return;
+        return; // Idempotent no-op
       }
       throw err;
     }
 
     if (!insertResult) return;
 
-    if (result.normalized.media) {
+    if (result.normalized.media && !isFromMe) {
       await enqueueMediaDownload({
         workspaceId,
         messageId: insertResult.messageId,
@@ -96,11 +126,11 @@ async function processOneInboundMessage(workspaceId: number, raw: BaileysRawMess
       message: {
         id: insertResult.messageId,
         conversationId: conversation.id,
-        direction: 'inbound',
+        direction: isFromMe ? 'outbound' : 'inbound',
         messageType: result.normalized.messageType,
         body: result.normalized.body,
-        status: 'sent',
-        senderType: 'contact',
+        status: isFromMe ? 'delivered' : 'sent',
+        senderType: isFromMe ? 'user' : 'contact',
         sentAt: result.normalized.sentAt.toISOString(),
       },
       conversation: {
@@ -109,16 +139,6 @@ async function processOneInboundMessage(workspaceId: number, raw: BaileysRawMess
       },
     });
   } catch (err) {
-    logger.error({ err, whatsappMessageId }, 'Inbound message pipeline failure');
-    try {
-      await repository.recordProcessingFailure(
-        workspaceId,
-        'persist',
-        err instanceof Error ? err.message : String(err),
-        { whatsappMessageId },
-      );
-    } catch (recordErr) {
-      logger.error({ recordErr }, 'Failed to record message_processing_failures row');
-    }
+    logger.error({ err, whatsappMessageId }, 'Inbound/historical message processing failure');
   }
 }

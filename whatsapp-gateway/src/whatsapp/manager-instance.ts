@@ -7,6 +7,7 @@ import type {
   BaileysContactsUpsert,
   BaileysMessagesUpsert,
   BaileysMessageUpdate,
+  BaileysMessagingHistorySet,
   BaileysPhoneNumberShare,
 } from './baileys-socket';
 
@@ -78,5 +79,14 @@ connectionManager.on(
     void import('./contacts-pipeline')
       .then(({ handlePhoneNumberShare }) => handlePhoneNumberShare(workspaceId, payload))
       .catch((err) => logger.error({ err }, 'Unhandled error in phone-number-share pipeline'));
+  },
+);
+
+connectionManager.on(
+  'messaging-history.set',
+  ({ workspaceId, payload }: { workspaceId: number; payload: BaileysMessagingHistorySet }) => {
+    void import('./inbound-pipeline')
+      .then(({ handleMessagingHistorySet }) => handleMessagingHistorySet(workspaceId, payload))
+      .catch((err) => logger.error({ err }, 'Unhandled error in messaging-history.set pipeline'));
   },
 );
