@@ -348,6 +348,7 @@ export class MessageRepository {
       messageType?: string;
       repliedToWhatsappMessageId?: string | null;
       status?: MessageStatus;
+      sentAt?: Date;
     },
   ): Promise<{ messageId: number } | null> {
     return transaction(async (conn: PoolConnection) => {
@@ -362,11 +363,12 @@ export class MessageRepository {
 
       const messageType = params.messageType ?? 'text';
       const status = params.status ?? 'sent';
+      const sentAt = params.sentAt ?? new Date();
       const [result] = await conn.query<ResultSetHeader>(
         `INSERT INTO messages
            (workspace_id, conversation_id, whatsapp_message_id, direction, sender_type,
             message_type, body, status, replied_to_message_id, sent_at, created_at, updated_at)
-        VALUES (?, ?, ?, 'outbound', 'user', ?, ?, ?, ?, NOW(), NOW(), NOW())`,
+        VALUES (?, ?, ?, 'outbound', 'user', ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
           workspaceId,
           conversationId,
@@ -375,15 +377,18 @@ export class MessageRepository {
           params.body,
           status,
           repliedToId,
+          sentAt,
         ],
       );
 
       const preview = (params.body ?? '').slice(0, 255);
       await conn.query(
         `UPDATE conversations
-         SET last_message_at = NOW(), last_message_preview = ?, updated_at = NOW()
+         SET last_message_at = GREATEST(COALESCE(last_message_at, '1970-01-01'), ?),
+             last_message_preview = COALESCE(?, last_message_preview),
+             updated_at = NOW()
          WHERE id = ?`,
-        [preview, conversationId],
+        [sentAt, preview || null, conversationId],
       );
 
       return { messageId: result.insertId };

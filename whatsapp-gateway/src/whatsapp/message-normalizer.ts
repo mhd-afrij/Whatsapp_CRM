@@ -25,30 +25,45 @@ function extractQuotedId(message: Record<string, unknown>): string | null {
   return null;
 }
 
+function unwrapMessage(rawMessage: Record<string, unknown>): Record<string, unknown> {
+  let message = rawMessage;
+  for (let depth = 0; depth < 5; depth++) {
+    const next =
+      (message.viewOnceMessage as { message?: Record<string, unknown> } | undefined)?.message ??
+      (message.viewOnceMessageV2 as { message?: Record<string, unknown> } | undefined)?.message ??
+      (message.viewOnceMessageV2Extension as { message?: Record<string, unknown> } | undefined)?.message ??
+      (message.ephemeralMessage as { message?: Record<string, unknown> } | undefined)?.message ??
+      (message.documentWithCaptionMessage as { message?: Record<string, unknown> } | undefined)?.message ??
+      (message.editedMessage as { message?: Record<string, unknown> } | undefined)?.message ??
+      (message.deviceSentMessage as { message?: Record<string, unknown> } | undefined)?.message;
+    if (next && typeof next === 'object') {
+      message = next;
+    } else {
+      break;
+    }
+  }
+  return message;
+}
+
 /**
  * Normalizes a raw Baileys message into the shape MessageRepository expects,
- * or returns `{ unsupported: true }` for message kinds we don't model yet
- * (never silently dropped - the caller records it as an 'unsupported' typed
- * row / processing failure instead).
+ * or returns `{ ok: false, isInternal: true }` for internal protocol sync events,
+ * or `{ ok: false, reason: '...' }` for unhandled types.
  */
 export function normalizeInboundMessage(
   raw: BaileysRawMessage,
-): { ok: true; normalized: NormalizedInboundMessage } | { ok: false; reason: string } {
+):
+  | { ok: true; normalized: NormalizedInboundMessage }
+  | { ok: false; isInternal?: boolean; reason: string } {
   const whatsappMessageId = raw.key.id ?? null;
   const waJid = raw.key.remoteJid ?? null;
 
   if (!whatsappMessageId || !waJid) {
-    return { ok: false, reason: 'missing key.id or key.remoteJid' };
+    return { ok: false, isInternal: true, reason: 'missing key.id or key.remoteJid' };
   }
 
-  // View-once photos/videos wrap the real content one level deep and won't match
-  // MEDIA_TYPE_MAP as-is - unwrap before the rest of this function inspects keys.
   const rawMessage = raw.message ?? {};
-  const viewOnceWrapper =
-    (rawMessage.viewOnceMessage as { message?: Record<string, unknown> } | undefined) ??
-    (rawMessage.viewOnceMessageV2 as { message?: Record<string, unknown> } | undefined) ??
-    (rawMessage.viewOnceMessageV2Extension as { message?: Record<string, unknown> } | undefined);
-  const message = viewOnceWrapper?.message ?? rawMessage;
+  const message = unwrapMessage(rawMessage);
   const tsRaw = raw.messageTimestamp;
   const sentAt = tsRaw
     ? new Date((typeof tsRaw === 'string' ? parseInt(tsRaw, 10) : tsRaw) * 1000)
@@ -167,22 +182,65 @@ export function normalizeInboundMessage(
     };
   }
 
+  const buttonsResponse = message.buttonsResponseMessage as
+    | { selectedDisplayText?: string; selectedButtonId?: string }
+    | undefined;
+  if (buttonsResponse?.selectedDisplayText || buttonsResponse?.selectedButtonId) {
+    return {
+      ok: true,
+      normalized: {
+        whatsappMessageId,
+        waJid,
+        pushName: raw.pushName ?? null,
+        messageType: 'text',
+        body: buttonsResponse.selectedDisplayText ?? buttonsResponse.selectedButtonId ?? '',
+        repliedToWhatsappMessageId,
+        sentAt,
+      },
+    };
+  }
+
+  const listResponse = message.listResponseMessage as
+    | { title?: string; singleSelectReply?: { selectedRowId?: string } }
+    | undefined;
+  if (listResponse?.title) {
+    return {
+      ok: true,
+      normalized: {
+        whatsappMessageId,
+        waJid,
+        pushName: raw.pushName ?? null,
+        messageType: 'text',
+        body: listResponse.title,
+        repliedToWhatsappMessageId,
+        sentAt,
+      },
+    };
+  }
+
   if (message.reactionMessage) {
-    // Reactions are handled separately (message_reactions), not as a message row.
-    return { ok: false, reason: 'reaction_message' };
+    return { ok: false, isInternal: true, reason: 'reaction_message' };
   }
 
   if (message.protocolMessage) {
-    // Delete-for-everyone / revoke notifications - not modeled as their own message row
-    // (see is_deleted_for_everyone on the existing message instead).
-    return { ok: false, reason: 'protocol_message' };
+    return { ok: false, isInternal: true, reason: 'protocol_message' };
   }
 
-  // Encrypted messages that Baileys couldn't decrypt (e.g. missing session,
-  // stale pre-key bundle). The only content tag is `enc` — no readable payload.
-  if (message.enc) {
-    return { ok: false, reason: 'encrypted_message_undecryptable' };
+  // Internal protocol sync messages — never persist as chat messages
+  if (
+    message.senderKeyDistributionMessage ||
+    message.keyExchangeMessage ||
+    message.historySyncNotification ||
+    message.appStateSyncKeyShare ||
+    message.appStateFatalExceptionNotification ||
+    message.enc
+  ) {
+    return { ok: false, isInternal: true, reason: 'protocol_message' };
   }
 
-  return { ok: false, reason: `unsupported message kind: ${Object.keys(message).join(',') || 'empty'}` };
+  if (Object.keys(message).length === 0) {
+    return { ok: false, isInternal: true, reason: 'unsupported message kind: empty' };
+  }
+
+  return { ok: false, reason: `unsupported message kind: ${Object.keys(message).join(',')}` };
 }
