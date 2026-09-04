@@ -69,21 +69,11 @@ function LeadsView() {
   };
 
   return (
-    <main className="space-y-7 p-6 md:p-8">
-      <header className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <div className="mb-3 flex items-center gap-2 text-xs font-bold tracking-[0.22em] text-primary uppercase">
-            <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_0_4px_var(--color-primary-soft)]" />
-            Sales workspace
-          </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-text md:text-4xl">
-            Lead pipeline
-          </h1>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-muted">
-            Turn live WhatsApp conversations into qualified opportunities and keep every follow-up
-            visible to the team.
-          </p>
-        </div>
+    <main className="space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold text-text">
+          Lead pipeline
+        </h1>
         <button
           type="button"
           onClick={() => setShowNewLead(true)}
@@ -118,27 +108,25 @@ function LeadsView() {
         ))}
       </section>
 
-      <section className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative min-w-0 flex-1 sm:max-w-md">
-          <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted" />
+      <div className="flex items-center gap-2">
+        <div className="relative w-full max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search people, phones, or lead notes"
-            className="w-full rounded-xl border border-border bg-bg py-2.5 pr-3 pl-9 text-sm text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            placeholder="Search people, phones, or lead notes…"
+            className="w-full rounded-xl border border-border bg-surface py-2.5 pl-9 pr-3 text-sm text-text placeholder:text-muted outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            aria-label="Refresh leads"
-            className="rounded-xl border border-border p-2.5 text-muted hover:bg-primary-soft/40 hover:text-primary"
-          >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
-          </button>
-        </div>
-      </section>
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          aria-label="Refresh leads"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-muted transition hover:bg-border hover:text-text"
+        >
+          <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+        </button>
+      </div>
 
       {isLoading && (
         <div className="rounded-2xl border border-border bg-surface p-12 text-center text-sm text-muted">
