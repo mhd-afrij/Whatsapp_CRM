@@ -777,6 +777,8 @@ export function MessageBubble({
         )}
       </div>
 
+      </div>
+
       {deleteTarget && (
         <DeleteMessageDialog
           message={deleteTarget}
