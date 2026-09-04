@@ -61,7 +61,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body suppressHydrationWarning className="min-h-full flex flex-col">
+      <body suppressHydrationWarning className="h-full overflow-hidden flex flex-col bg-bg text-text">
         {/* Set the theme class before first paint so there is no flash of the
             wrong scheme; mirrors the logic in context/theme-context.tsx. */}
         <Script

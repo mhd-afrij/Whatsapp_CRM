@@ -29,41 +29,49 @@ export function DashboardFilters({
   onAgentChange,
 }: DashboardFiltersProps) {
   return (
-    <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-border bg-surface/80 p-2 shadow-sm">
-      <label className="flex min-w-[145px] flex-1 flex-col gap-1 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
-        <span className="flex items-center gap-1.5"><CalendarDays className="size-3.5" /> From</span>
-        <input
-          type="date"
-          value={from}
-          max={to}
-          onChange={(event) => onFromChange(event.target.value)}
-          className="rounded-lg border border-border bg-background px-2.5 py-2 text-sm font-normal normal-case tracking-normal text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-        />
-      </label>
-      <label className="flex min-w-[145px] flex-1 flex-col gap-1 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
-        <span className="flex items-center gap-1.5"><CalendarDays className="size-3.5" /> To</span>
-        <input
-          type="date"
-          value={to}
-          min={from}
-          max={today}
-          onChange={(event) => onToChange(event.target.value)}
-          className="rounded-lg border border-border bg-background px-2.5 py-2 text-sm font-normal normal-case tracking-normal text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-        />
-      </label>
-      {canViewUsers && (
-        <label className="flex min-w-[170px] flex-1 flex-col gap-1 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
-          <span className="flex items-center gap-1.5"><Users className="size-3.5" /> Owner</span>
-          <select
-            value={agentUserId}
-            onChange={(event) => onAgentChange(event.target.value ? Number(event.target.value) : "")}
-            className="rounded-lg border border-border bg-background px-2.5 py-2 text-sm font-normal normal-case tracking-normal text-text outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-          >
-            <option value="">All agents</option>
-            {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
-          </select>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-2.5 sm:gap-4">
+        <label className="flex items-center gap-1.5 text-xs font-medium text-muted">
+          <CalendarDays className="size-3.5 text-muted shrink-0" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider">From</span>
+          <input
+            type="date"
+            value={from}
+            max={to}
+            onChange={(event) => onFromChange(event.target.value)}
+            className="h-8 rounded-lg border border-border bg-background px-2 py-1 text-xs text-text outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+          />
         </label>
-      )}
+        <label className="flex items-center gap-1.5 text-xs font-medium text-muted">
+          <CalendarDays className="size-3.5 text-muted shrink-0" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider">To</span>
+          <input
+            type="date"
+            value={to}
+            min={from}
+            max={today}
+            onChange={(event) => onToChange(event.target.value)}
+            className="h-8 rounded-lg border border-border bg-background px-2 py-1 text-xs text-text outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+          />
+        </label>
+        {canViewUsers && (
+          <label className="flex items-center gap-1.5 text-xs font-medium text-muted">
+            <Users className="size-3.5 text-muted shrink-0" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider">Owner</span>
+            <select
+              value={agentUserId}
+              onChange={(event) => onAgentChange(event.target.value ? Number(event.target.value) : "")}
+              className="h-8 rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-text outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20"
+            >
+              <option value="">All agents</option>
+              {users.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+      <p className="text-[11px] text-muted hidden lg:block">
+        Showing performance for <span className="font-semibold text-text">{from} to {to}</span>{agentUserId !== "" ? " (selected agent)" : " (all agents)"}
+      </p>
     </div>
   );
 }

@@ -30,7 +30,20 @@ function localToday() {
 }
 
 function Panel({ title, eyebrow, children, action }: { title: string; eyebrow?: string; children: React.ReactNode; action?: React.ReactNode }) {
-  return <section className="rounded-2xl border border-border bg-surface p-3 shadow-sm sm:p-4"><div className="mb-3 flex items-start justify-between gap-3"><div>{eyebrow && <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">{eyebrow}</p>}<h2 className="mt-0.5 text-sm font-bold text-text">{title}</h2></div>{action}</div>{children}</section>;
+  return (
+    <section className="flex flex-col justify-between rounded-xl border border-border bg-surface p-4 shadow-xs">
+      <div>
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            {eyebrow && <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">{eyebrow}</p>}
+            <h2 className="mt-0.5 text-sm font-bold text-text">{title}</h2>
+          </div>
+          {action}
+        </div>
+        {children}
+      </div>
+    </section>
+  );
 }
 
 function formatCount(value: number | undefined) { return value == null ? "--" : value.toLocaleString(); }
@@ -89,12 +102,70 @@ export function DashboardOverviewWidgets({ filters, summary, agentPerformance }:
   ].filter((action): action is { href: string; label: string; icon: typeof Users } => action != null);
 
   return <>
-    <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-      <Panel title="WhatsApp status" eyebrow="Live channel" action={<Link href="/settings/whatsapp" className="text-xs font-semibold text-primary hover:underline">Manage</Link>}>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className={`flex size-11 items-center justify-center rounded-2xl ${isConnected ? "bg-success/10 text-success" : "bg-danger/10 text-danger"}`}>{isConnected ? <Wifi className="size-5" /> : <WifiOff className="size-5" />}</span><div><p className="font-semibold capitalize text-text">{status.replace("_", " ")}</p><p className="mt-0.5 text-xs text-muted">{whatsapp.data?.phoneNumber ?? "Connect a WhatsApp account to start messaging"}</p></div></div><div className="text-left text-xs text-muted sm:text-right"><p>Last checked</p><p className="mt-1 font-semibold text-text">{whatsapp.dataUpdatedAt ? relativeTime(new Date(whatsapp.dataUpdatedAt).toISOString()) : "Waiting"}</p></div></div>
-        {!isConnected && canManageWhatsapp && <button type="button" onClick={() => reconnect.mutate()} disabled={reconnect.isPending} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-semibold text-text hover:bg-bg disabled:opacity-50"><RefreshCw className={`size-3.5 ${reconnect.isPending ? "animate-spin" : ""}`} />{reconnect.isPending ? "Reconnecting..." : "Reconnect session"}</button>}
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Panel
+        title="WhatsApp status"
+        eyebrow="Live channel"
+        action={
+          <Link href="/settings/whatsapp" className="text-xs font-semibold text-primary hover:underline">
+            Manage
+          </Link>
+        }
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-bg p-3">
+          <div className="flex items-center gap-3">
+            <span
+              className={`flex size-10 items-center justify-center rounded-xl ${
+                isConnected ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
+              }`}
+            >
+              {isConnected ? <Wifi className="size-5" /> : <WifiOff className="size-5" />}
+            </span>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className={`size-2 rounded-full ${isConnected ? "bg-success" : "bg-danger"}`} />
+                <p className="text-sm font-semibold capitalize text-text">{status.replace("_", " ")}</p>
+              </div>
+              <p className="mt-0.5 text-xs text-muted">
+                {whatsapp.data?.phoneNumber ?? "No active WhatsApp session"}
+              </p>
+            </div>
+          </div>
+          <div className="text-right text-xs text-muted">
+            <p className="text-[10px] font-semibold uppercase text-muted">Last checked</p>
+            <p className="mt-0.5 font-medium text-text">
+              {whatsapp.dataUpdatedAt ? relativeTime(new Date(whatsapp.dataUpdatedAt).toISOString()) : "Waiting"}
+            </p>
+          </div>
+        </div>
+        {!isConnected && canManageWhatsapp && (
+          <button
+            type="button"
+            onClick={() => reconnect.mutate()}
+            disabled={reconnect.isPending}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text hover:bg-bg disabled:opacity-50"
+          >
+            <RefreshCw className={`size-3.5 ${reconnect.isPending ? "animate-spin" : ""}`} />
+            {reconnect.isPending ? "Reconnecting..." : "Reconnect session"}
+          </button>
+        )}
       </Panel>
-      <Panel title="Business snapshot" eyebrow="Today"><div className="grid grid-cols-3 gap-2"><div className="rounded-xl bg-bg p-3"><p className="text-lg font-bold text-text">{formatCount(summary?.conversations.new)}</p><p className="mt-1 text-[11px] text-muted">New chats</p></div><div className="rounded-xl bg-bg p-3"><p className="text-lg font-bold text-text">{formatCount(summary?.contacts.new)}</p><p className="mt-1 text-[11px] text-muted">New contacts</p></div><div className="rounded-xl bg-bg p-3"><p className="text-lg font-bold text-text">{formatCount(summary?.tasks.overdue)}</p><p className="mt-1 text-[11px] text-muted">Overdue</p></div></div></Panel>
+      <Panel title="Business snapshot" eyebrow="Today">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-xl bg-bg p-3 text-center">
+            <p className="text-lg font-bold text-text">{formatCount(summary?.conversations.new)}</p>
+            <p className="mt-1 text-[11px] font-medium text-muted">New chats</p>
+          </div>
+          <div className="rounded-xl bg-bg p-3 text-center">
+            <p className="text-lg font-bold text-text">{formatCount(summary?.contacts.new)}</p>
+            <p className="mt-1 text-[11px] font-medium text-muted">New contacts</p>
+          </div>
+          <div className="rounded-xl bg-bg p-3 text-center">
+            <p className="text-lg font-bold text-text">{formatCount(summary?.tasks.overdue)}</p>
+            <p className="mt-1 text-[11px] font-medium text-muted">Overdue</p>
+          </div>
+        </div>
+      </Panel>
     </div>
 
     <div className="grid gap-4 xl:grid-cols-2">

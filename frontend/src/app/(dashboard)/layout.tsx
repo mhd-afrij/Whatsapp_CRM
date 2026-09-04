@@ -15,14 +15,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <AuthGuard>
       <MobileSidebarProvider>
-        <div className="flex h-dvh w-full overflow-hidden bg-bg">
+        <div className="flex h-full w-full overflow-hidden bg-bg">
           <Sidebar />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <Topnav />
             <main
               className={cn(
                 "min-h-0 min-w-0 flex-1 overflow-x-hidden",
-                isInbox ? "h-full w-full overflow-hidden p-0" : "overflow-y-auto p-4 sm:p-6"
+                isInbox ? "h-full w-full overflow-hidden p-0" : "overflow-y-auto p-4 sm:p-5"
               )}
             >
               {children}
