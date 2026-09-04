@@ -17,6 +17,7 @@ export interface IBaileysSocket {
     on(event: 'messages.upsert', listener: (payload: BaileysMessagesUpsert) => void): void;
     on(event: 'messages.update', listener: (payload: BaileysMessageUpdate[]) => void): void;
     on(event: 'contacts.upsert', listener: (payload: BaileysContactsUpsert) => void): void;
+    on(event: 'messaging-history.set', listener: (payload: BaileysMessagingHistorySet) => void): void;
     on(
       event: 'chats.phoneNumberShare',
       listener: (payload: BaileysPhoneNumberShare) => void,
@@ -31,6 +32,14 @@ export interface IBaileysSocket {
   ): Promise<{ key: { id?: string | null } } | undefined>;
   sendPresenceUpdate(presence: string, to: string): Promise<void>;
   downloadMediaMessage?: (message: unknown) => Promise<Buffer>;
+}
+
+export interface BaileysMessagingHistorySet {
+  chats?: unknown[];
+  contacts?: Contact[];
+  messages?: BaileysRawMessage[];
+  isLatest?: boolean;
+  syncType?: number;
 }
 
 /** Minimal shape of Baileys' `messages.upsert` event this gateway consumes. */

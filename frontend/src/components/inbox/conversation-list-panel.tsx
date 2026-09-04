@@ -70,6 +70,36 @@ export function ConversationListPanel() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const pillsRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const scrollLeftRef = useRef(0);
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!pillsRef.current) return;
+    isDraggingRef.current = true;
+    startXRef.current = e.pageX - pillsRef.current.offsetLeft;
+    scrollLeftRef.current = pillsRef.current.scrollLeft;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current || !pillsRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - pillsRef.current.offsetLeft;
+    const walk = (x - startXRef.current) * 1.5;
+    pillsRef.current.scrollLeft = scrollLeftRef.current - walk;
+  };
+
+  const handleMouseUpOrLeave = () => {
+    isDraggingRef.current = false;
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!pillsRef.current) return;
+    if (e.deltaY !== 0) {
+      pillsRef.current.scrollLeft += e.deltaY;
+    }
+  };
 
   const invalidateConversations = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -270,28 +300,30 @@ export function ConversationListPanel() {
           />
         </div>
 
-        <div className="mt-2.5 flex items-center gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          ref={pillsRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUpOrLeave}
+          onMouseLeave={handleMouseUpOrLeave}
+          onWheel={handleWheel}
+          className="mt-2.5 flex cursor-grab select-none items-center gap-1.5 overflow-x-auto pb-1 active:cursor-grabbing [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {FILTERS.map((filter) => (
             <button
               key={filter.key}
               type="button"
               onClick={() => setTab(filter.key)}
               className={cn(
-                "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-150",
                 tabFilter === filter.key
-                  ? "border-primary bg-primary text-white"
-                  : "border-border bg-bg text-muted hover:text-text"
+                  ? "border-primary bg-primary text-white shadow-sm font-semibold"
+                  : "border-border bg-bg text-muted hover:border-primary/40 hover:text-text"
               )}
             >
               {filter.label}
             </button>
           ))}
-          <div className="ml-auto shrink-0">
-            <ConversationFilterPopover
-              filters={advancedFilters}
-              onFiltersChange={setAdvanced}
-            />
-          </div>
         </div>
       </div>
 
