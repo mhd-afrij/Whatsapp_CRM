@@ -232,25 +232,6 @@ export function emitTypingUpdated(
 }
 
 /**
- * Emit a presence update event for a user/contact.
- */
-export function emitPresenceUpdated(
-  workspaceId: number,
-  payload: {
-    userId?: number;
-    contactId?: number;
-    status: 'online' | 'offline' | 'away' | 'busy';
-    lastSeen?: string;
-    name?: string;
-  },
-): void {
-  if (!io) return;
-  io.of('/gateway')
-    .to(`workspace:${workspaceId}`)
-    .emit('presence.updated', envelope('presence.updated', workspaceId, payload));
-}
-
-/**
  * Broadcasts that a workspace's WhatsApp chat/contact data was cleared (a
  * "reset" action originated via POST /internal/whatsapp/reset-data). The
  * inbox and workspace rooms both receive it so open conversation lists /

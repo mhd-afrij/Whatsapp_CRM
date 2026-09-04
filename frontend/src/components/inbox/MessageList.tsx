@@ -1,1 +1,0 @@
-export { MessageList } from "./chat-panel";

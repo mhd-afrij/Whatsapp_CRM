@@ -150,11 +150,6 @@ export class ConnectionManager extends EventEmitter {
     this.socketConfig = options.socketConfig ?? {};
   }
 
-  /** Whether session-lock coordination is active for this manager. */
-  isLockingEnabled(): boolean {
-    return this.lockRepository !== null;
-  }
-
   getStatus(): ConnectionStatus {
     return this.status;
   }
@@ -687,17 +682,6 @@ export class ConnectionManager extends EventEmitter {
     }
     const jid = normalizePhoneToJid(to, env.WHATSAPP_COUNTRY_CODE);
     await this.socket.sendPresenceUpdate(presence, jid);
-  }
-
-  async sendMessage(to: string, text: string): Promise<{ id: string | null | undefined }> {
-    if (!this.socket || this.status !== 'connected') {
-      throw new Error(`Cannot send message: WhatsApp connection is not established (status=${this.status})`);
-    }
-
-    const jid = normalizePhoneToJid(to, env.WHATSAPP_COUNTRY_CODE);
-    const result = await this.socket.sendMessage(jid, { text });
-
-    return { id: result?.key.id };
   }
 
   /** Generalized send used by the outbound dispatch pipeline (text, quoted reply, media). */

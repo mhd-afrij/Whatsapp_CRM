@@ -697,7 +697,7 @@ export function MessageBubble({
         className={cn(
           "w-fit min-w-[76px] max-w-[80%] px-3.5 py-2.5 text-sm shadow-[0_14px_30px_rgba(0,0,0,0.18)]",
           isOutbound
-            ? "rounded-[16px_16px_4px_16px] bg-outgoing-bubble text-white"
+            ? "rounded-[16px_16px_4px_16px] bg-outgoing-bubble text-outgoing-text"
             : "rounded-[16px_16px_16px_4px] bg-incoming-bubble text-text",
           isReplyingTo
             ? isOutbound
@@ -733,7 +733,7 @@ export function MessageBubble({
               // (translucent white over the green outbound bubble, a deeper green
               // tint over the soft-green inbound bubble) so it reads as a distinct block.
               "mb-1 block w-full rounded border-l-2 px-2 py-1 text-left text-xs",
-              isOutbound ? "border-white/40 bg-white/10" : "border-[#22C55E]/40 bg-white/[0.04]"
+              isOutbound ? "border-outgoing-text/30 bg-outgoing-text/[0.07]" : "border-[#22C55E]/40 bg-white/[0.04]"
             )}
             onClick={() => onJumpToMessage(repliedTo.id)}
             title="Jump to replied message"
@@ -758,7 +758,7 @@ export function MessageBubble({
         />
 
         <div className="mt-1 flex items-center justify-end gap-1">
-          <span className={cn("text-[10px] leading-none", isOutbound ? "text-white/70" : "text-muted")}>
+          <span className={cn("text-[10px] leading-none", isOutbound ? "text-outgoing-text/70" : "text-muted")}>
             {formatInboxTime(message.sent_at, timeZone)}
           </span>
           {isOutbound && (

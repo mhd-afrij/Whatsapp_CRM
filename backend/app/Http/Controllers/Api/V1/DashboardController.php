@@ -198,12 +198,6 @@ class DashboardController extends Controller
         ])->values()->all();
     }
 
-    /** Shared by AnalyticsController - default last 30 days, inclusive of `to`'s full day. */
-    public static function resolveRangeStatic(Request $request): array
-    {
-        return (new self)->resolveRange($request);
-    }
-
     private function resolveRange(Request $request): array
     {
         $to = $request->filled('to') ? Carbon::parse($request->string('to')->toString())->endOfDay() : now()->endOfDay();

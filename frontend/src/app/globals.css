@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "tw-animate-css";
+@import "../../node_modules/tw-animate-css/dist/tw-animate.css";
 
 :root {
   --background: #f0f2f5;
@@ -32,6 +32,9 @@
   --color-chat-bg: #f0f2f5;
   --color-incoming-bubble: #ffffff;
   --color-outgoing-bubble: #dcf8c6;
+  /* Outbound bubbles are light green in light mode, so their text must be
+     dark there (white only works against the dark-mode green bubble). */
+  --color-outgoing-text: #111b21;
 
   /* Chart categorical series (validated palette, see dataviz skill references/palette.md) */
   --chart-series-1: #2a78d6; /* blue */
@@ -64,6 +67,7 @@
   --color-chat-bg: var(--color-chat-bg);
   --color-incoming-bubble: var(--color-incoming-bubble);
   --color-outgoing-bubble: var(--color-outgoing-bubble);
+  --color-outgoing-text: var(--color-outgoing-text);
 }
 
 .dark {
@@ -88,6 +92,7 @@
   --color-chat-bg: #111b21;
   --color-incoming-bubble: #2a3942;
   --color-outgoing-bubble: #005c4b;
+  --color-outgoing-text: #e9edef;
 
   /* Chart categorical series (dark-mode step, see dataviz skill references/palette.md) */
   --chart-series-1: #3987e5;
@@ -96,48 +101,6 @@
   --chart-series-4: #c98500;
   --chart-series-5: #e66767;
   --chart-series-6: #9085e9;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light):not(.dark) {
-    --background: #111b21;
-    --foreground: #e9edef;
-
-    /* CRM brand palette (dark) */
-    --color-primary: #25d366;
-    --color-primary-dark: #128c7e;
-    --color-primary-soft: #2a3942;
-    --color-bg: #111b21;
-    --color-surface: #202c33;
-    --color-border: #2a3942;
-    --color-text: #e9edef;
-    --color-muted: #8696a0;
-    --color-success: #22c55e;
-    --color-success-light: #14532d;
-    --color-success-dark: #22c55e;
-    --color-warning: #fbbf24;
-    --color-warning-light: #78350f;
-    --color-warning-dark: #fbbf24;
-    --color-danger: #f87171;
-    --color-danger-light: #4c0519;
-    --color-danger-dark: #f87171;
-    --color-info: #60a5fa;
-    --color-info-light: #0c2a48;
-    --color-info-dark: #60a5fa;
-
-    /* Chat/message-list background: darker than --color-surface so bubbles pop. */
-    --color-chat-bg: #111b21;
-  --color-incoming-bubble: #2a3942;
-  --color-outgoing-bubble: #005c4b;
-
-    /* Chart categorical series (dark-mode step, see dataviz skill references/palette.md) */
-    --chart-series-1: #3987e5;
-    --chart-series-2: #d95926;
-    --chart-series-3: #199e70;
-    --chart-series-4: #c98500;
-    --chart-series-5: #e66767;
-    --chart-series-6: #9085e9;
-  }
 }
 
 html,
