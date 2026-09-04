@@ -40,6 +40,7 @@ import { LabelPicker } from "@/components/labels/label-picker";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/providers/toast-provider";
 import { ApiError } from "@/lib/api-client";
+import { formatDisplayPhone } from "@/lib/phone";
 
 /* -------------------------------------------------------------------------- */
 /*  Reusable primitives                                                        */
@@ -135,6 +136,8 @@ function CustomerProfileHeader({
   onCall: () => void;
   onMessage: () => void;
 }) {
+  const formattedPhone = formatDisplayPhone(phoneNumber);
+
   return (
     <div className="border-b border-border bg-surface/95 px-4 py-4 backdrop-blur">
       <div className="flex items-center gap-3">
@@ -154,8 +157,8 @@ function CustomerProfileHeader({
             <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", isOnline ? "bg-accent" : "bg-muted")} />
             <span className="truncate text-[11px] text-muted">{isOnline ? "Online" : "Offline"}</span>
           </div>
-          {phoneNumber && (
-            <p className="mt-1 truncate font-mono text-xs text-muted">{phoneNumber}</p>
+          {formattedPhone && (
+            <p className="mt-1 truncate font-mono text-xs text-muted">{formattedPhone}</p>
           )}
         </div>
       </div>
@@ -204,7 +207,7 @@ function CustomerDetailsCard({
     <CollapsibleSection title="Customer Details" icon={UserRound}>
       <dl className="divide-y divide-border">
         <DetailRow label="Name" value={name} />
-        <DetailRow label="Phone" value={phoneNumber} mono />
+        <DetailRow label="Phone" value={formatDisplayPhone(phoneNumber)} mono />
         <DetailRow label="Email" value={email} />
         <DetailRow label="Location" value={location} />
         <DetailRow label="Customer ID" value={customerId ? `#${customerId}` : null} mono />

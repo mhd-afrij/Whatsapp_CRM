@@ -80,6 +80,8 @@ import { TypingIndicator } from "./typing-indicator";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/providers/toast-provider";
 import { useUsers } from "@/hooks/use-users";
+import { useContact } from "@/hooks/use-contacts";
+import { formatDisplayPhone } from "@/lib/phone";
 import { PRIORITY_OPTIONS } from "@/components/inbox/priority-selector";
 import { formatInboxDateSeparator, formatInboxTime, isSameInboxDay } from "@/lib/time-format";
 import { useMessageSearch } from "@/hooks/use-message-search";
@@ -132,29 +134,36 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function contactLabel(conversation: ReturnType<typeof useConversation>["data"]): string {
-  if (!conversation) return "";
+function contactLabel(
+  conversation: ReturnType<typeof useConversation>["data"],
+  contact?: { full_name?: string | null; phone_number?: string | null } | null
+): string {
+  if (!conversation && !contact) return "";
+  const rawId = contact?.phone_number ?? conversation?.whatsapp_contact?.phone_number ?? conversation?.whatsapp_contact?.wa_jid;
   return (
-    conversation.contact?.full_name ||
-    conversation.whatsapp_contact?.contact_name ||
-    conversation.whatsapp_contact?.push_name ||
-    conversation.whatsapp_contact?.phone_number ||
-    conversation.whatsapp_contact?.wa_jid ||
-    `Conversation #${conversation.id}`
+    contact?.full_name ||
+    conversation?.contact?.full_name ||
+    conversation?.whatsapp_contact?.contact_name ||
+    conversation?.whatsapp_contact?.push_name ||
+    formatDisplayPhone(rawId) ||
+    `Conversation #${conversation?.id ?? ""}`
   );
 }
 
-function contactSubtitle(conversation: ReturnType<typeof useConversation>["data"]): string {
+function contactSubtitle(
+  conversation: ReturnType<typeof useConversation>["data"],
+  contact?: { full_name?: string | null; phone_number?: string | null } | null
+): string {
   if (!conversation) return "";
-  const number =
-    conversation.whatsapp_contact?.phone_number ?? conversation.whatsapp_contact?.wa_jid ?? null;
-  const status =
-    conversation.whatsapp_contact?.is_online === true
-      ? "online"
-      : conversation.status === "open"
-        ? "last seen recently"
-        : conversation.status;
-  return [number, status].filter(Boolean).join(" | ");
+  const isOnline = conversation.whatsapp_contact?.is_online === true;
+  if (isOnline) return "online";
+
+  const rawPhone = contact?.phone_number ?? conversation.whatsapp_contact?.phone_number ?? conversation.whatsapp_contact?.wa_jid;
+  const formatted = formatDisplayPhone(rawPhone);
+  if (formatted && formatted !== contactLabel(conversation, contact)) {
+    return formatted;
+  }
+  return conversation.status === "open" ? "last seen recently" : conversation.status;
 }
 
 function mediaTypeLabel(mime: string): string {
@@ -777,8 +786,6 @@ export function MessageBubble({
         )}
       </div>
 
-      </div>
-
       {deleteTarget && (
         <DeleteMessageDialog
           message={deleteTarget}
@@ -889,7 +896,7 @@ function StatusDropdown({
         <ChevronDown className="h-3 w-3 text-muted" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-36 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
+        <div className="absolute left-0 top-full z-30 mt-1 w-36 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
           {options.map((option) => (
             <button
               key={option.value}
@@ -950,7 +957,7 @@ function AssignDropdown({
         <ChevronDown className="h-3 w-3 text-muted" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-48 max-h-60 overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-lg">
+        <div className="absolute left-0 top-full z-30 mt-1 w-48 max-h-60 overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-lg">
           <button
             type="button"
             onClick={() => { onAssign(null); setOpen(false); }}
@@ -1942,12 +1949,16 @@ export function HeaderIconButton({
   icon: Icon,
   label,
   onClick,
+  active = false,
   hideOnSmall = false,
+  className,
 }: {
   icon: typeof Phone;
   label: string;
   onClick: () => void;
+  active?: boolean;
   hideOnSmall?: boolean;
+  className?: string;
 }) {
   return (
     <button
@@ -1956,8 +1967,10 @@ export function HeaderIconButton({
       aria-label={label}
       title={label}
       className={cn(
-        "h-9 w-9 items-center justify-center rounded-xl border border-border bg-bg text-muted transition hover:bg-border hover:text-text focus:outline-none focus:ring-2 focus:ring-accent/30",
-        hideOnSmall ? "hidden 2xl:flex" : "flex"
+        "flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-bg text-muted transition hover:bg-border hover:text-text focus:outline-none focus:ring-2 focus:ring-primary/20",
+        active && "border-primary/40 bg-primary/10 text-primary",
+        hideOnSmall ? "hidden 2xl:flex" : "flex",
+        className
       )}
     >
       <Icon className="h-4 w-4" />
@@ -1967,26 +1980,44 @@ export function HeaderIconButton({
 
 export function ChatHeader({
   conversation,
+  contact,
   children,
   onSearch,
   onOpenContactInfo,
   onCall,
-  onCreateDeal,
-  onAddNote,
+  actionMenu,
+  onTogglePin,
+  isPinned,
+  showLabels,
+  setShowLabels,
+  labelPopoverRef,
+  canManageLabels,
+  showAiSummary,
+  setShowAiSummary,
 }: {
   conversation: ReturnType<typeof useConversation>["data"];
-  children: ReactNode;
+  contact?: ReturnType<typeof useContact>["data"];
+  children?: ReactNode;
   onSearch: () => void;
   onOpenContactInfo?: () => void;
   onCall: () => void;
-  onCreateDeal: () => void;
-  onAddNote: () => void;
+  actionMenu?: ReactNode;
+  onTogglePin?: () => void;
+  isPinned?: boolean;
+  showLabels?: boolean;
+  setShowLabels?: (val: boolean | ((prev: boolean) => boolean)) => void;
+  labelPopoverRef?: RefObject<HTMLDivElement | null>;
+  canManageLabels?: boolean;
+  showAiSummary?: boolean;
+  setShowAiSummary?: (val: boolean | ((prev: boolean) => boolean)) => void;
 }) {
   const online = conversation?.whatsapp_contact?.is_online === true;
+  const name = contactLabel(conversation, contact);
+  const subtitle = contactSubtitle(conversation, contact);
 
   return (
-    <header className="flex min-h-[80px] shrink-0 items-center justify-between gap-2 border-b border-border bg-surface/95 px-4 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.18)] backdrop-blur">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+    <header className="flex h-14 min-h-[56px] shrink-0 items-center justify-between gap-2 border-b border-border bg-surface/95 px-4 py-2 backdrop-blur z-20">
+      <div className="flex min-w-0 items-center gap-2">
         <Link
           href="/inbox"
           aria-label="Back to conversation list"
@@ -1994,26 +2025,63 @@ export function ChatHeader({
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        {conversation && <Avatar name={contactLabel(conversation)} size="md" className="rounded-xl shrink-0" />}
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <p className="truncate text-base font-semibold text-text">{contactLabel(conversation)}</p>
-            <span className="hidden items-center gap-1 rounded-md border border-accent/25 bg-accent/10 px-1.5 py-0.5 text-[11px] font-semibold text-accent-muted sm:inline-flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-              {online ? "Online" : "Active"}
-            </span>
-          </div>
-          <p className="truncate text-xs text-muted">{contactSubtitle(conversation)}</p>
-        </div>
+        {children && <div className="flex items-center gap-2">{children}</div>}
       </div>
 
       <div className="flex shrink-0 items-center justify-end gap-1.5">
-        <div className="hidden min-w-0 items-center gap-1.5 md:flex">{children}</div>
-        <HeaderIconButton icon={Phone} label="Call customer" onClick={onCall} hideOnSmall />
+        <HeaderIconButton icon={Phone} label="Call customer" onClick={onCall} />
         <HeaderIconButton icon={Search} label="Search messages" onClick={onSearch} />
-        <HeaderIconButton icon={BriefcaseBusiness} label="Create deal" onClick={onCreateDeal} hideOnSmall />
-        <HeaderIconButton icon={StickyNote} label="Add note" onClick={onAddNote} hideOnSmall />
-        {onOpenContactInfo && <HeaderIconButton icon={Info} label="Open contact info" onClick={onOpenContactInfo} hideOnSmall />}
+
+        {onTogglePin && (
+          <HeaderIconButton
+            icon={Pin}
+            label={isPinned ? "Unpin conversation" : "Pin conversation"}
+            onClick={onTogglePin}
+            active={isPinned}
+            className={cn(isPinned && "text-primary rotate-45")}
+          />
+        )}
+
+        {setShowLabels && labelPopoverRef && (
+          <div className="relative" ref={labelPopoverRef}>
+            <HeaderIconButton
+              icon={Tag}
+              label="Labels"
+              onClick={() => setShowLabels((v) => !v)}
+              active={showLabels}
+            />
+            {showLabels && (
+              <div className="absolute right-0 top-full z-40 mt-2 w-72 rounded-xl border border-border bg-surface p-3 shadow-2xl">
+                <LabelPicker
+                  entity="conversations"
+                  entityId={conversation?.id ?? 0}
+                  currentLabels={conversation?.labels}
+                  canEdit={Boolean(canManageLabels)}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {setShowAiSummary && (
+          <HeaderIconButton
+            icon={Sparkles}
+            label="AI conversation summary"
+            onClick={() => setShowAiSummary((v) => !v)}
+            active={showAiSummary}
+          />
+        )}
+
+        {actionMenu}
+
+        {onOpenContactInfo && (
+          <HeaderIconButton
+            icon={Info}
+            label="Open contact info"
+            onClick={onOpenContactInfo}
+            className="xl:hidden"
+          />
+        )}
       </div>
     </header>
   );
@@ -2046,6 +2114,8 @@ export function ChatPanel({
   onOpenContactInfo?: () => void;
 }) {
   const { data: conversation } = useConversation(conversationId);
+  const contactId = conversation?.contact?.id ?? (conversation?.whatsapp_contact as { contact_id?: number | null } | null)?.contact_id ?? null;
+  const { data: contact } = useContact(contactId ?? 0);
   const { data: messagesPage, isLoading, isError, refetch: refetchMessages } = useMessages(conversationId);
   const { data: workspace } = useWorkspaceSettings();
   const loadOlder = useLoadOlderMessages(conversationId);
@@ -2083,17 +2153,18 @@ export function ChatPanel({
   const pendingOlderLoad = useRef(false);
 
   const handleCallCustomer = () => {
-    const number = conversation?.whatsapp_contact?.phone_number;
-    if (!number) {
+    const rawNumber = contact?.phone_number ?? conversation?.whatsapp_contact?.phone_number;
+    const formatted = formatDisplayPhone(rawNumber);
+    if (!rawNumber) {
       toast("No phone number available to call.", "error");
       return;
     }
-    toast(`Calling ${contactLabel(conversation)}… (${number})`);
+    toast(`Calling ${contactLabel(conversation, contact)}… (${formatted || rawNumber})`);
   };
 
   const handleCreateDeal = () => {
-    const contact = conversation?.contact;
-    if (!contact?.id) {
+    const linkedContact = contact || conversation?.contact;
+    if (!linkedContact?.id) {
       toast("This conversation has no linked contact. Link one from the contact panel first.", "error");
       return;
     }
@@ -2105,10 +2176,10 @@ export function ChatPanel({
     }
     createDealMutation.mutate(
       {
-        contact_id: contact.id,
+        contact_id: linkedContact.id,
         pipeline_id: pipeline.id,
         pipeline_stage_id: stage.id,
-        title: `Deal with ${contactLabel(conversation)}`,
+        title: `Deal with ${contactLabel(conversation, contact)}`,
       },
       {
         onSuccess: () => toast("Deal created and linked to this contact.", "success"),
@@ -2337,93 +2408,19 @@ export function ChatPanel({
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-chat-bg">
       <ChatHeader
         conversation={conversation}
+        contact={contact}
         onSearch={() => setShowSearch((v) => !v)}
         onOpenContactInfo={onOpenContactInfo}
         onCall={handleCallCustomer}
-        onCreateDeal={handleCreateDeal}
-        onAddNote={handleAddNote}
-      >
-        <StatusDropdown
-          status={conversation?.status ?? "open"}
-          onStatusChange={(s) => {
-            if (s === "closed") close.mutate();
-            else if (conversation?.status === "closed") reopen.mutate();
-          }}
-        />
-        {canAssign && (
-          <AssignDropdown
-            conversation={conversation}
-            users={users}
-            onAssign={(userId) => assign.mutate({ assigned_user_id: userId })}
-          />
-        )}
-      </ChatHeader>
-
-      {/* Conversation toolbar: Search · Pin · Label · AI Summary · More */}
-      <div className="flex shrink-0 items-center gap-0.5 border-b border-border bg-surface/90 px-3 py-1.5 backdrop-blur">
-        <button
-          type="button"
-          onClick={() => setShowSearch((v) => !v)}
-          aria-label="Search messages"
-          title="Search messages"
-          className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-border hover:text-text",
-            showSearch && "bg-bg text-text"
-          )}
-        >
-          <Search className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => (conversation?.pinned_at ? unpin.mutate() : pin.mutate())}
-          aria-label={conversation?.pinned_at ? "Unpin conversation" : "Pin conversation"}
-          title={conversation?.pinned_at ? "Unpin conversation" : "Pin conversation"}
-          className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-border hover:text-text",
-            conversation?.pinned_at && "text-accent"
-          )}
-        >
-          <Pin className={cn("h-4 w-4", conversation?.pinned_at && "rotate-45")} />
-        </button>
-        <div className="relative" ref={labelPopoverRef}>
-          <button
-            type="button"
-            onClick={() => setShowLabels((v) => !v)}
-            aria-label="Labels"
-            aria-expanded={showLabels}
-            title="Labels"
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-border hover:text-text",
-              showLabels && "bg-bg text-text"
-            )}
-          >
-            <Tag className="h-4 w-4" />
-          </button>
-          {showLabels && (
-            <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded-xl border border-border bg-surface p-3 shadow-2xl">
-              <LabelPicker
-                entity="conversations"
-                entityId={conversationId}
-                currentLabels={conversation?.labels}
-                canEdit={canManageLabels}
-              />
-            </div>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowAiSummary((v) => !v)}
-          aria-label="AI conversation summary"
-          aria-expanded={showAiSummary}
-          title="AI conversation summary"
-          className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-border hover:text-text",
-            showAiSummary && "bg-bg text-accent-muted"
-          )}
-        >
-          <Sparkles className="h-4 w-4" />
-        </button>
-        <div className="ml-auto">
+        onTogglePin={() => (conversation?.pinned_at ? unpin.mutate() : pin.mutate())}
+        isPinned={Boolean(conversation?.pinned_at)}
+        showLabels={showLabels}
+        setShowLabels={setShowLabels}
+        labelPopoverRef={labelPopoverRef}
+        canManageLabels={canManageLabels}
+        showAiSummary={showAiSummary}
+        setShowAiSummary={setShowAiSummary}
+        actionMenu={
           <ActionMenu
             status={conversation?.status ?? "open"}
             priority={conversation?.priority ?? "normal"}
@@ -2459,8 +2456,23 @@ export function ChatPanel({
             onUnblock={() => unblock.mutate()}
             onReport={(reason) => report.mutate(reason)}
           />
-        </div>
-      </div>
+        }
+      >
+        <StatusDropdown
+          status={conversation?.status ?? "open"}
+          onStatusChange={(s) => {
+            if (s === "closed") close.mutate();
+            else if (conversation?.status === "closed") reopen.mutate();
+          }}
+        />
+        {canAssign && (
+          <AssignDropdown
+            conversation={conversation}
+            users={users}
+            onAssign={(userId) => assign.mutate({ assigned_user_id: userId })}
+          />
+        )}
+      </ChatHeader>
 
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         {showAiSummary && (

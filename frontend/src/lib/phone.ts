@@ -25,3 +25,32 @@ export function normalizePhoneNumber(input: string, countryCode = PHONE_COUNTRY_
   if (digits.length < 11) return `${cc}${digits}`;
   return digits;
 }
+
+/**
+ * Formats a phone number or WhatsApp JID/LID cleanly for UI display.
+ * - Strips `@s.whatsapp.net`, `@c.us`, `@g.us`
+ * - Formats `@lid` as `WA ID: ...`
+ * - Formats standard international numbers with a clean leading '+'
+ */
+export function formatDisplayPhone(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.includes("@lid")) {
+    const lidDigits = trimmed.replace(/@lid/gi, "").trim();
+    return `WA ID: ${lidDigits}`;
+  }
+
+  // Strip WhatsApp domain suffix (@s.whatsapp.net, @c.us, etc.)
+  const cleaned = trimmed.replace(/@.*$/, "").trim();
+
+  // If pure digits and length >= 9, format with '+'
+  const digitsOnly = cleaned.replace(/\D/g, "");
+  if (digitsOnly.length >= 9 && (cleaned === digitsOnly || cleaned === `+${digitsOnly}`)) {
+    return `+${digitsOnly}`;
+  }
+
+  return cleaned;
+}
+
