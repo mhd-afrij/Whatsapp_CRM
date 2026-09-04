@@ -29,11 +29,11 @@ describe("InboxLayout", () => {
     expect(container.firstChild).toHaveClass(
       "relative",
       "flex",
-      "h-[calc(100%+2rem)]",
+      "h-full",
       "min-h-0",
       "w-full",
-      "-m-4",
-      "sm:-m-6"
+      "min-w-0",
+      "overflow-hidden"
     );
   });
 });

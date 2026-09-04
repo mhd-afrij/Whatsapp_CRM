@@ -255,6 +255,10 @@ export class ConnectionManager extends EventEmitter {
       this.emit('contacts.upsert', { workspaceId: this.workspaceId, payload });
     });
 
+    this.socket.ev.on('messaging-history.set', (payload) => {
+      this.emit('messaging-history.set', { workspaceId: this.workspaceId, payload });
+    });
+
     this.socket.ev.on('chats.phoneNumberShare', (payload: BaileysPhoneNumberShare) => {
       this.emit('chats.phoneNumberShare', { workspaceId: this.workspaceId, payload });
     });
