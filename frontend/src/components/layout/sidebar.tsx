@@ -26,6 +26,8 @@ import {
   PanelLeftOpen,
   Copy,
   UserRoundPlus,
+  UserRound,
+  Kanban,
   Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,6 +39,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inbox", label: "Inbox", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings/profile", label: "Profile", icon: UserRound },
   // Not permission-gated (unlike the items below) - every authenticated user manages
   // their own notification preferences regardless of role.
   { href: "/settings/notifications", label: "Notifications", icon: BellRing },
@@ -57,6 +60,12 @@ const permissionGatedNavItems = [
     label: "Leads",
     icon: UserRoundPlus,
     permission: "leads.manage",
+  },
+  {
+    href: "/pipeline",
+    label: "Pipeline",
+    icon: Kanban,
+    permission: "deals.manage",
   },
   {
     href: "/campaigns",
@@ -137,6 +146,12 @@ const permissionGatedNavItems = [
     permission: "workspace.settings.manage",
   },
   {
+    href: "/settings/pipelines",
+    label: "Pipeline Settings",
+    icon: Kanban,
+    permission: "pipelines.manage",
+  },
+  {
     href: "/settings/audit-log",
     label: "Audit Log",
     icon: ScrollText,
@@ -169,20 +184,26 @@ const permissionGatedNavItems = [
 ];
 
 // Category membership for grouping visible modules under section headers.
+// Everything under /settings lives in the single "Administration" section:
+// the Settings hub first, then user management and admin features.
 const categoryHrefs: Record<string, string[]> = {
   workspace: [
     "/dashboard",
     "/inbox",
     "/contacts",
     "/leads",
+    "/pipeline",
     "/campaigns",
     "/tasks",
     "/calendar",
-    "/settings/notifications",
   ],
-  management: ["/settings/users", "/settings/teams", "/settings/roles"],
   administration: [
     "/settings",
+    "/settings/profile",
+    "/settings/users",
+    "/settings/teams",
+    "/settings/roles",
+    "/settings/notifications",
     "/settings/whatsapp",
     "/settings/labels",
     "/settings/templates",
@@ -190,6 +211,7 @@ const categoryHrefs: Record<string, string[]> = {
     "/settings/business-hours",
     "/settings/away-message",
     "/settings/workspace",
+    "/settings/pipelines",
     "/settings/audit-log",
     "/settings/failed-jobs",
     "/settings/whatsapp-health",
@@ -204,6 +226,8 @@ export function Sidebar() {
   const canManageWhatsapp = usePermission("whatsapp.connection.manage");
   const canViewContacts = usePermission("contacts.view");
   const canManageLeads = usePermission("leads.manage");
+  const canManageDeals = usePermission("deals.manage");
+  const canManagePipelines = usePermission("pipelines.manage");
   const canManageTasks = usePermission("tasks.manage");
   const canManageLabels = usePermission("labels.manage");
   const canUseTemplates = usePermission("templates.use");
@@ -217,6 +241,7 @@ export function Sidebar() {
   const permissionByHref: Record<string, boolean> = {
     "/contacts": canViewContacts,
     "/leads": canManageLeads,
+    "/pipeline": canManageDeals,
     "/campaigns": canViewCampaigns,
     "/tasks": canManageTasks,
     "/calendar": canManageTasks,
@@ -224,6 +249,7 @@ export function Sidebar() {
     "/settings/teams": canViewTeams,
     "/settings/roles": canViewRoles,
     "/settings/whatsapp": canManageWhatsapp,
+    "/settings/pipelines": canManagePipelines,
     "/settings/labels": canManageLabels,
     "/settings/templates": canUseTemplates,
     "/settings/sla": canManageWorkspace,
@@ -235,7 +261,7 @@ export function Sidebar() {
     "/settings/contacts": canDeleteContacts,
   };
 
-  const leadingHrefs = ["/contacts", "/leads", "/campaigns", "/tasks", "/calendar"];
+  const leadingHrefs = ["/contacts", "/leads", "/pipeline", "/campaigns", "/tasks", "/calendar"];
   const visibleGatedItems = permissionGatedNavItems.filter(
     (item) => permissionByHref[item.href]
   );
@@ -251,7 +277,6 @@ export function Sidebar() {
   // by area.
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
     workspace: true,
-    management: false,
     administration: false,
   });
   const toggleCategory = (key: string) =>
@@ -348,13 +373,11 @@ export function Sidebar() {
         .filter((item): item is (typeof orderedItems)[number] => Boolean(item));
 
     const workspaceItems = pick(categoryHrefs.workspace);
-    const managementItems = pick(categoryHrefs.management);
     const administrationItems = pick(categoryHrefs.administration);
 
     return (
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {workspaceItems.length > 0 && renderCategory("workspace", "Workspace", workspaceItems)}
-        {managementItems.length > 0 && renderCategory("management", "Management", managementItems)}
         {administrationItems.length > 0 &&
           renderCategory("administration", "Administration", administrationItems)}
       </nav>

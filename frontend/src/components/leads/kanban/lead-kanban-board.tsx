@@ -12,7 +12,12 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  defaultAnimateLayoutChanges,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
 import { LeadKanbanCard } from "@/components/leads/kanban/lead-kanban-card";
@@ -40,18 +45,22 @@ function SortableKanbanCard({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: lead.id,
+    animateLayoutChanges: defaultAnimateLayoutChanges,
   });
 
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition: transition ?? "transform 220ms cubic-bezier(0.2, 0, 0, 1)",
+      }}
       {...attributes}
       {...listeners}
       suppressHydrationWarning
       className={cn(
         "rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
-        isDragging ? "cursor-grabbing opacity-40" : "cursor-grab active:cursor-grabbing"
+        isDragging ? "z-50 cursor-grabbing scale-[1.03] shadow-xl opacity-90" : "cursor-grab active:cursor-grabbing"
       )}
     >
       <LeadKanbanCard
@@ -114,8 +123,8 @@ function KanbanColumn({
       <div
         ref={setNodeRef}
         className={cn(
-          "flex min-h-[72px] flex-1 flex-col gap-1.5 rounded-lg p-1 transition-all duration-150",
-          isOver && "bg-primary/5 ring-2 ring-primary/30 ring-inset"
+          "flex min-h-[72px] flex-1 flex-col gap-1.5 rounded-lg p-1 transition-all duration-200 ease-out",
+          isOver && "bg-primary/5 ring-2 ring-primary/30 ring-inset scale-[1.01]"
         )}
       >
         {leads.length > 0 ? (
@@ -225,9 +234,14 @@ export function LeadKanbanBoard({
         })}
       </div>
 
-      <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0, 0, 1)" }}>
+      <DragOverlay
+        dropAnimation={{
+          duration: 250,
+          easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)",
+        }}
+      >
         {activeLead ? (
-          <div className="pointer-events-none w-[280px] rotate-2 scale-[1.02] rounded-lg shadow-[0_24px_60px_-16px_rgba(15,23,42,0.4)] ring-1 ring-primary/25 dark:shadow-[0_24px_60px_-16px_rgba(0,0,0,0.85)]">
+          <div className="pointer-events-none w-[280px] rotate-[2.5deg] scale-[1.04] rounded-xl shadow-[0_28px_64px_-16px_rgba(15,23,42,0.45)] ring-2 ring-primary/30 transition-all duration-200 dark:shadow-[0_28px_64px_-16px_rgba(0,0,0,0.9)]">
             <LeadKanbanCard
               {...activeLead}
               onOpenChat={onOpenChat ?? activeLead.onOpenChat}
