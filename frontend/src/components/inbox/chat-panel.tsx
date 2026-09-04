@@ -262,24 +262,32 @@ function MessageActionsMenu({
       <button
         type="button"
         aria-label="Message actions"
-        onClick={() => setOpen((current) => !current)}
-        className="rounded-lg border border-border bg-surface/95 p-1.5 text-muted opacity-0 shadow-lg transition hover:bg-border hover:text-text group-hover:opacity-100 focus:opacity-100"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((current) => !current);
+        }}
+        className={cn(
+          "rounded-full p-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus:opacity-100",
+          isOutbound
+            ? "text-outgoing-text/60 hover:text-outgoing-text hover:bg-black/5 dark:hover:bg-white/10"
+            : "text-muted hover:text-text hover:bg-black/5 dark:hover:bg-white/10"
+        )}
       >
         <ChevronDown className="h-3.5 w-3.5" />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-44 overflow-hidden rounded-xl border border-white/[0.08] bg-[#202c33] py-1 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute right-0 top-full mt-1 w-44 overflow-hidden rounded-md border border-black/[0.08] dark:border-white/[0.1] bg-white dark:bg-[#233138] py-1.5 shadow-[0_2px_5px_0_rgba(11,20,26,0.2),0_2px_10px_0_rgba(11,20,26,0.12)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.5)] z-50 animate-in fade-in zoom-in-95 duration-100">
           <button
             type="button"
             onClick={() => {
               onReply(message);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
           >
-            <CornerUpLeft className="h-4 w-4 text-muted" />
-            Reply
+            <CornerUpLeft className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <span>Reply</span>
           </button>
           <button
             type="button"
@@ -290,9 +298,10 @@ function MessageActionsMenu({
               setOpen(false);
             }}
             disabled={!message.replied_to_message_id}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Jump to reply
+            <ArrowLeft className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <span>Jump to reply</span>
           </button>
           <button
             type="button"
@@ -300,10 +309,10 @@ function MessageActionsMenu({
               onForward(message);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
           >
-            <Forward className="h-4 w-4 text-muted" />
-            Forward
+            <Forward className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <span>Forward</span>
           </button>
           <button
             type="button"
@@ -311,18 +320,18 @@ function MessageActionsMenu({
               onStarToggle(message);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
           >
-            <Sparkles className="h-4 w-4 text-muted" />
-            {message.starred_at ? "Unstar" : "Star"}
+            <Sparkles className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <span>{message.starred_at ? "Unstar" : "Star"}</span>
           </button>
           <button
             type="button"
             onClick={copyMessage}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
           >
-            <Copy className="h-4 w-4 text-muted" />
-            Copy text
+            <Copy className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <span>Copy text</span>
           </button>
           <button
             type="button"
@@ -330,10 +339,10 @@ function MessageActionsMenu({
               onRequestDelete(message);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-danger/10"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#ea0038] hover:bg-[#ea0038]/10 transition-colors"
           >
-            <Trash2 className="h-4 w-4" />
-            Delete message
+            <Trash2 className="h-4 w-4 shrink-0 text-[#ea0038]" />
+            <span>Delete message</span>
           </button>
         </div>
       )}
@@ -406,7 +415,7 @@ function MessageContextMenu({
 
   return (
     <div
-      className={`absolute pointer-events-none transform transition-opacity opacity-0 rounded-xl border border-border bg-surface py-1 shadow-lg z-40 ${
+      className={`absolute pointer-events-none transform transition-opacity opacity-0 rounded-md border border-black/[0.08] dark:border-white/[0.1] bg-white dark:bg-[#233138] py-1.5 shadow-[0_2px_5px_0_rgba(11,20,26,0.2),0_2px_10px_0_rgba(11,20,26,0.12)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.5)] z-50 ${
         open ? "pointer-events-auto opacity-100" : ""
       }`}
       style={{ left: `${x}px`, top: `${y}px` }}
@@ -416,24 +425,24 @@ function MessageContextMenu({
       }}
     >
       <div
-        className="rounded-xl border border-border bg-surface py-1 shadow-lg w-max max-w-xs"
+        className="w-44"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           type="button"
           onClick={handleReply}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+          className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
         >
-          <CornerUpLeft className="h-3.5 w-3.5 text-muted" />
-          Reply
+          <CornerUpLeft className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+          <span>Reply</span>
         </button>
         <button
           type="button"
           onClick={handleCopy}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg mt-2"
+          className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
         >
-          <Copy className="h-3.5 w-3.5 text-muted" />
-          Copy text
+          <Copy className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+          <span>Copy text</span>
         </button>
         <button
           type="button"
@@ -441,10 +450,10 @@ function MessageContextMenu({
             onForward(message);
             setOpen(false);
           }}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg mt-2"
+          className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
         >
-          <Forward className="h-3.5 w-3.5 text-muted" />
-          Forward
+          <Forward className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+          <span>Forward</span>
         </button>
         {canRetry && (
           <button
@@ -453,10 +462,10 @@ function MessageContextMenu({
               onRetry(message.id);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-primary hover:bg-primary/10"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-primary hover:bg-primary/10 transition-colors"
           >
-            <Clock className="h-3.5 w-3.5 text-muted" />
-            Retry
+            <Clock className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <span>Retry</span>
           </button>
         )}
         {!canRetry && (
@@ -466,10 +475,10 @@ function MessageContextMenu({
               onStarToggle(message);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text hover:bg-bg"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
           >
-            <Sparkles className="h-3.5 w-3.5 text-muted" />
-            {message.starred_at ? "Unstar" : "Star"}
+            <Sparkles className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <span>{message.starred_at ? "Unstar" : "Star"}</span>
           </button>
         )}
         <button
@@ -478,10 +487,10 @@ function MessageContextMenu({
             onRequestDelete(message);
             setOpen(false);
           }}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-danger/10 mt-2"
+          className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#ea0038] hover:bg-[#ea0038]/10 transition-colors"
         >
-          <Trash2 className="h-3.5 w-3.5" />
-          Delete message
+          <Trash2 className="h-4 w-4 shrink-0 text-[#ea0038]" />
+          <span>Delete message</span>
         </button>
       </div>
     </div>
@@ -580,63 +589,21 @@ function MessageHoverBar({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showEmojiPicker]);
 
-  const handleCopy = async () => {
-    const text = message.body?.trim() || `[${message.message_type}]`;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // silent
-    }
-  };
-
   const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
   return (
-    <div className="absolute -top-4 left-1 z-10 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-      <div className="flex items-center gap-0.5 rounded-xl border border-border bg-surface/95 px-1 shadow-lg backdrop-blur-sm">
-        {/* Emoji reaction */}
-        <div ref={pickerRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-muted hover:bg-bg hover:text-text transition-colors"
-            aria-label="React with emoji"
-          >
-            <SmilePlus className="h-3.5 w-3.5" />
-          </button>
-          {showEmojiPicker && (
-            <div className="absolute bottom-full left-0 mb-2 flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-1 shadow-lg z-30">
-              {QUICK_REACTIONS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => {
-                    const hasMyReaction = message.reactions?.some(
-                      (r) => r.emoji === emoji && r.user_id === Number(user?.id)
-                    );
-                    onReact(message.id, emoji, Boolean(hasMyReaction));
-                    setShowEmojiPicker(false);
-                  }}
-                  className="h-8 w-8 flex items-center justify-center rounded-full text-lg hover:bg-bg transition-colors"
-                  aria-label={`React with ${emoji}`}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        {/* Reply */}
+    <div className="flex items-center gap-1 rounded-full border border-border bg-surface/95 px-1.5 py-0.5 shadow-md backdrop-blur-sm">
+      <div ref={pickerRef} className="relative">
         <button
           type="button"
           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-          className="flex h-6 w-6 items-center justify-center rounded-full text-[#8696a0] hover:bg-white/[0.08] hover:text-[#e9edef] transition-colors"
+          className="flex h-6 w-6 items-center justify-center rounded-full text-muted hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-text transition-colors"
           aria-label="React with emoji"
         >
           <SmilePlus className="h-3.5 w-3.5" />
         </button>
         {showEmojiPicker && (
-          <div className="absolute bottom-full left-0 mb-2 flex items-center gap-1 rounded-full border border-white/[0.08] bg-[#202c33] px-2 py-1 shadow-xl z-30 animate-in fade-in zoom-in-95 duration-100">
+          <div className="absolute bottom-full left-0 mb-2 flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-1 shadow-xl z-30 animate-in fade-in zoom-in-95 duration-100">
             {QUICK_REACTIONS.map((emoji) => (
               <button
                 key={emoji}
@@ -648,7 +615,7 @@ function MessageHoverBar({
                   onReact(message.id, emoji, Boolean(hasMyReaction));
                   setShowEmojiPicker(false);
                 }}
-                className="h-7 w-7 flex items-center justify-center rounded-full text-base hover:bg-white/[0.1] transition-colors"
+                className="h-7 w-7 flex items-center justify-center rounded-full text-base hover:bg-black/[0.06] dark:hover:bg-white/[0.1] transition-colors"
                 aria-label={`React with ${emoji}`}
               >
                 {emoji}
@@ -660,7 +627,7 @@ function MessageHoverBar({
       <button
         type="button"
         onClick={() => onReply(message)}
-        className="flex h-6 w-6 items-center justify-center rounded-full text-[#8696a0] hover:bg-white/[0.08] hover:text-[#e9edef] transition-colors"
+        className="flex h-6 w-6 items-center justify-center rounded-full text-muted hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-text transition-colors"
         aria-label="Reply"
       >
         <CornerUpLeft className="h-3.5 w-3.5" />
@@ -717,15 +684,8 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "w-fit min-w-[76px] max-w-[80%] px-3.5 py-2.5 text-sm shadow-[0_14px_30px_rgba(0,0,0,0.18)]",
-          isOutbound
-            ? "rounded-[16px_16px_4px_16px] bg-outgoing-bubble text-outgoing-text"
-            : "rounded-[16px_16px_16px_4px] bg-incoming-bubble text-text",
-          isReplyingTo
-            ? isOutbound
-              ? "ring-2 ring-primary-dark/70"
-              : "ring-2 ring-primary/50"
-            : undefined
+          "self-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 px-1",
+          isOutbound ? "order-first" : "order-last"
         )}
       >
         <MessageHoverBar
@@ -739,11 +699,11 @@ export function MessageBubble({
         className={cn(
           "relative max-w-[85%] sm:max-w-[70%] min-w-[72px] px-2.5 pt-1.5 pb-1 text-[14.2px] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]",
           isOutbound
-            ? "rounded-lg rounded-tr-none bg-outgoing-bubble text-[#e9edef]"
-            : "rounded-lg rounded-tl-none bg-incoming-bubble text-[#e9edef] dark:text-[#e9edef]",
+            ? "rounded-lg rounded-tr-none bg-outgoing-bubble text-outgoing-text"
+            : "rounded-lg rounded-tl-none bg-incoming-bubble text-text",
           isReplyingTo
             ? isOutbound
-              ? "ring-2 ring-emerald-400"
+              ? "ring-2 ring-emerald-500"
               : "ring-2 ring-emerald-500"
             : undefined
         )}
@@ -760,23 +720,22 @@ export function MessageBubble({
         />
 
         {isOutbound && message.sender && (
-          <p className="mb-0.5 text-[11px] font-semibold text-emerald-400/90">{message.sender.name}</p>
+          <p className="mb-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">{message.sender.name}</p>
         )}
 
         {repliedTo && (
           <button
             type="button"
             className={cn(
-              // WhatsApp-style quote strip: a subtle tint behind the quoted text
-              // (translucent white over the green outbound bubble, a deeper green
-              // tint over the soft-green inbound bubble) so it reads as a distinct block.
-              "mb-1 block w-full rounded border-l-2 px-2 py-1 text-left text-xs",
-              isOutbound ? "border-outgoing-text/30 bg-outgoing-text/[0.07]" : "border-accent/40 bg-bg"
+              "mb-1 block w-full rounded border-l-4 px-2 py-1 text-left text-xs",
+              isOutbound
+                ? "border-emerald-600/60 bg-black/5 dark:bg-black/20 text-outgoing-text"
+                : "border-emerald-500 bg-black/5 dark:bg-black/20 text-text"
             )}
             onClick={() => onJumpToMessage(repliedTo.id)}
             title="Jump to replied message"
           >
-            <p className="text-[11px] font-medium text-emerald-400">
+            <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
               {repliedTo.direction === "outbound" ? "You" : "Contact"}
             </p>
             <p className="truncate text-xs opacity-90">{repliedTo.body ?? `[${repliedTo.message_type}]`}</p>
@@ -792,16 +751,17 @@ export function MessageBubble({
         <div className="relative text-[14.2px] leading-[19px]">
           {message.body && <span className="whitespace-pre-wrap break-words">{message.body}</span>}
 
-        <MessageReactions
-          reactions={message.reactions}
-          currentUserId={user?.id ? Number(user.id) : undefined}
-          onAddReaction={(emoji) => onReact(message.id, emoji, false)}
-          onRemoveReaction={(emoji) => onReact(message.id, emoji, true)}
-        />
-
-        <div className="mt-1 flex items-center justify-end gap-1">
-          <span className={cn("text-[10px] leading-none", isOutbound ? "text-outgoing-text/70" : "text-muted")}>
-            {formatInboxTime(message.sent_at, timeZone)}
+          <span className="float-right ml-2 mt-1 -mb-0.5 inline-flex items-center gap-1 select-none h-3.5">
+            <span className={cn("text-[11px] leading-none", isOutbound ? "text-outgoing-text/70" : "text-muted")}>
+              {formatInboxTime(message.sent_at, timeZone)}
+            </span>
+            {isOutbound && (
+              <MessageStatusTick
+                status={message.status}
+                deliveredAt={message.delivered_at}
+                readAt={message.read_at}
+              />
+            )}
           </span>
         </div>
 
@@ -1633,16 +1593,16 @@ export function Composer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="relative z-20 shrink-0 border-t border-border bg-surface/98 px-3 py-3 shadow-[0_-18px_42px_rgba(0,0,0,0.28)] backdrop-blur"
+      className="relative z-20 shrink-0 border-t border-border bg-[#f0f2f5] dark:bg-[#202c33] px-3 py-2 shadow-sm"
     >
       {isNoteMode && (
-        <p className="mb-2 text-xs font-medium text-amber-400">
+        <p className="mb-1 text-xs font-medium text-amber-500 dark:text-amber-400">
           Internal note mode. Only your team can see this.
         </p>
       )}
 
       {!isNoteMode && isClosed && (
-        <p className="mb-2 text-xs font-medium text-[#8696a0]">
+        <p className="mb-1 text-xs font-medium text-muted">
           {canReopen ? "This conversation is closed. Sending a reply will reopen it." : "This conversation is closed."}
         </p>
       )}
@@ -1650,21 +1610,21 @@ export function Composer({
       {!isNoteMode && replyTo && (
         <div
           key={replyTo.id}
-          className="mb-2 flex items-stretch overflow-hidden rounded-xl border border-white/[0.08] bg-[#111b21] shadow-sm animate-in slide-in-from-bottom-1 fade-in duration-150"
+          className="mb-1.5 flex items-stretch overflow-hidden rounded-lg border border-border bg-surface dark:bg-[#111b21] shadow-sm animate-in slide-in-from-bottom-1 fade-in duration-150"
         >
           <div
             className={cn(
               "w-1 shrink-0",
-              replyTo.direction === "outbound" ? "bg-[#00a884]" : "bg-[#8696a0]"
+              replyTo.direction === "outbound" ? "bg-accent" : "bg-muted"
             )}
           />
-          <div className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5">
             <ReplyMediaThumb conversationId={conversationId} message={replyTo} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-[#00a884]">
+              <p className="truncate text-xs font-semibold text-accent">
                 {replyTo.direction === "outbound" ? "You" : contactName}
               </p>
-              <p className="truncate text-xs text-[#8696a0]">
+              <p className="truncate text-xs text-muted">
                 {replyTo.body ??
                   (replyTo.media ? mediaTypeLabel(replyTo.media.mime_type) : `[${replyTo.message_type}]`)}
               </p>
@@ -1673,34 +1633,34 @@ export function Composer({
               type="button"
               onClick={onClearReply}
               aria-label="Cancel reply"
-              className="shrink-0 rounded-full p-1.5 text-[#8696a0] transition-colors hover:bg-white/[0.08] hover:text-[#e9edef]"
+              className="shrink-0 rounded-full p-1 text-muted transition-colors hover:bg-border/60 hover:text-text"
             >
-              <X className="h-4 w-4" />
+              <X className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
       )}
 
       {!isNoteMode && attachment && (
-        <div className="mb-2 flex items-center gap-2 rounded-xl border border-white/[0.08] bg-[#111b21] px-3 py-2 text-xs text-[#e9edef]">
+        <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-border bg-surface dark:bg-[#111b21] px-3 py-1.5 text-xs text-text">
           {attachment.previewUrl ? (
             <img
               src={attachment.previewUrl}
               alt="Attachment preview"
-              className="h-10 w-10 shrink-0 rounded-lg border border-white/[0.08] object-cover"
+              className="h-8 w-8 shrink-0 rounded border border-border object-cover"
             />
           ) : (
-            <FileText className="h-5 w-5 shrink-0 text-[#8696a0]" />
+            <FileText className="h-4 w-4 shrink-0 text-muted" />
           )}
           <span className="min-w-0 flex-1 truncate">{attachment.file.name}</span>
-          <span className="shrink-0 text-[#8696a0]">{formatBytes(attachment.file.size)}</span>
+          <span className="shrink-0 text-muted">{formatBytes(attachment.file.size)}</span>
           <button
             type="button"
             onClick={clearAttachment}
             aria-label="Remove attachment"
-            className="shrink-0 text-[#8696a0] hover:text-[#e9edef]"
+            className="shrink-0 text-muted hover:text-text"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       )}
@@ -1714,8 +1674,8 @@ export function Composer({
       />
 
       {canReply && !isNoteMode && isRecording && (
-        <div className="mb-2 flex items-center gap-2 rounded-xl border border-accent/20 bg-accent/5 px-3 py-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-danger" />
+        <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-rose-500" />
           <span className="text-xs font-medium text-text">
             Recording voice note… {formatRecordTime(recordSeconds)}
           </span>
@@ -1724,43 +1684,44 @@ export function Composer({
               type="button"
               onClick={cancelRecording}
               aria-label="Discard recording"
-              className="rounded-lg p-1.5 text-muted transition-colors hover:bg-border hover:text-text"
+              className="rounded-lg p-1 text-muted transition-colors hover:bg-border hover:text-text"
             >
-              <X className="h-4 w-4" />
+              <X className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
               onClick={stopRecording}
               aria-label="Stop and attach recording"
-              className="rounded-lg bg-accent p-1.5 text-accent-text transition-colors hover:bg-accent/90"
+              className="rounded-lg bg-accent p-1 text-accent-text transition-colors hover:bg-accent/90"
             >
-              <Square className="h-3.5 w-3.5" />
+              <Square className="h-3 w-3" />
             </button>
           </div>
         </div>
       )}
 
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-1.5">
         {canCreateNote && (
           <button
             type="button"
             onClick={() => setMode(isNoteMode ? "reply" : "note")}
             aria-label={isNoteMode ? "Switch to reply mode" : "Switch to internal note mode"}
+            title={isNoteMode ? "Switch to Reply" : "Switch to Internal Note"}
             className={cn(
-              "flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition",
+              "flex h-8 shrink-0 items-center justify-center gap-1 rounded-full border px-2.5 text-xs font-medium transition",
               isNoteMode
-                ? "border-amber-400/50 bg-amber-400/15 text-amber-400 hover:bg-amber-400/25"
-                : "border-white/[0.08] bg-white/[0.04] text-[#8696a0] hover:bg-white/[0.08] hover:text-[#e9edef]"
+                ? "border-amber-500/50 bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                : "border-border bg-surface text-muted hover:text-text hover:bg-border/60"
             )}
           >
             <Lock className="h-3.5 w-3.5" />
-            <span>{isNoteMode ? "Note" : "Reply"}</span>
+            <span className="hidden sm:inline">{isNoteMode ? "Note" : "Note"}</span>
           </button>
         )}
 
         {canReply && (
           <>
-            <div className="relative hidden md:block" ref={emojiRef}>
+            <div className="relative" ref={emojiRef}>
               <button
                 type="button"
                 onClick={() => setShowEmojiPicker((open) => !open)}
@@ -1768,11 +1729,11 @@ export function Composer({
                 aria-label="Insert emoji"
                 aria-expanded={showEmojiPicker}
                 className={cn(
-                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/[0.08] hover:text-[#e9edef] disabled:cursor-not-allowed disabled:opacity-40",
-                  showEmojiPicker && "text-[#00a884] bg-white/[0.08]"
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
+                  showEmojiPicker && "text-accent bg-accent/10"
                 )}
               >
-                <SmilePlus className="h-5 w-5" />
+                <SmilePlus className="h-4 w-4" />
               </button>
               {showEmojiPicker && (
                 <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-xl border border-border bg-surface p-2 shadow-2xl animate-in slide-in-from-bottom-2 fade-in duration-100">
@@ -1798,11 +1759,11 @@ export function Composer({
               disabled={isNoteMode || isUploading || isRecording}
               aria-label="Attach media"
               className={cn(
-                "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/[0.08] hover:text-[#e9edef] disabled:cursor-not-allowed disabled:opacity-40",
-                attachment && "text-[#00a884] bg-white/[0.08]"
+                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
+                attachment && "text-accent bg-accent/10"
               )}
             >
-              <Paperclip className="h-5 w-5" />
+              <Paperclip className="h-4 w-4" />
             </button>
 
             <button
@@ -1812,11 +1773,11 @@ export function Composer({
               aria-label="Saved replies"
               aria-expanded={showTemplatePicker}
               className={cn(
-                "hidden h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/[0.08] hover:text-[#e9edef] disabled:cursor-not-allowed disabled:opacity-40 md:flex",
-                showTemplatePicker && "text-[#00a884] bg-white/[0.08]"
+                "hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-text disabled:cursor-not-allowed disabled:opacity-40 md:flex",
+                showTemplatePicker && "text-accent bg-accent/10"
               )}
             >
-              <Zap className="h-5 w-5" />
+              <Zap className="h-4 w-4" />
             </button>
 
             <button
@@ -1825,11 +1786,11 @@ export function Composer({
               disabled={isNoteMode || isUploading || isRecording}
               aria-label="Record a voice message"
               className={cn(
-                "hidden h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8696a0] transition hover:bg-white/[0.08] hover:text-[#e9edef] disabled:cursor-not-allowed disabled:opacity-40 lg:flex",
+                "hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-text disabled:cursor-not-allowed disabled:opacity-40 lg:flex",
                 isRecording && "text-rose-500"
               )}
             >
-              <Mic className="h-5 w-5" />
+              <Mic className="h-4 w-4" />
             </button>
           </>
         )}
@@ -1845,9 +1806,9 @@ export function Composer({
               disabled={aiDraftMutation.isPending || isUploading}
               aria-label="Draft a reply with AI"
               title="Draft a reply with AI"
-              className="absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-accent transition-colors hover:bg-accent/10 disabled:cursor-wait disabled:opacity-50"
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-md text-accent transition-colors hover:bg-accent/10 disabled:cursor-wait disabled:opacity-50"
             >
-              <Sparkles className={cn("h-4 w-4", aiDraftMutation.isPending && "animate-pulse")} aria-hidden="true" />
+              <Sparkles className={cn("h-3.5 w-3.5", aiDraftMutation.isPending && "animate-pulse")} aria-hidden="true" />
             </button>
           )}
           <textarea
@@ -1861,8 +1822,8 @@ export function Composer({
               }
             }}
             rows={1}
-            placeholder={isNoteMode ? "Write an internal note" : "Type a message or / for saved replies"}
-            className="min-h-[42px] w-full min-w-0 resize-none overflow-hidden rounded-xl border border-border bg-surface px-3 py-2.5 pr-12 text-sm text-text placeholder:text-muted outline-none transition focus:border-accent/60 focus:ring-2 focus:ring-accent/20"
+            placeholder={isNoteMode ? "Write an internal note..." : "Type a message"}
+            className="min-h-[36px] max-h-[100px] w-full min-w-0 resize-none overflow-y-auto rounded-lg border border-border bg-surface dark:bg-[#2a3942] dark:border-transparent px-3 py-1.5 pr-8 text-[13.5px] text-text placeholder:text-muted leading-normal outline-none transition focus:border-accent focus:ring-1 focus:ring-accent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
         </div>
 
@@ -1871,8 +1832,8 @@ export function Composer({
           disabled={(!body.trim() && !attachment) || sendMutation.isPending || createNote.isPending || isUploading}
           aria-label={isNoteMode ? "Save note" : "Send message"}
           className={cn(
-            "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl font-semibold shadow-[0_10px_24px_rgba(34,197,94,0.16)] disabled:opacity-50",
-            isNoteMode ? "bg-warning text-black/70 hover:brightness-95" : "bg-accent text-accent-text hover:bg-accent/90"
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-semibold shadow-sm transition disabled:opacity-40 active:scale-95",
+            isNoteMode ? "bg-amber-500 text-white hover:bg-amber-600" : "bg-accent text-accent-text hover:bg-accent/90"
           )}
         >
           <Send className="h-4 w-4" />
@@ -2614,8 +2575,8 @@ export function ChatPanel({
             return (
               <div key={message.id}>
                 {showSeparator && message.sent_at && (
-                  <div className="my-4 flex justify-center">
-                    <span className="rounded-lg border border-border bg-surface/90 px-3 py-1 text-[11px] font-medium text-muted shadow-lg backdrop-blur">
+                  <div className="my-3 flex justify-center sticky top-2 z-10">
+                    <span className="rounded-lg border border-black/[0.08] bg-white/95 text-[#667781] dark:border-[#222d34]/60 dark:bg-[#182229]/95 dark:text-[#8696a0] px-3 py-1 text-[11.5px] font-medium shadow-sm uppercase tracking-wider">
                       {formatInboxDateSeparator(message.sent_at, workspace?.timezone)}
                     </span>
                   </div>
