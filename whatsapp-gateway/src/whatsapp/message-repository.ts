@@ -405,6 +405,10 @@ export class MessageRepository {
       fileSizeBytes: number | null;
       storagePath: string;
       checksumSha256: string | null;
+      fileSize?: number | null;
+      blobName?: string | null;
+      mediaUrl?: string | null;
+      storageProvider?: string | null;
     },
   ): Promise<void> {
     await execute(

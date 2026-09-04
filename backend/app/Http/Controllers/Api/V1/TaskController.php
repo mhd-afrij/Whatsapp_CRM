@@ -54,7 +54,7 @@ class TaskController extends Controller
             $query->whereDate('due_at', $request->string('due_date')->toString());
         }
 
-        foreach (['contact_id', 'deal_id', 'conversation_id', 'assignee_id'] as $field) {
+        foreach (['contact_id', 'deal_id', 'conversation_id', 'assignee_id', 'lead_id'] as $field) {
             if ($request->filled($field)) {
                 $query->where($field, $request->integer($field));
             }
@@ -89,7 +89,7 @@ class TaskController extends Controller
     {
         $this->authorize('view', $task);
 
-        $task->load(['assignee', 'creator', 'contact', 'deal', 'conversation', 'reminders', 'comments.author']);
+        $task->load(['assignee', 'creator', 'contact', 'deal', 'lead', 'conversation', 'reminders', 'comments.author']);
 
         return $this->success($task, 'OK');
     }
@@ -104,6 +104,7 @@ class TaskController extends Controller
             'assignee_id' => ['sometimes', 'nullable', 'integer', Rule::exists('users', 'id')],
             'contact_id' => ['sometimes', 'nullable', 'integer', Rule::exists('contacts', 'id')],
             'deal_id' => ['sometimes', 'nullable', 'integer', Rule::exists('deals', 'id')],
+            'lead_id' => ['sometimes', 'nullable', 'integer', Rule::exists('leads', 'id')],
             'conversation_id' => ['sometimes', 'nullable', 'integer', Rule::exists('conversations', 'id')],
             'due_at' => ['sometimes', 'nullable', 'date'],
             'priority' => ['sometimes', Rule::in(['low', 'medium', 'high', 'urgent'])],
@@ -138,7 +139,7 @@ class TaskController extends Controller
             }
         }
 
-        return $this->success($task->fresh(['assignee', 'creator', 'contact', 'deal', 'conversation']), 'Task created', null, 201);
+        return $this->success($task->fresh(['assignee', 'creator', 'contact', 'deal', 'lead', 'conversation']), 'Task created', null, 201);
     }
 
     public function update(Request $request, Task $task)
@@ -151,6 +152,7 @@ class TaskController extends Controller
             'assignee_id' => ['sometimes', 'nullable', 'integer', Rule::exists('users', 'id')],
             'contact_id' => ['sometimes', 'nullable', 'integer', Rule::exists('contacts', 'id')],
             'deal_id' => ['sometimes', 'nullable', 'integer', Rule::exists('deals', 'id')],
+            'lead_id' => ['sometimes', 'nullable', 'integer', Rule::exists('leads', 'id')],
             'conversation_id' => ['sometimes', 'nullable', 'integer', Rule::exists('conversations', 'id')],
             'due_at' => ['sometimes', 'nullable', 'date'],
             'priority' => ['sometimes', Rule::in(['low', 'medium', 'high', 'urgent'])],
@@ -177,7 +179,7 @@ class TaskController extends Controller
             AuditLogger::log('task.assigned', $request->user(), $task, ['assignee_id' => $data['assignee_id']], $request, ['assignee_id' => $previousAssignee]);
         }
 
-        return $this->success($task->fresh(['assignee', 'creator', 'contact', 'deal', 'conversation']), 'Task updated');
+        return $this->success($task->fresh(['assignee', 'creator', 'contact', 'deal', 'lead', 'conversation']), 'Task updated');
     }
 
     public function destroy(Request $request, Task $task)

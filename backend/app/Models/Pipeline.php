@@ -22,4 +22,9 @@ class Pipeline extends Model
     {
         return $this->hasMany(PipelineStage::class)->orderBy('position');
     }
+
+    public function deals(): HasMany
+    {
+        return $this->hasMany(Deal::class);
+    }
 }

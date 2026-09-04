@@ -195,11 +195,13 @@ class SlaFilterTest extends TestCase
         $wonStage = PipelineStage::factory()->create([
             'pipeline_id' => $pipeline->id,
             'name' => 'Won',
+            'position' => 1,
             'is_won_stage' => true,
         ]);
         $newStage = PipelineStage::factory()->create([
             'pipeline_id' => $pipeline->id,
             'name' => 'New',
+            'position' => 2,
         ]);
 
         Deal::factory()->create([

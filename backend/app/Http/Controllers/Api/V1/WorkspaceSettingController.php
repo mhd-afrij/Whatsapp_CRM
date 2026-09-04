@@ -52,6 +52,7 @@ class WorkspaceSettingController extends Controller
             'name' => ['sometimes', 'string', 'max:150'],
             'timezone' => ['sometimes', 'string', 'timezone'],
             'logo' => ['sometimes', 'nullable', 'image', 'max:2048'],
+            'default_pipeline_id' => ['sometimes', 'nullable', 'integer', Rule::exists('pipelines', 'id')],
             'business_hours' => ['sometimes', 'array'],
             'notification_defaults' => ['sometimes', 'array'],
             'branding' => ['sometimes', 'array'],
@@ -62,7 +63,7 @@ class WorkspaceSettingController extends Controller
 
         $before = array_merge(
             $workspace->only(['name', 'timezone']),
-            $workspace->settings?->only(['business_hours', 'notification_defaults', 'branding']) ?? []
+            $workspace->settings?->only(['business_hours', 'notification_defaults', 'branding', 'default_pipeline_id']) ?? []
         );
 
         $workspace->fill($request->only(['name', 'timezone']));
@@ -79,7 +80,7 @@ class WorkspaceSettingController extends Controller
 
         $settings = $workspace->settings ?? $workspace->settings()->create(['workspace_id' => $workspace->id]);
         $settings->fill($request->only([
-            'business_hours', 'notification_defaults', 'branding',
+            'default_pipeline_id', 'business_hours', 'notification_defaults', 'branding',
             'away_message_enabled', 'away_message', 'away_message_trigger',
         ]));
         $settings->save();
@@ -104,6 +105,7 @@ class WorkspaceSettingController extends Controller
             'timezone' => $workspace->timezone,
             'logo_url' => $workspace->logo_path ? $this->azureBlob->getUrl($workspace->logo_path) : null,
             'is_active' => (bool) $workspace->is_active,
+            'default_pipeline_id' => $settings?->default_pipeline_id ? (int) $settings->default_pipeline_id : null,
             'business_hours' => $settings?->business_hours,
             'notification_defaults' => $settings?->notification_defaults,
             'branding' => $settings?->branding,

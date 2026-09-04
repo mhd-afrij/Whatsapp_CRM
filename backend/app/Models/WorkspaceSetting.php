@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class WorkspaceSetting extends Model
 {
     protected $fillable = [
-        'workspace_id', 'business_hours', 'notification_defaults', 'branding',
+        'workspace_id', 'default_pipeline_id', 'business_hours', 'notification_defaults', 'branding',
         'away_message_enabled', 'away_message', 'away_message_trigger',
         'ai_provider', 'ai_model', 'ai_api_key', 'ai_business_context', 'ai_enabled',
     ];

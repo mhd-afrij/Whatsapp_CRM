@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\V1\MessageTemplateController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\PermissionController;
+use App\Http\Controllers\Api\V1\PipelineController;
 use App\Http\Controllers\Api\V1\ReportExportController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\SearchController;
@@ -252,6 +253,18 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::delete('/{deal}', [DealController::class, 'destroy'])->name('destroy');
             Route::post('/{deal}/labels/{label}', [DealController::class, 'attachLabel'])->name('labels.attach');
             Route::delete('/{deal}/labels/{label}', [DealController::class, 'detachLabel'])->name('labels.detach');
+        });
+
+        Route::prefix('pipelines')->name('pipelines.')->group(function () {
+            Route::get('/', [PipelineController::class, 'index'])->middleware('permission:deals.manage')->name('index');
+            Route::get('/{pipeline}', [PipelineController::class, 'show'])->middleware('permission:deals.manage')->name('show');
+            Route::get('/{pipeline}/board', [PipelineController::class, 'board'])->middleware('permission:deals.manage')->name('board');
+            Route::post('/', [PipelineController::class, 'store'])->middleware('permission:workspace.settings.manage')->name('store');
+            Route::patch('/{pipeline}', [PipelineController::class, 'update'])->middleware('permission:workspace.settings.manage')->name('update');
+            Route::delete('/{pipeline}', [PipelineController::class, 'destroy'])->middleware('permission:workspace.settings.manage')->name('destroy');
+            Route::post('/{pipeline}/stages', [PipelineController::class, 'storeStage'])->middleware('permission:workspace.settings.manage')->name('stages.store');
+            Route::patch('/{pipeline}/stages/{stage}', [PipelineController::class, 'updateStage'])->middleware('permission:workspace.settings.manage')->name('stages.update');
+            Route::delete('/{pipeline}/stages/{stage}', [PipelineController::class, 'destroyStage'])->middleware('permission:workspace.settings.manage')->name('stages.destroy');
         });
 
         Route::prefix('leads')->name('leads.')->middleware('permission:leads.manage')->group(function () {

@@ -21,4 +21,9 @@ class PipelineStage extends Model
     {
         return $this->belongsTo(Pipeline::class);
     }
+
+    public function deals(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Deal::class, 'pipeline_stage_id');
+    }
 }
