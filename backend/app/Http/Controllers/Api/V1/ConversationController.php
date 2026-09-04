@@ -212,7 +212,7 @@ class ConversationController extends Controller
         // WhatsApp-only identity creates its CRM contact on first read.
         $this->contactAutoLinker->ensureForConversations(new Collection([$conversation]));
 
-        return $this->success($conversation->load('whatsappContact'), 'OK');
+        return $this->success($conversation->load(['whatsappContact', 'contact']), 'OK');
     }
 
     /**
