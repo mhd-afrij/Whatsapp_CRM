@@ -10,24 +10,17 @@ import {
   Settings,
   ShieldCheck,
   Smartphone,
-  CheckSquare,
   CalendarDays,
-  Tag,
   BellRing,
   Users2,
   KeyRound,
   Building2,
   ScrollText,
-  Zap,
   Clock,
-  AlertTriangle,
-  Wifi,
   ChevronDown,
   PanelLeftOpen,
-  Copy,
   UserRoundPlus,
   UserRound,
-  Kanban,
   Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -62,22 +55,10 @@ const permissionGatedNavItems = [
     permission: "leads.manage",
   },
   {
-    href: "/pipeline",
-    label: "Pipeline",
-    icon: Kanban,
-    permission: "deals.manage",
-  },
-  {
     href: "/campaigns",
     label: "Campaigns",
     icon: Megaphone,
     permission: "campaigns.view",
-  },
-  {
-    href: "/tasks",
-    label: "Tasks",
-    icon: CheckSquare,
-    permission: "tasks.manage",
   },
   {
     href: "/calendar",
@@ -105,39 +86,9 @@ const permissionGatedNavItems = [
   },
   {
     href: "/settings/whatsapp",
-    label: "WhatsApp Connection",
+    label: "WhatsApp",
     icon: Smartphone,
     permission: "whatsapp.connection.manage",
-  },
-  {
-    href: "/settings/labels",
-    label: "Labels",
-    icon: Tag,
-    permission: "labels.manage",
-  },
-  {
-    href: "/settings/templates",
-    label: "Saved Replies",
-    icon: Zap,
-    permission: "templates.use",
-  },
-  {
-    href: "/settings/sla",
-    label: "SLA Configuration",
-    icon: Clock,
-    permission: "workspace.settings.manage",
-  },
-  {
-    href: "/settings/business-hours",
-    label: "Business Hours",
-    icon: Clock,
-    permission: "workspace.settings.manage",
-  },
-  {
-    href: "/settings/away-message",
-    label: "Away Message",
-    icon: MessageSquare,
-    permission: "workspace.settings.manage",
   },
   {
     href: "/settings/workspace",
@@ -146,40 +97,16 @@ const permissionGatedNavItems = [
     permission: "workspace.settings.manage",
   },
   {
-    href: "/settings/pipelines",
-    label: "Pipeline Settings",
-    icon: Kanban,
-    permission: "pipelines.manage",
+    href: "/settings/operations",
+    label: "Operations",
+    icon: Clock,
+    permission: "workspace.settings.manage",
   },
   {
     href: "/settings/audit-log",
     label: "Audit Log",
     icon: ScrollText,
     permission: "audit_logs.view",
-  },
-  {
-    href: "/settings/failed-jobs",
-    label: "Failed Jobs",
-    icon: AlertTriangle,
-    permission: "dlq.manage",
-  },
-  {
-    href: "/settings/whatsapp-health",
-    label: "WhatsApp Health",
-    icon: Wifi,
-    permission: "whatsapp.connection.manage",
-  },
-  {
-    href: "/settings/custom-fields",
-    label: "Custom Fields",
-    icon: Settings,
-    permission: "workspace.settings.manage",
-  },
-  {
-    href: "/settings/contacts",
-    label: "Duplicate Contacts",
-    icon: Copy,
-    permission: "contacts.delete",
   },
 ];
 
@@ -192,9 +119,7 @@ const categoryHrefs: Record<string, string[]> = {
     "/inbox",
     "/contacts",
     "/leads",
-    "/pipeline",
     "/campaigns",
-    "/tasks",
     "/calendar",
   ],
   administration: [
@@ -205,18 +130,9 @@ const categoryHrefs: Record<string, string[]> = {
     "/settings/roles",
     "/settings/notifications",
     "/settings/whatsapp",
-    "/settings/labels",
-    "/settings/templates",
-    "/settings/sla",
-    "/settings/business-hours",
-    "/settings/away-message",
     "/settings/workspace",
-    "/settings/pipelines",
+    "/settings/operations",
     "/settings/audit-log",
-    "/settings/failed-jobs",
-    "/settings/whatsapp-health",
-    "/settings/custom-fields",
-    "/settings/contacts",
   ],
 };
 
@@ -226,42 +142,27 @@ export function Sidebar() {
   const canManageWhatsapp = usePermission("whatsapp.connection.manage");
   const canViewContacts = usePermission("contacts.view");
   const canManageLeads = usePermission("leads.manage");
-  const canManageDeals = usePermission("deals.manage");
-  const canManagePipelines = usePermission("pipelines.manage");
   const canManageTasks = usePermission("tasks.manage");
-  const canManageLabels = usePermission("labels.manage");
-  const canUseTemplates = usePermission("templates.use");
   const canManageWorkspace = usePermission("workspace.settings.manage");
   const canViewTeams = usePermission("teams.view");
   const canViewRoles = usePermission("roles.view");
   const canViewAuditLog = usePermission("audit_logs.view");
-  const canManageDlq = usePermission("dlq.manage");
-  const canDeleteContacts = usePermission("contacts.delete");
   const canViewCampaigns = usePermission("campaigns.view");
   const permissionByHref: Record<string, boolean> = {
     "/contacts": canViewContacts,
     "/leads": canManageLeads,
-    "/pipeline": canManageDeals,
     "/campaigns": canViewCampaigns,
-    "/tasks": canManageTasks,
     "/calendar": canManageTasks,
     "/settings/users": canManageUsers,
     "/settings/teams": canViewTeams,
     "/settings/roles": canViewRoles,
     "/settings/whatsapp": canManageWhatsapp,
-    "/settings/pipelines": canManagePipelines,
-    "/settings/labels": canManageLabels,
-    "/settings/templates": canUseTemplates,
-    "/settings/sla": canManageWorkspace,
     "/settings/workspace": canManageWorkspace,
+    "/settings/operations": canManageWorkspace,
     "/settings/audit-log": canViewAuditLog,
-    "/settings/failed-jobs": canManageDlq,
-    "/settings/whatsapp-health": canManageWhatsapp,
-    "/settings/custom-fields": canManageWorkspace,
-    "/settings/contacts": canDeleteContacts,
   };
 
-  const leadingHrefs = ["/contacts", "/leads", "/pipeline", "/campaigns", "/tasks", "/calendar"];
+  const leadingHrefs = ["/contacts", "/leads", "/campaigns", "/calendar"];
   const visibleGatedItems = permissionGatedNavItems.filter(
     (item) => permissionByHref[item.href]
   );

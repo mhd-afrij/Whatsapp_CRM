@@ -10,12 +10,37 @@ export type WhatsappConnectionStatus =
   | "auth_required"
   | "error";
 
+export type WhatsappSyncState = "pending" | "syncing" | "completed" | "failed";
+
+/**
+ * Historical-sync run state reported by the gateway (spec §9). Mirrors the
+ * gateway's HistorySyncSnapshot (whatsapp-gateway/src/whatsapp/history-sync.ts)
+ * and the sync.started/progress/completed/failed socket events.
+ */
+export interface WhatsappSyncStatus {
+  state: WhatsappSyncState;
+  startedAt: string | null;
+  completedAt: string | null;
+  updatedAt: string | null;
+  totalMessages: number;
+  totalConversations: number;
+  processedMessages: number;
+  failedMessages: number;
+  duplicateMessages: number;
+  skippedMessages: number;
+  progress: number | null;
+  syncType: string | null;
+  error: string | null;
+}
+
 export interface WhatsappStatus {
   workspaceId?: number;
   status: WhatsappConnectionStatus;
   qrCode: string | null;
   qrExpiresAt: string | null;
   phoneNumber: string | null;
+  /** Last/current historical-sync run, or null when none has ever happened. */
+  sync?: WhatsappSyncStatus | null;
 }
 
 export interface WhatsappConnectionEvent {

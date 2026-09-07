@@ -33,6 +33,7 @@ import {
   buildBaileysMediaContent,
   type OutboundMediaInfo,
 } from '../whatsapp/outbound-media';
+import { clearWorkspaceRun, getSyncSnapshot } from '../whatsapp/history-sync';
 
 const repository = new SessionRepository();
 const dispatchRepository = new DispatchRepository();
@@ -105,8 +106,13 @@ export function createInternalWhatsappRouter(): Router {
   const router = Router();
   router.use(requireInternalToken);
 
-  router.get('/status', (_req: Request, res: Response) => {
-    res.status(200).json({ success: true, message: 'OK', data: connectionManager.getSnapshot() });
+  router.get('/status', async (_req: Request, res: Response) => {
+    const snapshot = connectionManager.getSnapshot();
+    const workspaceId = snapshot.workspaceId ?? env.WHATSAPP_WORKSPACE_ID;
+    // Best-effort: getSyncSnapshot never throws (returns null on DB failure), so
+    // a checkpoint hiccup can't take the connection-status page down.
+    const sync = await getSyncSnapshot(workspaceId);
+    res.status(200).json({ success: true, message: 'OK', data: { ...snapshot, sync } });
   });
 
   router.post('/connect', async (_req: Request, res: Response) => {
@@ -212,6 +218,10 @@ export function createInternalWhatsappRouter(): Router {
       });
 
       emitConversationsReset(workspaceId, { ...deleted });
+
+      // The checkpoint row was purged in the transaction above; also drop any
+      // in-process run state so the next pairing starts a clean sync run.
+      await clearWorkspaceRun(workspaceId);
 
       res.status(200).json({
         success: true,

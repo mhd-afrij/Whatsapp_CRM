@@ -49,13 +49,6 @@ export function KeyboardShortcutsProvider({ children }: { children: ReactNode })
       action: () => router.push("/settings"),
     });
     registerShortcut({
-      id: "nav-tasks",
-      keys: ["g", "T"],
-      label: "Go to Tasks",
-      category: "Navigation",
-      action: () => router.push("/tasks"),
-    });
-    registerShortcut({
       id: "search-global",
       keys: ["/"],
       label: "Focus search",

@@ -185,3 +185,40 @@ sequenceDiagram
         end
     end
 ```
+
+## 6. Historical Import (History Sync)
+
+Device link bootstrap → idempotent chunked import → progress events → inbox refresh.
+
+```mermaid
+sequenceDiagram
+    participant WA as WhatsApp
+    participant GW as whatsapp-gateway (history-sync.ts)
+    participant DB as MySQL
+    participant SIO as Socket.IO (/gateway)
+    participant FE as Frontend (settings/whatsapp + inbox)
+
+    WA->>GW: messaging-history.set { chats, contacts, messages, isLatest, progress }
+    GW->>DB: upsert whatsapp_sync_checkpoints (checkpoint_type=history_sync, state=syncing, totals)
+    GW->>SIO: emit sync.started (workspace + inbox rooms)
+    SIO-->>FE: sync.started -> settings page shows "Importing chat history"
+
+    loop every 100 messages (chunked so live traffic is never blocked)
+        GW->>DB: insert messages / whatsapp_contacts / conversations (UNIQUE dedup, no unread bump)
+        Note over GW,DB: duplicate whatsapp_message_id -> counted, never re-inserted (idempotent)
+        GW->>DB: update checkpoint counters (processed/failed/duplicate)
+        GW->>SIO: emit sync.progress (throttled ~400ms)
+        SIO-->>FE: sync.progress -> progress bar + inbox refetch (throttled ~4s)
+    end
+
+    alt isLatest=true on the payload
+        GW->>DB: update checkpoint (state=completed, completed_at)
+        GW->>SIO: emit sync.completed
+    else non-final payloads
+        GW->>GW: settle timer (30s) - if no further chunk arrives, run completes
+    end
+    SIO-->>FE: sync.completed -> final summary + inbox refetch
+
+    Note over GW,DB: runs resume after gateway restarts (state=syncing checkpoint);
+                     re-syncs are safe - every row is deduped by UNIQUE(workspace_id, whatsapp_message_id)
+```

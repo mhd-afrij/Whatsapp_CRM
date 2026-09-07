@@ -44,6 +44,15 @@ export const connectionManager = new ConnectionManager(
 
 connectionManager.on('connection.updated', (payload) => {
   emitConnectionUpdated(payload.workspaceId, payload);
+
+  // A QR prompt means a brand-new pairing is starting (fresh session or
+  // re-auth after logout): clear any previous account's history-sync run so
+  // its summary does not linger on the UI once a different number links.
+  if (payload.status === 'qr_pending') {
+    void import('./history-sync')
+      .then(({ clearWorkspaceRun }) => clearWorkspaceRun(payload.workspaceId))
+      .catch((err) => logger.warn({ err }, 'Failed to clear history-sync state on QR pairing'));
+  }
 });
 
 connectionManager.on(
@@ -85,7 +94,10 @@ connectionManager.on(
 connectionManager.on(
   'messaging-history.set',
   ({ workspaceId, payload }: { workspaceId: number; payload: BaileysMessagingHistorySet }) => {
-    void import('./inbound-pipeline')
+    // Historical import is coordinated by history-sync.ts: same idempotent
+    // persistence as live messages, but tracked as a sync run with progress
+    // state/events (see docs/EVENT_CATALOG.md) instead of per-message fan-out.
+    void import('./history-sync')
       .then(({ handleMessagingHistorySet }) => handleMessagingHistorySet(workspaceId, payload))
       .catch((err) => logger.error({ err }, 'Unhandled error in messaging-history.set pipeline'));
   },

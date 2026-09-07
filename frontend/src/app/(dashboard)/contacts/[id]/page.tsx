@@ -756,13 +756,7 @@ function ContactProfile({ id }: { id: number }) {
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-sm text-muted">
-                      No deals yet.{" "}
-                      <Link href="/pipeline" className="text-primary hover:underline">
-                        Create one from the pipeline board
-                      </Link>
-                      .
-                    </p>
+                    <p className="text-sm text-muted">No deals yet.</p>
                   )}
                 </Card>
 

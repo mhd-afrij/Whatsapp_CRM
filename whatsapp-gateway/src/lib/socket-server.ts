@@ -72,6 +72,25 @@ export function emitConnectionUpdated(workspaceId: number, payload: ConnectionUp
     .emit('connection.updated', envelope('connection.updated', workspaceId, payload));
 }
 
+/**
+ * Emits a historical-sync lifecycle event (sync.started / sync.progress /
+ * sync.completed / sync.failed - see docs/EVENT_CATALOG.md) to both the
+ * workspace room (WhatsApp settings page) and the inbox room (conversation
+ * list/chat panels), so an open inbox refreshes as an import progresses.
+ * Payload is `{ sync: <HistorySyncSnapshot> }`.
+ */
+export function emitSyncEvent(
+  event: 'sync.started' | 'sync.progress' | 'sync.completed' | 'sync.failed',
+  workspaceId: number,
+  payload: Record<string, unknown>,
+): void {
+  if (!io) return;
+  io.of('/gateway')
+    .to(`workspace:${workspaceId}`)
+    .to(`workspace:${workspaceId}:inbox`)
+    .emit(event, envelope(event, workspaceId, payload));
+}
+
 export function emitMessageCreated(
   workspaceId: number,
   conversationId: number,

@@ -70,11 +70,13 @@ export function notificationLinkFor(notification: AppNotification): string | nul
     case "conversation.assigned":
     case "conversation.new_message":
       return data.conversation_id ? `/inbox/${data.conversation_id}` : "/inbox";
+    // The tasks module pages were removed, so task notifications have no
+    // detail page to open; they stay visible in the feed but resolve to null.
     case "task.assigned":
     case "task.reminder":
     case "task.overdue":
     case "task.comment_mention":
-      return "/tasks";
+      return null;
     case "note.mention":
       return data.deal_id ? `/deals/${data.deal_id}` : null;
     case "whatsapp.connection.failed":
