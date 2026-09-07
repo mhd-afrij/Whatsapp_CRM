@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, ArrowRight, CheckCircle2, Megaphone, MessageCircle, Plus, RefreshCw, Send, Users, Wifi, WifiOff } from "lucide-react";
+import { Activity, ArrowRight, Megaphone, MessageCircle, Plus, RefreshCw, Send, Users, Wifi, WifiOff } from "lucide-react";
 import { useConversationList } from "@/hooks/use-conversations";
 import { useLeadList } from "@/hooks/use-leads";
 import { useTaskList } from "@/hooks/use-tasks";
@@ -42,7 +42,6 @@ export function DashboardOverviewWidgets({ filters, summary, agentPerformance }:
   const canCreateContacts = usePermission("contacts.create");
   const canManageLeads = usePermission("leads.manage");
   const canReply = usePermission("conversations.reply");
-  const canManageTasks = usePermission("tasks.manage");
   const canViewCampaigns = usePermission("campaigns.view");
   const canViewContacts = usePermission("contacts.view");
 
@@ -83,7 +82,6 @@ export function DashboardOverviewWidgets({ filters, summary, agentPerformance }:
     canCreateContacts ? { href: "/contacts/new", label: "New contact", icon: Users } : null,
     canManageLeads ? { href: "/leads", label: "Create lead", icon: Plus } : null,
     canReply ? { href: "/inbox", label: "Send message", icon: Send } : null,
-    canManageTasks ? { href: "/tasks", label: "Create task", icon: CheckCircle2 } : null,
     canViewCampaigns ? { href: "/campaigns", label: "Campaigns", icon: Megaphone } : null,
     canViewContacts ? { href: "/contacts", label: "View contacts", icon: MessageCircle } : null,
   ].filter((action): action is { href: string; label: string; icon: typeof Users } => action != null);

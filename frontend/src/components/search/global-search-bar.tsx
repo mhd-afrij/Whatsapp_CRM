@@ -7,7 +7,9 @@ import { useGlobalSearch } from "@/hooks/use-search";
 import { SEARCH_CATEGORY_LABELS, type SearchCategory } from "@/lib/search-api";
 import { highlightMatch } from "@/components/search/highlight-match";
 
-const CATEGORY_ORDER: SearchCategory[] = ["contacts", "conversations", "deals", "tasks"];
+// The tasks module's pages were removed, so task search results are no longer
+// surfaced (the backend still indexes them; see lib/search-api.ts).
+const CATEGORY_ORDER: SearchCategory[] = ["contacts", "conversations", "deals"];
 
 function resultLabel(category: SearchCategory, item: Record<string, unknown>): string {
   switch (category) {
@@ -20,8 +22,6 @@ function resultLabel(category: SearchCategory, item: Record<string, unknown>): s
     }
     case "deals":
       return (item.title as string) || `Deal #${item.id}`;
-    case "tasks":
-      return (item.title as string) || `Task #${item.id}`;
     default:
       return `#${item.id}`;
   }
@@ -35,8 +35,6 @@ function resultHref(category: SearchCategory, id: number): string {
       return `/inbox/${id}`;
     case "deals":
       return `/deals/${id}`;
-    case "tasks":
-      return `/tasks/${id}`;
     default:
       return "#";
   }
@@ -88,7 +86,7 @@ export function GlobalSearchBar() {
             setOpen(false);
           }
         }}
-        placeholder="Search contacts, conversations, deals, tasks…"
+        placeholder="Search contacts, conversations, deals…"
         aria-label="Global search"
         className="w-full min-w-0 rounded-md border border-border bg-bg py-2 pl-9 pr-8 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
       />

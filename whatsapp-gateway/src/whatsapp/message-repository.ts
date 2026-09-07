@@ -289,12 +289,25 @@ export class MessageRepository {
    * last-message-summary update. Duplicate whatsapp_message_id is treated as
    * an idempotent no-op (caller catches via isDuplicateEntryError or this
    * resolves to null).
+   *
+   * The summary update is recency-safe: `last_message_at` only ever moves
+   * forward (GREATEST) and `last_message_preview` only changes when this
+   * message is newer than the current summary. That matters for historical
+   * imports, whose messages arrive newest-first - without it, the summary
+   * would end up pointing at the oldest imported message instead of the
+   * newest conversation activity.
+   *
+   * `incrementUnread` defaults to true (real-time inbound = a genuinely new
+   * message) and is set to false by the history-import path so a fresh device
+   * pairing does not mark thousands of already-read chats as unread.
    */
   async insertInboundMessage(
     workspaceId: number,
     conversationId: number,
     normalized: NormalizedInboundMessage,
+    opts: { incrementUnread?: boolean } = {},
   ): Promise<{ messageId: number } | null> {
+    const incrementUnread = opts.incrementUnread ?? true;
     return transaction(async (conn: PoolConnection) => {
       let repliedToId: number | null = null;
       if (normalized.repliedToWhatsappMessageId) {
@@ -324,9 +337,12 @@ export class MessageRepository {
       const preview = (normalized.body ?? `[${normalized.messageType}]`).slice(0, 255);
       await conn.query(
         `UPDATE conversations
-         SET last_message_at = ?, last_message_preview = ?, unread_count = unread_count + 1, updated_at = NOW()
+         SET last_message_at = GREATEST(COALESCE(last_message_at, '1970-01-01'), ?),
+             last_message_preview = IF(? > COALESCE(last_message_at, '1970-01-01'), ?, last_message_preview),
+             unread_count = unread_count + ?,
+             updated_at = NOW()
          WHERE id = ?`,
-        [normalized.sentAt, preview, conversationId],
+        [normalized.sentAt, normalized.sentAt, preview, incrementUnread ? 1 : 0, conversationId],
       );
 
       return { messageId: result.insertId };
@@ -385,10 +401,10 @@ export class MessageRepository {
       await conn.query(
         `UPDATE conversations
          SET last_message_at = GREATEST(COALESCE(last_message_at, '1970-01-01'), ?),
-             last_message_preview = COALESCE(?, last_message_preview),
+             last_message_preview = IF(? > COALESCE(last_message_at, '1970-01-01'), COALESCE(?, last_message_preview), last_message_preview),
              updated_at = NOW()
          WHERE id = ?`,
-        [sentAt, preview || null, conversationId],
+        [sentAt, sentAt, preview || null, conversationId],
       );
 
       return { messageId: result.insertId };

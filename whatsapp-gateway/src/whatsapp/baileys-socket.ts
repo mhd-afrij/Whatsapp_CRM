@@ -39,6 +39,8 @@ export interface BaileysMessagingHistorySet {
   contacts?: Contact[];
   messages?: BaileysRawMessage[];
   isLatest?: boolean;
+  /** WhatsApp-side history-stream progress (0-100) when Baileys reports it. */
+  progress?: number | null;
   syncType?: number;
 }
 

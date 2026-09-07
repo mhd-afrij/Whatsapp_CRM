@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { useQuery } from "@tanstack/react-query";
 import { RequirePermission } from "@/components/auth/require-permission";
 import {
   useWhatsappActions,
   useWhatsappConnectionHistory,
   useWhatsappStatus,
 } from "@/hooks/use-whatsapp-connection";
-import type { WhatsappConnectionStatus } from "@/lib/whatsapp-api";
+import { fetchWhatsappHealth, type WhatsappConnectionStatus } from "@/lib/whatsapp-api";
 import { cn } from "@/lib/utils";
 import { ErrorState } from "@/components/ui/error-state";
+import { SyncStatusCard } from "@/components/whatsapp/sync-status-card";
 
 const DISCONNECT_REASON_LABELS: Record<string, string> = {
   logged_out: "You were logged out from WhatsApp on your phone.",
@@ -217,6 +219,61 @@ function LiveStatusPanel() {
   );
 }
 
+function HealthStatus() {
+  const { data, isLoading, refetch, isRefetching } = useQuery({
+    queryKey: ["whatsapp-health"],
+    queryFn: fetchWhatsappHealth,
+    refetchInterval: 15000,
+  });
+
+  const InfraCard = ({ label, status }: { label: string; status: string }) => (
+    <div className="rounded-md border border-border bg-bg/60 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <div className="mt-2 flex items-center gap-3">
+        <span
+          className={cn(
+            "inline-block h-2.5 w-2.5 rounded-full",
+            status === "ok" ? "bg-success" : "bg-danger"
+          )}
+        />
+        <span className="text-lg font-medium capitalize text-text">{status}</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="rounded-lg border border-border bg-surface p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-text">Infrastructure health</h2>
+          <p className="mt-1 text-sm text-muted">
+            Gateway cache and database connectivity. Refreshes automatically.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          disabled={isRefetching}
+          className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-primary-soft/50 disabled:opacity-50"
+        >
+          {isRefetching ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+
+      {isLoading ? (
+        <p className="mt-4 text-sm text-muted">Loading health status…</p>
+      ) : !data ? (
+        <p className="mt-4 text-sm text-danger">Failed to load health status. Is the gateway reachable?</p>
+      ) : (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <InfraCard label="Redis" status={data.infrastructure.redis} />
+          <InfraCard label="MySQL" status={data.infrastructure.mysql} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WhatsappSettingsContent() {
   const { data: status, isLoading, isError, refetch } = useWhatsappStatus();
   const { data: events } = useWhatsappConnectionHistory();
@@ -244,6 +301,8 @@ function WhatsappSettingsContent() {
       </div>
 
       <LiveStatusPanel />
+
+      <SyncStatusCard sync={status?.sync ?? null} />
 
       <div className="rounded-lg border border-border bg-surface p-6">
         {isLoading && <p className="mt-4 text-sm text-muted">Loading connection status…</p>}
@@ -283,7 +342,7 @@ function WhatsappSettingsContent() {
               type="button"
               onClick={() => connect.mutate()}
               disabled={connect.isPending}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+              className="rounded-md bg-gradient-to-r from-accent to-accent-muted px-4 py-2 text-sm font-semibold text-accent-text shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50"
             >
               {connect.isPending ? "Refreshing…" : "Refresh QR code"}
             </button>
@@ -296,7 +355,7 @@ function WhatsappSettingsContent() {
               type="button"
               onClick={() => connect.mutate()}
               disabled={connect.isPending}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+              className="rounded-md bg-gradient-to-r from-accent to-accent-muted px-4 py-2 text-sm font-semibold text-accent-text shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50"
             >
               {connect.isPending ? "Connecting…" : "Connect WhatsApp"}
             </button>
@@ -314,7 +373,7 @@ function WhatsappSettingsContent() {
               type="button"
               onClick={() => connect.mutate()}
               disabled={connect.isPending}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+              className="rounded-md bg-gradient-to-r from-accent to-accent-muted px-4 py-2 text-sm font-semibold text-accent-text shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50"
             >
               {connect.isPending ? "Connecting…" : "Reconnect and scan new QR"}
             </button>
@@ -331,7 +390,7 @@ function WhatsappSettingsContent() {
               type="button"
               onClick={() => reconnect.mutate()}
               disabled={reconnect.isPending}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+              className="rounded-md bg-gradient-to-r from-accent to-accent-muted px-4 py-2 text-sm font-semibold text-accent-text shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50"
             >
               {reconnect.isPending ? "Reconnecting…" : "Retry connection"}
             </button>
@@ -371,6 +430,8 @@ function WhatsappSettingsContent() {
         <h2 className="mb-4 text-lg font-semibold text-text">Connection history</h2>
         <ConnectionTimeline />
       </div>
+
+      <HealthStatus />
 
       <DisconnectDialog
         open={showDisconnectDialog}

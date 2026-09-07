@@ -1,31 +1,14 @@
 "use client";
 
 import { Suspense, useMemo, useState } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { endOfDay } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { RequirePermission } from "@/components/auth/require-permission";
-import { usePermission } from "@/hooks/use-permission";
-import { useTaskList } from "@/hooks/use-tasks";
 import { useCalendarEvents } from "@/hooks/use-calendar-events";
 import type { CalendarEvent } from "@/lib/calendar-events-api";
-import type { Task, TaskPriority } from "@/lib/tasks-api";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function priorityDotClass(priority: TaskPriority) {
-  switch (priority) {
-    case "urgent":
-      return "bg-danger";
-    case "high":
-      return "bg-amber-500";
-    case "medium":
-      return "bg-primary";
-    default:
-      return "bg-muted";
-  }
-}
 
 function buildMonthGrid(year: number, month: number): Date[] {
   const firstOfMonth = new Date(year, month, 1);
@@ -71,24 +54,10 @@ function CalendarView() {
     }
   }
 
-  const canViewTeam = usePermission("tasks.view_team");
-  const { data } = useTaskList({ team: canViewTeam || undefined, per_page: 100 });
   const eventsQuery = useCalendarEvents({
     start: new Date(cursor.getFullYear(), cursor.getMonth(), 1).toISOString(),
     end: endOfDay(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0)).toISOString(),
   });
-
-  const tasksByDay = useMemo(() => {
-    const map = new Map<string, Task[]>();
-    for (const task of data?.data ?? []) {
-      if (!task.due_at) continue;
-      const key = dateKey(new Date(task.due_at));
-      const list = map.get(key) ?? [];
-      list.push(task);
-      map.set(key, list);
-    }
-    return map;
-  }, [data]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
@@ -140,7 +109,6 @@ function CalendarView() {
             const isCurrentMonth = day.getMonth() === cursor.getMonth();
             const isToday = dateKey(day) === dateKey(today);
             const dayKey = dateKey(day);
-            const dayTasks = tasksByDay.get(dayKey) ?? [];
             const dayEvents = eventsByDay.get(dayKey) ?? [];
 
             return (
@@ -158,20 +126,6 @@ function CalendarView() {
                   {day.getDate()}
                 </span>
                 <div className="mt-1 space-y-1">
-                  {dayTasks.slice(0, 3).map((task) => (
-                    <Link
-                      key={task.id}
-                      href={`/tasks/${task.id}`}
-                      className="flex items-center gap-1 truncate rounded bg-primary-soft/40 px-1.5 py-0.5 text-[11px] text-text hover:bg-primary-soft"
-                      title={task.title}
-                    >
-                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${priorityDotClass(task.priority)}`} />
-                      <span className="truncate">{task.title}</span>
-                    </Link>
-                  ))}
-                  {dayTasks.length > 3 && (
-                    <p className="px-1.5 text-[10px] text-muted">+{dayTasks.length - 3} more</p>
-                  )}
                   {dayEvents.slice(0, 2).map((event) => (
                     <div
                       key={event.id}

@@ -129,6 +129,23 @@ export function useConversationList(filters: ConversationFilters) {
       refresh();
     };
 
+    // History imports (messaging-history.set) deliberately don't fan a
+    // message.created event per row; the conversation list refreshes on the
+    // sync lifecycle events instead. Progress emits are throttled so a long
+    // import can't trigger a refetch storm, while completion/failure refresh
+    // immediately so the inbox settles right away.
+    const lastSyncProgressRef = { current: 0 };
+    const handleSyncProgress = () => {
+      const now = Date.now();
+      if (now - lastSyncProgressRef.current < 4_000) return;
+      lastSyncProgressRef.current = now;
+      refresh();
+    };
+    const handleSyncSettled = () => {
+      lastSyncProgressRef.current = 0;
+      refresh();
+    };
+
     joinRoom();
     socket.on("connect", joinRoom);
     socket.on("conversation.created", handleConversationPayload);
@@ -141,6 +158,9 @@ export function useConversationList(filters: ConversationFilters) {
     socket.on("message.created", handleMessageCreated);
     socket.on("message.updated", refresh);
     socket.on("message.failed", refresh);
+    socket.on("sync.progress", handleSyncProgress);
+    socket.on("sync.completed", handleSyncSettled);
+    socket.on("sync.failed", handleSyncSettled);
 
     return () => {
       socket.off("connect", joinRoom);
@@ -154,6 +174,9 @@ export function useConversationList(filters: ConversationFilters) {
       socket.off("message.created", handleMessageCreated);
       socket.off("message.updated", refresh);
       socket.off("message.failed", refresh);
+      socket.off("sync.progress", handleSyncProgress);
+      socket.off("sync.completed", handleSyncSettled);
+      socket.off("sync.failed", handleSyncSettled);
     };
   }, [socket, user?.workspace_id, queryClient]);
 
@@ -274,15 +297,36 @@ export function useMessages(conversationId: number | null) {
       refresh();
     };
 
+    // While a history import is running for this workspace, imported messages
+    // for the open conversation arrive without per-message events - refresh on
+    // throttled sync.progress and immediately on completion/failure.
+    const lastSyncProgressRef = { current: 0 };
+    const handleSyncProgress = () => {
+      const now = Date.now();
+      if (now - lastSyncProgressRef.current < 4_000) return;
+      lastSyncProgressRef.current = now;
+      refresh();
+    };
+    const handleSyncSettled = () => {
+      lastSyncProgressRef.current = 0;
+      refresh();
+    };
+
     socket.on("message.created", handleCreated);
     socket.on("message.updated", handleUpdated);
     socket.on("message.failed", handleFailed);
+    socket.on("sync.progress", handleSyncProgress);
+    socket.on("sync.completed", handleSyncSettled);
+    socket.on("sync.failed", handleSyncSettled);
 
     return () => {
       socket.off("connect", joinRoom);
       socket.off("message.created", handleCreated);
       socket.off("message.updated", handleUpdated);
       socket.off("message.failed", handleFailed);
+      socket.off("sync.progress", handleSyncProgress);
+      socket.off("sync.completed", handleSyncSettled);
+      socket.off("sync.failed", handleSyncSettled);
     };
   }, [socket, conversationId, user?.workspace_id, queryClient]);
 

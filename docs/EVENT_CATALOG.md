@@ -140,6 +140,24 @@ specific chat.
 - **Rooms**: `workspace:{workspaceId}:user:{userId}`
 - **Payload**: `{ "notification": { "id": "uuid", "type": "ConversationAssigned", "data": { "conversationId": 45 }, "createdAt": "..." } }`
 
+### `sync.started` / `sync.progress` / `sync.completed` / `sync.failed`
+- **Namespace**: `/gateway`
+- **Emitted by**: gateway's history-import coordinator (`whatsapp-gateway/src/whatsapp/history-sync.ts`)
+  whenever Baileys delivers a `messaging-history.set` (device-link bootstrap / RECENT syncs).
+- **Rooms**: `workspace:{workspaceId}` (WhatsApp settings page) and
+  `workspace:{workspaceId}:inbox` (conversation list / open chat panels, which refresh
+  throttled on `sync.progress` and immediately on `sync.completed`/`sync.failed`).
+- **Payload**: `{ "sync": { "state": "syncing|completed|failed", "startedAt": "...",
+  "completedAt": null, "updatedAt": "...", "totalMessages": 5000,
+  "totalConversations": 120, "processedMessages": 3200, "failedMessages": 2,
+  "duplicateMessages": 17, "skippedMessages": 8, "progress": 64, "syncType": "0",
+  "error": null } }` — the same snapshot shape returned in `GET /api/v1/whatsapp/status`
+  under `data.sync`, so the settings page can render the indicator from either source.
+- Semantics: historical imports never fan a `message.created` per row and never bump
+  unread counters (imported chats are not "new"); the run state machine is persisted in
+  the gateway-owned `whatsapp_sync_checkpoints` table (`checkpoint_type = history_sync`)
+  and resumes after a gateway restart. `sync.completed` carries the final totals.
+
 ### `connection.updated`
 - **Namespace**: `/gateway`
 - **Emitted by**: gateway, on every `whatsapp_sessions.status` transition (qr_pending →
@@ -157,4 +175,4 @@ specific chat.
 | Active chat panel | `message.created`, `message.updated`, `message.failed`, `typing.updated`, `conversation.read`, `note.created` |
 | Notification bell | `notification.created` |
 | Agent presence sidebar | `presence.updated` |
-| WhatsApp settings page | `connection.updated` |
+| WhatsApp settings page | `connection.updated`, `sync.started`, `sync.progress`, `sync.completed`, `sync.failed` (history-import indicator) |

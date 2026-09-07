@@ -12,6 +12,7 @@ import {
   logoutWhatsapp,
   reconnectWhatsapp,
   type WhatsappStatus,
+  type WhatsappSyncStatus,
 } from "@/lib/whatsapp-api";
 
 export const WHATSAPP_STATUS_KEY = ["whatsapp", "status"] as const;
@@ -53,16 +54,37 @@ export function useWhatsappStatus(options: { enabled?: boolean } = {}) {
       socket.emit("join", `workspace:${user.workspace_id}`);
     };
 
+    // The gateway emits sync.started / sync.progress / sync.completed /
+    // sync.failed while a historical import runs (docs/EVENT_CATALOG.md).
+    // The status payload carries the same `sync` shape, so merge each event
+    // into the status query cache and let the settings page re-render live.
+    const handleSyncEvent = (payload: { sync?: WhatsappSyncStatus | null }) => {
+      queryClient.setQueryData(WHATSAPP_STATUS_KEY, (current: unknown) => {
+        const base =
+          (current as WhatsappStatus | undefined) ??
+          ({ status: "idle", qrCode: null, qrExpiresAt: null, phoneNumber: null } as WhatsappStatus);
+        return { ...base, sync: payload.sync ?? null };
+      });
+    };
+
     joinRoom();
     socket.on("connect", joinRoom);
     socket.on("connect", refreshStatus);
     socket.on("disconnect", refreshStatus);
     socket.on("connection.updated", handleUpdate);
+    socket.on("sync.started", handleSyncEvent);
+    socket.on("sync.progress", handleSyncEvent);
+    socket.on("sync.completed", handleSyncEvent);
+    socket.on("sync.failed", handleSyncEvent);
     return () => {
       socket.off("connect", joinRoom);
       socket.off("connect", refreshStatus);
       socket.off("disconnect", refreshStatus);
       socket.off("connection.updated", handleUpdate);
+      socket.off("sync.started", handleSyncEvent);
+      socket.off("sync.progress", handleSyncEvent);
+      socket.off("sync.completed", handleSyncEvent);
+      socket.off("sync.failed", handleSyncEvent);
     };
   }, [socket, queryClient, enabled, user?.workspace_id]);
 
