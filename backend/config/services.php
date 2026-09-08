@@ -45,5 +45,15 @@ return [
         'country_code' => env('WHATSAPP_COUNTRY_CODE', '94'),
     ],
 
+    /*
+     | Shared secret guarding the gateway -> backend internal API (/api/internal/*,
+     | see App\Http\Middleware\EnsureInternalSecret). The gateway sends this in the
+     | X-Internal-Shared-Secret header; it must match what the gateway reads from
+     | its own INTERNAL_SHARED_SECRET env var (whatsapp-gateway/src/config/env.ts).
+     */
+    'internal' => [
+        'shared_secret' => env('INTERNAL_SHARED_SECRET', ''),
+    ],
+
 ];
 

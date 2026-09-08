@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\Authenticate;
+use App\Http\Middleware\EnsureInternalSecret;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\RequirePermission;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -35,6 +36,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth' => Authenticate::class,
             'active' => EnsureUserIsActive::class,
             'permission' => RequirePermission::class,
+            'internal.secret' => EnsureInternalSecret::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
