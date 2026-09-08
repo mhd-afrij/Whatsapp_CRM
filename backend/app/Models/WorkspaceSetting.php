@@ -30,4 +30,3 @@ class WorkspaceSetting extends Model
         return $this->belongsTo(Workspace::class);
     }
 }
-

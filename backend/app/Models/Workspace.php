@@ -12,7 +12,7 @@ class Workspace extends Model
     use HasFactory;
 
     protected $fillable = [
-        'name', 'slug', 'whatsapp_number', 'timezone', 'logo_path', 'is_active',
+        'name', 'slug', 'business_category', 'country', 'whatsapp_number', 'timezone', 'language', 'logo_path', 'is_active',
     ];
 
     protected function casts(): array
