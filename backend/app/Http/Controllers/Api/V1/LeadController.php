@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\CalendarEvent;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Deal;
@@ -13,6 +14,7 @@ use App\Models\Pipeline;
 use App\Models\PipelineStage;
 use App\Support\AuditLogger;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
@@ -92,6 +94,7 @@ class LeadController extends Controller
             }
         }
         $lead = Lead::create(array_merge($data, ['workspace_id' => $workspaceId, 'owner_user_id' => $data['owner_user_id'] ?? $request->user()->id]));
+        $this->syncFollowUpEvent($lead, $data['follow_up_date'] ?? null, $request->user()->id);
         $this->activity($lead, 'lead.created', 'Lead created', $request->user()->id);
         AuditLogger::log('lead.created', $request->user(), $lead, $data, $request);
 
@@ -108,6 +111,9 @@ class LeadController extends Controller
         $data = $validator->validated();
         $before = $lead->only(array_keys($data));
         $lead->update($data);
+        if (array_key_exists('follow_up_date', $data)) {
+            $this->syncFollowUpEvent($lead, $data['follow_up_date'], $request->user()->id);
+        }
         $this->activity($lead, 'lead.updated', 'Lead updated', $request->user()->id, ['before' => $before, 'changes' => $data]);
         AuditLogger::log('lead.updated', $request->user(), $lead, $data, $request, $before);
 
@@ -170,6 +176,32 @@ class LeadController extends Controller
         return $this->success($lead->fresh('labels'), 'Label detached');
     }
 
+    private function syncFollowUpEvent(Lead $lead, ?string $followUpDate, int $userId): void
+    {
+        $event = CalendarEvent::query()->where('lead_id', $lead->id)->where('kind', 'follow_up')->first();
+
+        if ($followUpDate === null) {
+            $event?->delete();
+            return;
+        }
+
+        $lead->loadMissing('contact');
+        $startsAt = Carbon::createFromFormat('Y-m-d', $followUpDate, config('app.timezone'))->setTime(9, 0);
+        $values = [
+            'workspace_id' => $lead->workspace_id,
+            'lead_id' => $lead->id,
+            'created_by' => $userId,
+            'title' => 'Follow up: '.($lead->contact?->full_name ?: 'Lead #'.$lead->id),
+            'starts_at' => $startsAt,
+            'kind' => 'follow_up',
+        ];
+
+        if ($event) {
+            $event->update($values);
+        } else {
+            CalendarEvent::create($values);
+        }
+    }
     private function activity(Lead $lead, string $type, string $description, int $userId, array $metadata = []): void
     {
         LeadActivity::create(['workspace_id' => $lead->workspace_id, 'lead_id' => $lead->id, 'created_by' => $userId, 'activity_type' => $type, 'description' => $description, 'metadata' => $metadata, 'occurred_at' => now()]);
@@ -179,6 +211,6 @@ class LeadController extends Controller
     {
         $required = $update ? 'sometimes' : 'required';
 
-        return ['contact_id' => [$required, 'integer'], 'conversation_id' => ['sometimes', 'nullable', 'integer'], 'source' => ['sometimes', 'string', 'max:32'], 'source_detail' => ['sometimes', 'nullable', 'string', 'max:255'], 'campaign' => ['sometimes', 'nullable', 'string', 'max:255'], 'landing_page' => ['sometimes', 'nullable', 'url', 'max:2048'], 'external_lead_id' => ['sometimes', 'nullable', 'string', 'max:255'],            'stage' => ['sometimes', 'string', 'max:32'], 'score' => ['sometimes', 'integer', 'min:0', 'max:1000'], 'property_type' => ['sometimes', 'nullable', 'string', 'max:255'], 'preferred_location' => ['sometimes', 'nullable', 'string', 'max:255'], 'budget_min' => ['sometimes', 'nullable', 'numeric', 'min:0'], 'budget_max' => ['sometimes', 'nullable', 'numeric', 'min:0', 'gte:budget_min'], 'bedrooms' => ['sometimes', 'nullable', 'integer', 'min:0'], 'bathrooms' => ['sometimes', 'nullable', 'integer', 'min:0'], 'requirement_type' => ['sometimes', 'nullable', Rule::in(['purchase', 'rental'])], 'owner_user_id' => ['sometimes', 'nullable', 'integer'], 'assigned_team_id' => ['sometimes', 'nullable', 'integer'], 'notes' => ['sometimes', 'nullable', 'string'], 'lost_reason' => ['sometimes', 'nullable', 'string', 'max:255'], 'lost_notes' => ['sometimes', 'nullable', 'string']];
+        return ['contact_id' => [$required, 'integer'], 'conversation_id' => ['sometimes', 'nullable', 'integer'], 'source' => ['sometimes', 'string', 'max:32'], 'source_detail' => ['sometimes', 'nullable', 'string', 'max:255'], 'campaign' => ['sometimes', 'nullable', 'string', 'max:255'], 'landing_page' => ['sometimes', 'nullable', 'url', 'max:2048'], 'external_lead_id' => ['sometimes', 'nullable', 'string', 'max:255'],            'stage' => ['sometimes', 'string', 'max:32'], 'score' => ['sometimes', 'integer', 'min:0', 'max:1000'], 'property_type' => ['sometimes', 'nullable', 'string', 'max:255'], 'preferred_location' => ['sometimes', 'nullable', 'string', 'max:255'], 'budget_min' => ['sometimes', 'nullable', 'numeric', 'min:0'], 'budget_max' => ['sometimes', 'nullable', 'numeric', 'min:0', 'gte:budget_min'], 'bedrooms' => ['sometimes', 'nullable', 'integer', 'min:0'], 'bathrooms' => ['sometimes', 'nullable', 'integer', 'min:0'], 'requirement_type' => ['sometimes', 'nullable', Rule::in(['purchase', 'rental'])], 'owner_user_id' => ['sometimes', 'nullable', 'integer'], 'assigned_team_id' => ['sometimes', 'nullable', 'integer'], 'notes' => ['sometimes', 'nullable', 'string'], 'lost_reason' => ['sometimes', 'nullable', 'string', 'max:255'], 'lost_notes' => ['sometimes', 'nullable', 'string'], 'follow_up_date' => ['sometimes', 'nullable', 'date_format:Y-m-d']];
     }
 }

@@ -56,6 +56,7 @@ export interface Lead {
   labels: LabelSummary[];
   deals?: DealSummary[];
   converted_at: string | null;
+  follow_up_date: string | null;
   created_at: string;
   lost_reason?: string | null;
   lost_notes?: string | null;
@@ -71,7 +72,7 @@ interface DealSummary {
 }
 
 export interface LeadFilters { search?: string; stage?: LeadStage; per_page?: number; page?: number; }
-export interface LeadFormValues { contact_id: number; stage?: LeadStage; score?: number; source?: string; notes?: string | null; }
+export interface LeadFormValues { contact_id: number; stage?: LeadStage; score?: number; source?: string; notes?: string | null; follow_up_date?: string | null; }
 
 export async function fetchLeads(filters: LeadFilters): Promise<Paginated<Lead>> {
   const response = await apiClient.get('/leads', { params: filters });

@@ -26,6 +26,7 @@ export const leadSchema = z.object({
   source: z.enum(["whatsapp", "manual", "import", "other"]),
   stage: z.enum(["new", "contacted", "qualified", "disqualified", "converted"]),
   notes: z.string().max(2000).optional().or(z.literal("")),
+  follow_up_date: z.string().optional().or(z.literal("")),
 });
 
 export type LeadSchemaValues = z.infer<typeof leadSchema>;
