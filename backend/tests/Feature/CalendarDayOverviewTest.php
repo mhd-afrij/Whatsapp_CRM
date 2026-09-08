@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\CalendarEvent;
+use App\Models\Lead;
+use App\Models\Notification;
 use App\Models\Task;
 use App\Models\User;
 use App\Models\Workspace;
@@ -142,5 +144,64 @@ class CalendarDayOverviewTest extends TestCase
         $titles = collect($list->json('data'))->pluck('title')->all();
         $this->assertContains('Due today', $titles);
         $this->assertNotContains('Due another day', $titles);
+    }
+
+    public function test_calendar_events_can_link_to_leads_and_be_completed_and_reopened(): void
+    {
+        [$user, $requester] = $this->seedDay();
+        $lead = Lead::factory()->create(['workspace_id' => $user->workspace_id]);
+
+        $eventId = $requester->postJson('/api/v1/calendar-events', [
+            'title' => 'Lead follow-up',
+            'starts_at' => '2026-08-20T10:00:00',
+            'lead_id' => $lead->id,
+            'reminder_at' => '2026-08-20T09:00:00',
+        ])->assertCreated()->json('data.id');
+
+        $requester->postJson("/api/v1/calendar-events/{$eventId}/complete")
+            ->assertOk()->assertJsonPath('data.completed_at', fn ($value) => $value !== null);
+        $this->assertNotNull(CalendarEvent::find($eventId)->completed_at);
+
+        $requester->postJson("/api/v1/calendar-events/{$eventId}/reopen")
+            ->assertOk()->assertJsonPath('data.completed_at', null);
+        $this->assertNull(CalendarEvent::find($eventId)->completed_at);
+    }
+
+    public function test_lead_follow_up_date_syncs_one_calendar_event_and_can_be_cleared(): void
+    {
+        [$user, $requester] = $this->seedDay();
+        $lead = Lead::factory()->create(['workspace_id' => $user->workspace_id]);
+
+        $requester->patchJson("/api/v1/leads/{$lead->id}", ['follow_up_date' => '2026-08-25'])
+            ->assertOk()->assertJsonPath('data.follow_up_date', '2026-08-25');
+        $this->assertDatabaseCount('calendar_events', 1);
+        $this->assertDatabaseHas('calendar_events', ['lead_id' => $lead->id, 'kind' => 'follow_up']);
+
+        $requester->patchJson("/api/v1/leads/{$lead->id}", ['follow_up_date' => '2026-08-26'])->assertOk();
+        $this->assertDatabaseCount('calendar_events', 1);
+        $this->assertDatabaseHas('calendar_events', ['lead_id' => $lead->id, 'starts_at' => '2026-08-26 09:00:00']);
+
+        $requester->patchJson("/api/v1/leads/{$lead->id}", ['follow_up_date' => null])->assertOk();
+        $this->assertSoftDeleted('calendar_events', ['lead_id' => $lead->id]);
+    }
+
+    public function test_calendar_reminders_notify_every_active_workspace_user_once(): void
+    {
+        [$user] = $this->seedDay();
+        $secondUser = $this->userWithRole('Agent');
+        CalendarEvent::create([
+            'workspace_id' => $user->workspace_id,
+            'created_by' => $user->id,
+            'title' => 'Due follow-up',
+            'starts_at' => now()->addHour(),
+            'reminder_at' => now()->subMinute(),
+        ]);
+
+        $this->artisan('calendar-events:send-reminders')->assertExitCode(0);
+        $this->assertSame(2, Notification::query()->where('type', 'calendar_event.reminder')->count());
+        $this->artisan('calendar-events:send-reminders')->assertExitCode(0);
+        $this->assertSame(2, Notification::query()->where('type', 'calendar_event.reminder')->count());
+        $this->assertNotNull(CalendarEvent::query()->first()->reminder_sent_at);
+        $this->assertTrue($secondUser->is_active);
     }
 }

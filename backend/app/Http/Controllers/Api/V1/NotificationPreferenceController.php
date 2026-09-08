@@ -24,6 +24,7 @@ class NotificationPreferenceController extends Controller
         'conversation.new_message',
         'task.assigned',
         'task.reminder',
+        'calendar_event.reminder',
         'task.overdue',
         'task.comment_mention',
         'note.mention',

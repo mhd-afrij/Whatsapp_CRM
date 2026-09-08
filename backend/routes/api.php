@@ -312,6 +312,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('/', [CalendarEventController::class, 'index'])->name('index');
             Route::post('/', [CalendarEventController::class, 'store'])->name('store');
             Route::patch('/{calendarEvent}', [CalendarEventController::class, 'update'])->name('update');
+            Route::post('/{calendarEvent}/complete', [CalendarEventController::class, 'complete'])->name('complete');
+            Route::post('/{calendarEvent}/reopen', [CalendarEventController::class, 'reopen'])->name('reopen');
             Route::delete('/{calendarEvent}', [CalendarEventController::class, 'destroy'])->name('destroy');
         });
 
