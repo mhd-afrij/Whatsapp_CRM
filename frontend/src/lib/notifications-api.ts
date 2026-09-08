@@ -92,6 +92,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   "conversation.new_message": "New message on your conversation",
   "task.assigned": "Task assigned",
   "task.reminder": "Task reminder",
+  "calendar_event.reminder": "Calendar event reminder",
   "task.overdue": "Task overdue",
   "task.comment_mention": "Mentioned in a task comment",
   "note.mention": "Mentioned in a note",

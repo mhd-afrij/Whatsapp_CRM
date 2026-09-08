@@ -2,8 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  completeCalendarEvent,
   createCalendarEvent,
   deleteCalendarEvent,
+  reopenCalendarEvent,
   fetchCalendarEvents,
   updateCalendarEvent,
   type CalendarEventFilters,
@@ -25,7 +27,7 @@ export function useCreateCalendarEvent(filters: CalendarEventFilters) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (values: CalendarEventFormValues) => createCalendarEvent(values),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: calendarEventsKey(filters) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["calendar-events"] }),
   });
 }
 
@@ -34,14 +36,30 @@ export function useUpdateCalendarEvent(filters: CalendarEventFilters) {
   return useMutation({
     mutationFn: ({ id, values }: { id: number; values: Partial<CalendarEventFormValues> }) =>
       updateCalendarEvent(id, values),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: calendarEventsKey(filters) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["calendar-events"] }),
   });
 }
 
+
+export function useCompleteCalendarEvent(filters: CalendarEventFilters) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: completeCalendarEvent,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["calendar-events"] }),
+  });
+}
+
+export function useReopenCalendarEvent(filters: CalendarEventFilters) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: reopenCalendarEvent,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["calendar-events"] }),
+  });
+}
 export function useDeleteCalendarEvent(filters: CalendarEventFilters) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => deleteCalendarEvent(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: calendarEventsKey(filters) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["calendar-events"] }),
   });
 }
