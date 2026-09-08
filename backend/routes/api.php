@@ -413,6 +413,16 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->name('business-hours.update');
             Route::get('/business-hours/status', [BusinessHoursController::class, 'status'])
                 ->name('business-hours.status');
+            Route::post('/whatsapp-accounts', [WorkspaceSettingController::class, 'storeWhatsappAccount'])
+                ->name('whatsapp-accounts.store');
+            Route::patch('/whatsapp-accounts/{account}', [WorkspaceSettingController::class, 'updateWhatsappAccount'])
+                ->name('whatsapp-accounts.update');
+            Route::delete('/whatsapp-accounts/{account}', [WorkspaceSettingController::class, 'destroyWhatsappAccount'])
+                ->name('whatsapp-accounts.destroy');
+            Route::post('/transfer-ownership', [WorkspaceSettingController::class, 'transferOwnership'])
+                ->name('transfer-ownership');
+            Route::post('/disable', [WorkspaceSettingController::class, 'disable'])
+                ->name('disable');
         });
 
         Route::prefix('audit-logs')->name('audit-logs.')->middleware('permission:audit_logs.view')->group(function () {
