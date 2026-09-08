@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createWorkspaceWhatsappAccount,
+  deleteWorkspace,
   deleteWorkspaceWhatsappAccount,
   disableWorkspace,
   fetchWorkspaceSettings,
@@ -56,4 +57,8 @@ export function useTransferWorkspaceOwnership() {
 
 export function useDisableWorkspace() {
   return useMutation({ mutationFn: disableWorkspace });
+}
+
+export function useDeleteWorkspace() {
+  return useMutation({ mutationFn: deleteWorkspace });
 }
