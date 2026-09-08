@@ -10,11 +10,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('whatsapp_sessions', function (Blueprint $table) {
-            try {
-                $table->dropUnique(['workspace_id']);
-            } catch (Throwable) {
-                // Some local databases may already have this changed.
-            }
+            $table->index('workspace_id', 'whatsapp_sessions_workspace_id_multi_index');
+        });
+
+        Schema::table('whatsapp_sessions', function (Blueprint $table) {
+            $table->dropUnique(['workspace_id']);
         });
 
         Schema::create('whatsapp_account_settings', function (Blueprint $table) {
@@ -26,7 +26,7 @@ return new class extends Migration
             $table->boolean('is_default')->default(false);
             $table->json('auto_reply_settings')->nullable();
             $table->timestamps();
-            $table->unique(['workspace_id', 'whatsapp_session_id']);
+            $table->unique(['workspace_id', 'whatsapp_session_id'], 'wa_account_workspace_session_unique');
             $table->index(['workspace_id', 'is_default']);
         });
 
@@ -51,11 +51,8 @@ return new class extends Migration
         Schema::dropIfExists('whatsapp_account_settings');
 
         Schema::table('whatsapp_sessions', function (Blueprint $table) {
-            try {
-                $table->unique('workspace_id');
-            } catch (Throwable) {
-                // Restoring the historical unique constraint can fail if duplicates exist.
-            }
+            $table->unique('workspace_id');
+            $table->dropIndex('whatsapp_sessions_workspace_id_multi_index');
         });
     }
 };
