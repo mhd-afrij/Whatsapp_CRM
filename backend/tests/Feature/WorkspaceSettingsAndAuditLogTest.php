@@ -326,4 +326,47 @@ class WorkspaceSettingsAndAuditLogTest extends TestCase
         $actions = collect($listResponse->json('data'))->pluck('action');
         $this->assertFalse($actions->contains('foreign.action'));
     }
+
+    // --- Danger zone ---
+
+    public function test_administrator_can_soft_delete_workspace_with_correct_slug(): void
+    {
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+        $workspaceId = $admin->workspace_id;
+
+        $this->asUser($admin)->postJson('/api/v1/workspace/delete', [
+            'confirmation' => 'wrong-slug',
+        ])->assertStatus(422);
+
+        $this->assertDatabaseHas('workspaces', ['id' => $workspaceId, 'deleted_at' => null]);
+
+        $this->asUser($admin)->postJson('/api/v1/workspace/delete', [
+            'confirmation' => $admin->workspace->slug,
+        ])->assertOk();
+
+        $this->assertDatabaseHas('workspaces', ['id' => $workspaceId]);
+        $this->assertDatabaseMissing('workspaces', ['id' => $workspaceId, 'deleted_at' => null]);
+
+        $deleted = Workspace::withTrashed()->find($workspaceId);
+        $this->assertNotNull($deleted->deleted_at);
+
+        $log = AuditLog::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('action', 'workspace.deleted')
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($log);
+    }
+
+    public function test_administrator_cannot_soft_delete_an_already_disabled_workspace(): void
+    {
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+        $admin->workspace->forceFill(['is_active' => false])->save();
+
+        $this->asUser($admin)->postJson('/api/v1/workspace/delete', [
+            'confirmation' => $admin->workspace->slug,
+        ])->assertStatus(409);
+    }
 }

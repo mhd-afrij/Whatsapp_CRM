@@ -423,6 +423,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->name('transfer-ownership');
             Route::post('/disable', [WorkspaceSettingController::class, 'disable'])
                 ->name('disable');
+            Route::post('/delete', [WorkspaceSettingController::class, 'destroy'])
+                ->name('delete');
         });
 
         Route::prefix('audit-logs')->name('audit-logs.')->middleware('permission:audit_logs.view')->group(function () {

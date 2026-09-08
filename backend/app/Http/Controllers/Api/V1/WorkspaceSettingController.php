@@ -181,6 +181,24 @@ class WorkspaceSettingController extends Controller
         return $this->success(['id' => $workspace->id, 'is_active' => false], 'Workspace disabled.');
     }
 
+    public function destroy(Request $request)
+    {
+        $workspace = Workspace::findOrFail($request->user()->workspace_id);
+        $data = $request->validate([
+            'confirmation' => ['required', 'string', Rule::in([$workspace->slug])],
+        ]);
+
+        if (! $workspace->is_active) {
+            return $this->error('This workspace is already disabled.', null, 409);
+        }
+
+        $workspace->delete();
+
+        AuditLogger::log('workspace.deleted', $request->user(), $workspace, $data, $request, ['is_active' => true]);
+
+        return $this->success(['id' => $workspace->id], 'Workspace deleted.');
+    }
+
     protected function validateWhatsappAccount(Request $request, int $workspaceId, bool $partial = false): array
     {
         $required = $partial ? 'sometimes' : 'required';
