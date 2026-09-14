@@ -102,7 +102,7 @@ function ExportCta({ from, to }: { from: string; to: string }) {
   return (
     <div className="flex items-center gap-2">
       {state === "queued" && (
-        <Link href="/settings/notifications" className="text-xs font-semibold text-primary hover:underline">
+        <Link href="/settings/workspace/notifications" className="text-xs font-semibold text-primary hover:underline">
           Open notification
         </Link>
       )}

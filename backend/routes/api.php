@@ -292,7 +292,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
         Route::apiResource('automation-rules', AutomationRuleController::class)
             ->except(['show'])
-            ->names('automation-rules');
+            ->names('automation-rules')
+            ->middleware('permission:workspace.settings.manage');
 
         Route::prefix('notes')->name('notes.')->group(function () {
             Route::get('/', [InternalNoteController::class, 'index'])->name('index');

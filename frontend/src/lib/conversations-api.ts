@@ -420,7 +420,7 @@ export async function reportConversation(
   conversationId: number,
   reason?: string
 ): Promise<Conversation> {
-  return unwrap(apiClient.patch(`/conversations/${conversationId}/report`, { report_reason: reason }));
+  return unwrap(apiClient.patch(`/conversations/${conversationId}/report`, { reason }));
 }
 
 export interface MessageStatusEvent {

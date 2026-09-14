@@ -1,6 +1,8 @@
 # FINAL_REPORT.md — CRM-WhatsApp, Phase 0–20 Completion Report
 
-Date of this report: 2026-07-31. This is the terminal document for the ~20-phase build. It
+Date of this report: 2026-07-31 (Phase 0–20). A follow-up production-readiness audit round was
+completed 2026-09-12 and is documented in **§22** (counts below are the current, post-audit
+numbers; see `PROJECT_STATUS.md` §A). This is the terminal document for the ~20-phase build. It
 consolidates every phase's honest findings into one place. For phase-by-phase narrative detail,
 see `PROJECT_STATUS.md`.
 
@@ -14,13 +16,16 @@ using Baileys, and a Next.js 16 frontend) plus supporting infrastructure (MySQL,
 nginx, Docker Compose).
 
 All application-level work across 20 phases is complete and passes its own test suite in this
-environment: **196/196 backend tests, 51/51 gateway tests, 12/12 frontend tests**, clean lint and
-production builds on all three services, and a clean `migrate:fresh --seed` against real MySQL.
-A Phase 20 final audit found and fixed two real, if minor, issues (see §15/§17) and confirmed no
-naming drift in a permission-matrix spot-check. What remains unverified is exclusively
-infrastructure/environment-dependent: a live WhatsApp account, a real SMTP provider, a live
-Docker daemon, and a real CI runner — none of which existed in any environment this project was
-built in. Those gaps are enumerated precisely in §16–§17 rather than glossed over.
+environment: **298/298 backend tests, 173/173 gateway tests, 70/70 frontend tests**, clean lint
+and production builds on all three services, and a clean `migrate:fresh --seed` against real
+MySQL. A final audit round (2026-09, §22) found and fixed real, if minor, issues — realtime
+socket authZ, storage-provider routing, realtime event parity, contract drift, and a
+bundle of data-integrity gaps (missing pipeline FKs depending on DB server behavior, missing
+hot-path indexes, a reaction-uniqueness hole) — with zero regressions: every suite still green
+at higher counts. What remains unverified is exclusively infrastructure/environment-dependent:
+a live WhatsApp account, a real SMTP provider, a live Docker daemon, and a real CI runner —
+none of which existed in any environment this project was built in. Those gaps are enumerated
+precisely in §16–§17 rather than glossed over.
 
 ## 2. Complete Modules List (all 20 phases)
 
@@ -211,11 +216,14 @@ wiring from `index.ts` (import, `.run()`, and graceful-shutdown `.close()` calls
 
 ## 10. Realtime Events Implemented (`docs/EVENT_CATALOG.md`, gateway `socket-server.ts`)
 
-`message.created`, `message.updated`, `message.failed`, `conversation.created`,
+`message.created`, `message.updated`, `message.failed`, `message.revoked`,
+`message.reaction.created`, `message.reaction.removed`, `conversation.created`,
 `conversation.updated`, `conversation.assigned`, `conversation.closed`, `conversation.reopened`,
-`conversation.read`, `note.created`, `presence.updated`, `typing.updated`, `notification.created`,
-`connection.updated` — across a `/gateway` namespace (WhatsApp/message-pipeline events) and a
-`/crm` namespace (CRM-domain events: notifications, assignment, presence, notes).
+`conversation.read`, `conversation.cleared`, `conversation.deleted`, `note.created`,
+`presence.updated`, `typing.updated`, `notification.created`, `connection.updated`,
+`sync.started`, `sync.progress`, `sync.completed`, `sync.failed` — served from the gateway's
+Socket.IO server. Since the 2026-09 audit round, every connection is authenticated (`verifySocketToken`,
+Sanctum PAT via sha256 match) and every room join is authorization-gated (`canJoinRoom`).
 
 ## 11. Queue Workers
 
@@ -228,16 +236,16 @@ wiring from `index.ts` (import, `.run()`, and graceful-shutdown `.close()` calls
 - **`php artisan schedule` command(s)**: task-reminder due-notification command (tested in
   `TaskTest`/task-reminder suite: creates a notification for due reminders, skips future ones).
 
-## 12. Tests Executed — Real Final Counts (this session)
+## 12. Tests Executed — Real Final Counts (post-audit, re-run 2026-09-12)
 
 | Service | Command | Result |
 |---|---|---|
-| backend | `php artisan test` | **196 passed, 745 assertions** |
-| whatsapp-gateway | `npx vitest run` | **51 passed** (11 test files) |
-| frontend | `npx vitest run` | **12 passed** (4 test files) |
-| frontend | `npm run lint` | clean, 0 errors/warnings |
-| frontend | `npm run build` | clean, 29 routes |
-| whatsapp-gateway | `npx tsc --noEmit` | clean |
+| backend | `php artisan test` | **298 passed (1131 assertions)** — 23 test files |
+| whatsapp-gateway | `npx vitest run` | **173 passed** (23 test files) |
+| frontend | `npx vitest run` | **70 passed** (17 test files) |
+| frontend | `npx eslint .` | 0 errors (191 pre-existing warnings) |
+| frontend | `npm run typecheck` / `typecheck:test` | clean |
+| whatsapp-gateway | `npx eslint src` | 0 errors (1 pre-existing warning) |
 | whatsapp-gateway | `npm run build` | clean |
 
 **E2E (Playwright, `e2e/`)**: written (6 spec files, 23 flows), never executed — needs a live full
@@ -425,3 +433,66 @@ WhatsApp test number, and a sandbox SMTP provider (e.g. Mailtrap); run
 send/receive smoke test, in that order. Each of those five gaps is independent and can be closed
 without touching application code — this is an environment-provisioning gap, not a code-quality
 gap.
+
+## 22. Post-Phase-20 Production-Readiness Audit Round (2026-09-12)
+
+A second end-to-end audit across all three services. Every item below was implemented and is
+verified by tests; the previous suites stayed green and grew (298/173/70). Details and rationale
+in `PROJECT_STATUS.md` §A.
+
+### 22.1 Fixed
+- **Gateway socket authZ** (`socket-server.ts`, new `socket-auth.ts` + tests): every `/gateway`
+  connection is authenticated by sha256-matching the handshake token against Sanctum
+  `personal_access_tokens → users`; connections auto-join their workspace room; every `join` is
+  validated by `canJoinRoom` so no cross-workspace or inaccessible per-conversation rooms can be
+  entered. Previously the socket layer had no authentication at all.
+- **Gateway jid normalization** (`jid.ts` + tests): explicit `+`/`00` international prefixes,
+  trunk-zero numbers, and numbers already carrying the configured country code are now handled
+  before the CC-default branch (initial fix mishandled `00`; corrected).
+- **Gateway storage-provider routing**: `getStorageProviderName()` (`s3` when `S3_BUCKET` set,
+  else `local`) replaced a hardcoded `azure_blob` default in `insertMessageMedia` and the
+  media-download queue — a latent bug that would have pointed every media write at the wrong
+  provider unless `S3_BUCKET` happened to be set.
+- **Frontend/backend contract alignment**: removed the dead `deleteWorkspace` API + danger-page
+  card (no backend endpoint exists; ownership transfer + disable remain); `reportConversation`
+  now sends `reason` (server validates `reason`); signup page removed (auth is invitation-only);
+  `failed-jobs` UI rewritten to the DLQ contract (`command_name` + `exception_preview`, no raw
+  payloads); search surfaces the `leads` category (matching `SearchController`).
+- **Frontend realtime parity** (`use-conversations.ts`, `use-workspace-settings.ts`): list/detail/
+  messages hooks now subscribe to `message.revoked`, `message.reaction.created/removed`,
+  `conversation.cleared`, `conversation.deleted` with immediate revoke-bubble removal and cache
+  clearing; WhatsApp-account updates invalidate + refetch the connection-status query.
+- **Revoke event carries the real DB id**: `POST /internal/whatsapp/messages/revoke` resolves
+  the persisted `messageId` before marking the row deleted and emits it (3 new gateway tests),
+  so the frontend's immediate-drop works instead of relying on a refetch.
+- **DB integrity migration** (`2026_09_12_000001_restore_database_integrity`, MySQL-only):
+  introspects `information_schema` and (a) re-creates the `deals.pipeline_id` /
+  `deals.pipeline_stage_id` and `deal_stage_history.from_stage_id` / `to_stage_id` FK
+  constraints where a platform actually dropped them when the parent tables were removed
+  (standard MySQL), while skipping where a check-disabled drop left them intact (current
+  MariaDB) — the original audit, reading only the migration files, had assumed they were gone
+  everywhere; (b) cleans orphans before re-adding; (c) adds `deals(workspace_id, status)`,
+  `tasks(workspace_id, status, assignee_id)`, `messages(conversation_id, sent_at)` indexes;
+  (d) de-dupes `message_reactions` and swaps the 3-column unique for per-identity uniques
+  `(message_id, user_id)` + `(message_id, whatsapp_contact_id)`, closing the duplicate-reaction
+  hole caused by MySQL's never-colliding NULLs. SQLite no-op.
+- **Stale backend tests corrected to the shipped contract** (`CrossModuleIntegrationFlowTest` —
+  lead flow via `POST /leads` + `POST /leads/{id}/convert`, dashboard `leads` assertion moved to
+  `contacts.new` since the summary has no leads block; `DashboardAnalyticsTest` — removed the
+  summary's non-existent `leads` assertions and their fixtures).
+
+### 22.2 Verified after fixes
+- backend `php artisan test`: **298 passed / 1131 assertions**.
+- gateway `npx vitest run`: **173 passed**; `npm run build` clean.
+- frontend `npx vitest run`: **70 passed**; `npm run typecheck` + `typecheck:test` clean.
+- Lint: gateway 0 errors (1 pre-existing unused-`userId` warning at
+  `internal-whatsapp.routes.ts:603`), frontend 0 errors (191 pre-existing warnings, mostly the
+  vendored `opus-media-recorder` bundle).
+- The migration is exercised on every run by `RefreshDatabase` against the real test MySQL;
+  actual server behavior was confirmed by introspecting `information_schema` before/after.
+
+### 22.3 Revised verdict
+The application-layer finding from §21 is unchanged and now holds at higher test counts and
+tighter enforcement: **READY** for production provided the external-environment items in
+§4/§16/§17 are closed (live WhatsApp pairing, real SMTP, one real `docker compose up`, one E2E
+and CI run). No application-code blocker remains; the remaining gaps are provisioning-only.

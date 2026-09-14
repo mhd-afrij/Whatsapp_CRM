@@ -50,7 +50,7 @@ cp .env.example .env
 php artisan key:generate
 php artisan migrate --seed   # creates schema + seeds workspace/roles/permissions/admin user/pipeline
 php artisan serve            # http://localhost:8000
-php artisan test             # 196 tests
+php artisan test             # 298 tests
 ```
 
 ### frontend/
@@ -60,7 +60,7 @@ npm install
 cp .env.example .env.local
 npm run dev      # http://localhost:3000
 npm run build
-npm test         # vitest, 12 tests
+npm test         # vitest, 70 tests
 npm run lint
 ```
 
@@ -71,7 +71,7 @@ npm install
 cp .env.example .env
 npm run dev       # http://localhost:4000
 npm run build
-npm test          # vitest, 51 tests
+npm test          # vitest, 173 tests
 ```
 
 
@@ -101,13 +101,16 @@ infrastructure/scripts/mysql-restore.sh <dump.sql.gz> [target_db]
 ## Project status
 
 All 20 phases of the original roadmap are complete and independently verified in this
-environment: backend (196/196 tests), whatsapp-gateway (51/51 tests), frontend (12/12 tests +
-clean lint/build, 29 routes), migrate:fresh --seed against real MySQL, and a tested MySQL
-backup/restore round trip. A Playwright E2E suite and a GitHub Actions CI workflow are written
-and manifest-consistent but have never executed on a real browser/runner, and `docker compose up`
-has never been run against a live Docker daemon â€” see `FINAL_REPORT.md` for the full,
-itemized breakdown of what's genuinely verified vs. what still needs a live WhatsApp/SMTP/Docker
-environment before shipping, and `PROJECT_STATUS.md` for the phase-by-phase history.
+environment: backend (298/298 tests), whatsapp-gateway (173/173 tests), frontend (70/70 tests +
+clean lint/typecheck/build), migrate:fresh --seed against real MySQL, and a tested MySQL
+backup/restore round trip. A 2026-09 production-readiness audit round further hardened the stack
+(auth-gated realtime sockets, storage-provider routing, realtime event parity, a data-integrity
+migration, DLQ/contract alignment) — see `FINAL_REPORT.md` §22. A Playwright E2E suite and a
+GitHub Actions CI workflow are written and manifest-consistent but have never executed on a real
+browser/runner, and `docker compose up` has never been run against a live Docker daemon — see
+`FINAL_REPORT.md` for the full, itemized breakdown of what's genuinely verified vs. what still
+needs a live WhatsApp/SMTP/Docker environment before shipping, and `PROJECT_STATUS.md` for the
+phase-by-phase history.
 
 ## Documentation index
 

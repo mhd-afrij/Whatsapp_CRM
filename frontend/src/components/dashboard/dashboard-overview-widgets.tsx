@@ -69,7 +69,7 @@ export function DashboardOverviewWidgets({ filters, summary, agentPerformance }:
   const lostLeads = useLeadList({ stage: "lost", per_page: 1 });
   const dueTodayTasks = useTaskList({ status: "open", due_date: localToday(), per_page: 1 });
   const whatsapp = useWhatsappStatus();
-  const { reconnect } = useWhatsappActions();
+  const { reconnect, checkNow } = useWhatsappActions();
   const notificationState = useNotifications(true);
 
   const conversationRows = conversations.data?.pages.flatMap((page) => page.data) ?? [];
@@ -86,6 +86,7 @@ export function DashboardOverviewWidgets({ filters, summary, agentPerformance }:
   const recentNotifications = notificationState.notifications.slice(0, 5);
   const status = whatsapp.data?.status ?? "idle";
   const isConnected = status === "connected";
+  const isGatewayUnavailable = whatsapp.gatewayUnavailable;
 
   // Bar widths scaled against the busiest agent instead of raw counts, so a
   // value >= 100 no longer renders as an always-full bar.
@@ -105,47 +106,76 @@ export function DashboardOverviewWidgets({ filters, summary, agentPerformance }:
         title="WhatsApp status"
         eyebrow="Live channel"
         action={
-          <Link href="/settings/whatsapp" className="text-xs font-semibold text-primary hover:underline">
+          <Link href="/settings/workspace/whatsapp" className="text-xs font-semibold text-primary hover:underline">
             Manage
           </Link>
         }
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-bg p-3">
+<div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-bg p-3">
           <div className="flex items-center gap-3">
             <span
               className={`flex size-10 items-center justify-center rounded-xl ${
-                isConnected ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
+                isConnected
+                  ? "bg-success/15 text-success"
+                  : isGatewayUnavailable
+                    ? "bg-warning/15 text-warning"
+                    : "bg-danger/15 text-danger"
               }`}
             >
-              {isConnected ? <Wifi className="size-5" /> : <WifiOff className="size-5" />}
+              {isConnected ? <Wifi className="size-5" /> : isGatewayUnavailable ? <WifiOff className="size-5 animate-pulse" /> : <WifiOff className="size-5" />}
             </span>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className={`size-2 rounded-full ${isConnected ? "bg-success" : "bg-danger"}`} />
-                <p className="text-sm font-semibold capitalize text-text">{status.replace("_", " ")}</p>
+                <span className={`size-2 rounded-full ${isConnected ? "bg-success" : isGatewayUnavailable ? "bg-warning animate-pulse" : "bg-danger"}`} />
+                <p className="text-sm font-semibold capitalize text-text">
+                  {isGatewayUnavailable ? "Gateway unavailable" : status.replace("_", " ")}
+                </p>
               </div>
               <p className="mt-0.5 text-xs text-muted">
-                {whatsapp.data?.phoneNumber ?? "No active WhatsApp session"}
+                {isGatewayUnavailable
+                  ? "WhatsApp gateway is temporarily unavailable."
+                  : whatsapp.data?.phoneNumber ?? "No active WhatsApp session"}
               </p>
+              {isGatewayUnavailable && (
+                <p className="mt-0.5 text-xs text-warning">Trying again automatically.</p>
+              )}
             </div>
           </div>
           <div className="text-right text-xs text-muted">
             <p className="text-[10px] font-semibold uppercase text-muted">Last checked</p>
             <p className="mt-0.5 font-medium text-text">
-              {whatsapp.dataUpdatedAt ? relativeTime(new Date(whatsapp.dataUpdatedAt).toISOString()) : "Waiting"}
+              {whatsapp.lastCheckedAt
+                ? relativeTime(whatsapp.lastCheckedAt.toISOString())
+                : whatsapp.dataUpdatedAt
+                  ? relativeTime(new Date(whatsapp.dataUpdatedAt).toISOString())
+                  : "Waiting"}
             </p>
           </div>
         </div>
         {!isConnected && canManageWhatsapp && (
-          <button
-            type="button"
-            onClick={() => reconnect.mutate()}
-            disabled={reconnect.isPending}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text hover:bg-bg disabled:opacity-50"
-          >
-            <RefreshCw className={`size-3.5 ${reconnect.isPending ? "animate-spin" : ""}`} />
-            {reconnect.isPending ? "Reconnecting..." : "Reconnect session"}
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {isGatewayUnavailable ? (
+              <button
+                type="button"
+                onClick={() => void checkNow.mutate()}
+                disabled={checkNow.isPending}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text hover:bg-bg disabled:opacity-50"
+              >
+                <RefreshCw className={`size-3.5 ${checkNow.isPending ? "animate-spin" : ""}`} />
+                {checkNow.isPending ? "Checking..." : "Retry now"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void reconnect.mutate()}
+                disabled={reconnect.isPending}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text hover:bg-bg disabled:opacity-50"
+              >
+                <RefreshCw className={`size-3.5 ${reconnect.isPending ? "animate-spin" : ""}`} />
+                {reconnect.isPending ? "Reconnecting..." : "Reconnect session"}
+              </button>
+            )}
+          </div>
         )}
       </Panel>
       <Panel title="Business snapshot" eyebrow="Today">

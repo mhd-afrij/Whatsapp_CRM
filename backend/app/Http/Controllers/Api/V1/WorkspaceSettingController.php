@@ -151,8 +151,19 @@ class WorkspaceSettingController extends Controller
     public function transferOwnership(Request $request)
     {
         $workspaceId = $request->user()->workspace_id;
+
+        // Transferring ownership is the one action that hands out the
+        // super-administrator role, so it must be reserved for the current
+        // super administrator - an Administrator with workspace.settings.manage
+        // must not be able to promote themselves (or anyone else).
+        if (! $request->user()->isSuperAdmin()) {
+            return $this->error('Only the workspace super administrator can transfer ownership.', null, 403);
+        }
+
         $data = $request->validate([
-            'user_id' => ['required', 'integer', Rule::exists('users', 'id')->where('workspace_id', $workspaceId)],
+            'user_id' => ['required', 'integer', Rule::exists('users', 'id')
+                ->where('workspace_id', $workspaceId)
+                ->where('is_active', true)],
         ]);
 
         $role = Role::query()
@@ -160,10 +171,32 @@ class WorkspaceSettingController extends Controller
             ->where('slug', 'super-administrator')
             ->firstOrFail();
 
-        $target = User::query()->where('workspace_id', $workspaceId)->findOrFail($data['user_id']);
-        $target->roles()->syncWithoutDetaching([$role->id]);
+        $target = User::query()
+            ->where('workspace_id', $workspaceId)
+            ->where('is_active', true)
+            ->findOrFail($data['user_id']);
 
-        AuditLogger::log('workspace.ownership_transferred', $request->user(), $target, ['role_id' => $role->id], $request);
+        $caller = $request->user();
+
+        DB::transaction(function () use ($caller, $target, $role, $workspaceId) {
+            $target->roles()->syncWithoutDetaching([$role->id]);
+            // Ownership is a single-owner invariant: the previous owner steps
+            // down with Administrator (so two people are never both owners and
+            // the ex-owner keeps operational control of the workspace).
+            if ($target->isNot($caller)) {
+                $adminRole = Role::query()
+                    ->where('workspace_id', $workspaceId)
+                    ->where('slug', 'administrator')
+                    ->first();
+
+                if ($adminRole) {
+                    $caller->roles()->syncWithoutDetaching([$adminRole->id]);
+                }
+                $caller->roles()->detach($role->id);
+            }
+        });
+
+        AuditLogger::log('workspace.ownership_transferred', $caller, $target, ['role_id' => $role->id], $request);
 
         return $this->success(['user_id' => $target->id], 'Workspace ownership transferred.');
     }

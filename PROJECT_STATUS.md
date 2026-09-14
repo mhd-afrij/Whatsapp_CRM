@@ -1,17 +1,65 @@
 # Project Status
 
 **Phase 0-20 complete.** All 20 phases of the roadmap in `docs/08-implementation-roadmap.md` are
-built and independently verified in this environment: backend 196/196 tests, whatsapp-gateway
-51/51 tests, frontend 12/12 tests + clean lint/build (29 routes), a clean
+built and independently verified in this environment: backend 298/298 tests, whatsapp-gateway
+173/173 tests, frontend 70/70 tests + clean lint/typecheck/build, a clean
 `migrate:fresh --seed` against real MySQL, a tested MySQL backup/restore round trip, and a
 written-but-unexecuted Playwright E2E suite + GitHub Actions CI workflow (no live browser/runner
-was ever available in this environment). Phase 20's final audit removed one dead-code file
-(`whatsapp-gateway/src/queues/outgoing-message.queue.ts`, an unwired Phase-0 stub) and fixed two
-real gitignore/secrets-hygiene gaps (frontend `.env*` would have excluded `.env.example`; a stray
-`backend/.env.bak.tmp` wasn't covered by the backend gitignore's literal-filename patterns). See
-**`FINAL_REPORT.md`** for the complete, itemized completion report (modules, architecture,
-database, routes, API/gateway modules, realtime events, test counts, security checks, Docker
-validation status, known limitations, and an honest production-readiness verdict).
+was ever available in this environment). A follow-up production-readiness audit round
+(2026-09, §A below) tightened realtime security, storage-provider routing, contract alignment,
+and data integrity without regressing any suite. See **`FINAL_REPORT.md`** for the complete,
+itemized completion report (modules, architecture, database, routes, API/gateway modules,
+realtime events, test counts, security checks, Docker validation status, known limitations, and
+an honest production-readiness verdict).
+
+Last updated: 2026-09-12.
+
+## A. Production-Readiness Audit Round (2026-09-12)
+
+A second, end-to-end audit pass over all three services found and fixed the following. Every fix
+is verified by the corresponding test suite; full details in `FINAL_REPORT.md` §22.
+
+- **Realtime socket authZ (gateway).** `/gateway` now authenticates every connection via
+  `verifySocketToken` (Sanctum personal-access token, sha256-verified against
+  `personal_access_tokens → users`), auto-joins the workspace room, and authorizes every
+  subsequent `join` through `canJoinRoom` (no cross-workspace / no inaccessible conversation
+  rooms). New `socket-auth.test.ts` (9 tests) + middleware wiring tests.
+- **Phone/jid normalization (gateway).** `jid.ts` now handles explicit `+`/`00` international
+  prefixes, trunk-zero numbers, and numbers already carrying the country code before applying
+  the CC default. New tests.
+- **Storage-provider routing (gateway).** `getStorageProviderName()` (`s3` when `S3_BUCKET` is
+  set, else `local`) replaced the hardcoded `azure_blob` default in message-media persistence and
+  the media-download queue.
+- **Frontend/backend contract alignment.** Danger page no longer exposes a non-existent
+  `DELETE /workspace` endpoint (only Transfer Ownership + Disable), report-conversation sends
+  `reason`, the signup page was removed (accounts arrive only via workspace invitations),
+  failed-jobs UI matches the DLQ contract (`command_name` + `exception_preview`, no raw payload),
+  and search now surfaces the `leads` category.
+- **Frontend realtime parity.** Conversation list/detail/messages hooks subscribe to
+  `message.revoked`, `message.reaction.created/removed`, `conversation.cleared`,
+  `conversation.deleted`; revoked bubbles are dropped immediately; WhatsApp-account updates now
+  invalidate/re-fetch the connection-status query.
+- **Revoke event carries real DB id (gateway).** `POST /internal/whatsapp/messages/revoke` now
+  resolves and emits the persisted `messageId` (3 new tests) so the frontend can drop the bubble
+  immediately instead of waiting on a refetch.
+- **DB integrity migration (`2026_09_12_000001_restore_database_integrity`).** MariaDB/MySQL
+  gap-fill that (a) restores the `deals` / `deal_stage_history` pipeline FKs where a platform
+  actually dropped them (skips re-creating them where a check-disabled table drop left them
+  intact), (b) adds hot-path indexes `deals(workspace_id, status)`,
+  `tasks(workspace_id, status, assignee_id)`, `messages(conversation_id, sent_at)`, and
+  (c) replaces the `message_reactions` 3-column unique (which allowed per-identity duplicates
+  because MySQL never dedupes NULLs) with `(message_id, user_id)` +
+  `(message_id, whatsapp_contact_id)` after de-duping legacy rows. SQLite no-op.
+- **Stale tests corrected.** `CrossModuleIntegrationFlowTest` (contact → `POST /leads` →
+  `POST /leads/{id}/convert` → deal → won; dashboard assertion moved from the removed `leads`
+  block to `contacts.new`) and `DashboardAnalyticsTest` (leads assertions dropped with the
+  fixture rows) now match the shipped contract — not weakened, updated to reality.
+- **Final verified state:** backend 298 passed (1131 assertions), gateway 173 passed, frontend
+  70 passed; gateway `tsc` build clean; frontend `typecheck`/`typecheck:test` clean; gateway
+  eslint 0 errors (1 pre-existing warning), frontend eslint 0 errors (191 pre-existing
+  warnings).
+
+## Phase 20 - Final Verification (this update)
 
 Last updated: 2026-07-31.
 

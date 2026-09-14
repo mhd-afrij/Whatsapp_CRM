@@ -9,6 +9,7 @@ import { useCalendarEvents } from "@/hooks/use-calendar-events";
 import type { CalendarEvent } from "@/lib/calendar-events-api";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const EVENT_KIND_LABELS: Record<CalendarEvent["kind"], string> = { follow_up: "Follow-up", call: "Call", meeting: "Appointment", reminder: "Reminder", other: "Event" };
 
 function buildMonthGrid(year: number, month: number): Date[] {
   const firstOfMonth = new Date(year, month, 1);
@@ -76,7 +77,7 @@ function CalendarView() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-text">Calendar</h1>
+        <div><h1 className="text-2xl font-semibold text-text">Calendar &amp; Appointments</h1><p className="mt-1 text-sm text-muted">Schedule meetings, calls, follow-ups, reminders, and other workspace events.</p></div>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -133,7 +134,7 @@ function CalendarView() {
                       title={`${event.title} · ${new Date(event.starts_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}
                     >
                       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                      <span className="truncate">{event.title}</span>
+                      <span className="truncate">{EVENT_KIND_LABELS[event.kind]}: {event.title}</span>
                     </div>
                   ))}
                   {dayEvents.length > 2 && (

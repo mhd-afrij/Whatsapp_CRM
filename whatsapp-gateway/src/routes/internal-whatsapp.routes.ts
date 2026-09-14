@@ -621,12 +621,18 @@ export function createInternalWhatsappRouter(): Router {
         },
       });
 
-      // Mark message as deleted in database
+      // Mark message as deleted in database. Resolve the DB id up front so the
+      // emitted event carries the real id and the frontend can drop the bubble
+      // immediately instead of waiting for a refetch.
+      const messageId = await messageRepository.getMessageIdByWhatsappMessageId(
+        workspaceId,
+        whatsappMessageId,
+      );
       await messageRepository.markMessageAsDeleted(workspaceId, whatsappMessageId, 'user');
 
       // Broadcast revoke event to frontend
       emitMessageRevoked(workspaceId, conversationId, {
-        messageId: 0, // Will be resolved by frontend
+        messageId: messageId ?? 0,
         whatsappMessageId,
       });
 

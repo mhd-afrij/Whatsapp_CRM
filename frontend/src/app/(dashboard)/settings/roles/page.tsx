@@ -321,7 +321,7 @@ function PermissionMatrix({ role, canManage }: { role: Role; canManage: boolean 
 
       {editable && !editing && (
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-muted">Permissions are read-only until you click "Edit permissions".</p>
+          <p className="text-xs text-muted">Permissions are read-only until you click &quot;Edit permissions&quot;.</p>
           <button
             type="button"
             onClick={() => setEditing(true)}
@@ -494,7 +494,7 @@ function RolesManager() {
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <p className="mt-3 text-sm font-medium text-text">Select a role to configure its permissions</p>
-              <p className="mt-1 text-xs text-muted">Click "Edit permissions" on any role card to manage its access.</p>
+              <p className="mt-1 text-xs text-muted">Click &quot;Edit permissions&quot; on any role card to manage its access.</p>
             </div>
           )}
         </>

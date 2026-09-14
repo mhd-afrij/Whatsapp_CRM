@@ -11,8 +11,12 @@ Two logical namespaces served from the single Socket.IO server run by `whatsapp-
   `backend` to Redis and relayed onto this namespace by a bridge process inside the gateway.
 
 The frontend's `SocketProvider` connects to both namespaces with the same auth handshake
-(session cookie / short-lived socket token issued by `GET /auth/me`), joins rooms per §2, and
-routes incoming events into TanStack Query cache updates.
+(`socket.io` `handshake.auth.token`: a Sanctum personal-access token, verified gateway-side by
+sha256-hashing the token and joining `personal_access_tokens` → `users` — see
+`whatsapp-gateway/src/lib/socket-auth.ts` `verifySocketToken`), auto-joins the workspace room on
+connect, joins per-chat rooms on navigation (each `join` call is validated against
+`canJoinRoom`, which rejects rooms outside the caller's workspace / members-only conversation
+rooms), and routes incoming events into TanStack Query cache updates.
 
 ## 2. Room / Channel Naming Convention
 
@@ -26,7 +30,8 @@ routes incoming events into TanStack Query cache updates.
 
 A client joins `workspace:{id}`, `workspace:{id}:user:{myId}`, and `workspace:{id}:inbox` on
 connect; it joins/leaves `workspace:{id}:conversation:{cid}` as the user navigates in/out of a
-specific chat.
+specific chat. Every join is authorized by `canJoinRoom(workspaceId, userId, room)`; rejected
+rooms (another workspace's IDs, or a conversation the user has no access to) are never joined.
 
 ## 3. Event Definitions
 
@@ -58,6 +63,41 @@ specific chat.
 - **Emitted by**: gateway's outbound worker when a send exhausts retries.
 - **Rooms**: `workspace:{workspaceId}:conversation:{conversationId}`, `workspace:{workspaceId}:user:{requestedByUserId}`
 - **Payload**: `{ "messageId": 123, "conversationId": 45, "errorMessage": "Number not on WhatsApp", "attempts": 3 }`
+
+### `message.revoked`
+- **Namespace**: `/gateway`
+- **Emitted by**: gateway. Two sources — (1) `POST /internal/whatsapp/messages/revoke` (agent
+  "delete for everyone") after resolving the DB row id and stamping `is_deleted_for_everyone`;
+  (2) `ConnectionManager` when Baileys delivers an inbound `protocolMessage` revoke from the
+  contact (payload then carries the raw Baileys `key`/`protocolMessage`).
+- **Rooms**: `workspace:{workspaceId}:conversation:{conversationId}`,
+  `workspace:{workspaceId}:inbox`
+- **Payload**: `{ "messageId": 42, "whatsappMessageId": "WA_..." }` (agent-origin; `messageId`
+  is the persisted DB id, `0` if the row was already gone)
+- **Frontend**: drops the bubble immediately (`useConversations` filters the cache by
+  `messageId`) and refetches; for payloads without a `messageId` it simply refetches.
+
+### `message.reaction.created` / `message.reaction.removed`
+- **Namespace**: `/gateway`
+- **Emitted by**: gateway, on `POST/DELETE /internal/whatsapp/messages/{id}/reaction`
+  (`emitReactionRemoved` = `message.reaction.removed`, otherwise `message.reaction.created`).
+- **Rooms**: `workspace:{workspaceId}:conversation:{conversationId}`,
+  `workspace:{workspaceId}:inbox`
+- **Payload**: `{ "messageId": 42, "emoji": "👍", "reactorUserId": 7, "reactorWhatsappContactId": null }`
+- **Frontend**: refetches the thread so the authoritative reaction list renders (one active
+  reaction per identity is enforced by the `(message_id, user_id)` /
+  `(message_id, whatsapp_contact_id)` unique keys migrated in 2026-09).
+
+### `conversation.cleared` / `conversation.deleted`
+- **Namespace**: `/gateway`
+- **Emitted by**: gateway, on `POST /internal/whatsapp/conversations/{id}/clear` and
+  `POST /internal/whatsapp/conversations/{id}/delete` (called by the backend's
+  `POST /conversations/{id}/clear` / `DELETE /conversations/{id}`).
+- **Rooms**: `workspace:{workspaceId}:conversation:{conversationId}`,
+  `workspace:{workspaceId}:inbox`
+- **Payload**: `{ "conversationId": 45 }`
+- **Frontend**: empties the local message cache and invalidates the conversation list so cleared
+  or deleted threads never linger in the open panel.
 
 ### `conversation.created`
 - **Namespace**: `/gateway`
@@ -170,9 +210,9 @@ specific chat.
 
 | UI surface | Events consumed |
 |---|---|
-| Conversation list | `conversation.created`, `conversation.updated`, `conversation.assigned`, `conversation.closed`, `conversation.reopened`, `conversation.read`, `message.created` (for preview/unread) |
+| Conversation list | `conversation.created`, `conversation.updated`, `conversation.assigned`, `conversation.closed`, `conversation.reopened`, `conversation.read`, `conversation.cleared`, `conversation.deleted`, `message.created` (for preview/unread), `message.revoked`, `message.reaction.created`, `message.reaction.removed` |
 | Contacts list / detail | `contact.created`, `contact.updated`, `contact.deleted` (via `useContactRealtime`) |
-| Active chat panel | `message.created`, `message.updated`, `message.failed`, `typing.updated`, `conversation.read`, `note.created` |
+| Active chat panel | `message.created`, `message.updated`, `message.failed`, `message.revoked`, `message.reaction.created`, `message.reaction.removed`, `conversation.cleared`, `conversation.deleted`, `typing.updated`, `conversation.read`, `note.created` |
 | Notification bell | `notification.created` |
 | Agent presence sidebar | `presence.updated` |
 | WhatsApp settings page | `connection.updated`, `sync.started`, `sync.progress`, `sync.completed`, `sync.failed` (history-import indicator) |

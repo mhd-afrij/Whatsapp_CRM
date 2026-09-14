@@ -48,6 +48,8 @@ const repo = vi.hoisted(() => ({
   setMessageStarred: vi.fn(),
   markMessageDeletedForMe: vi.fn(),
   getConversationJid: vi.fn(),
+  getMessageIdByWhatsappMessageId: vi.fn(),
+  markMessageAsDeleted: vi.fn(),
   findMessageMediaByMessageId: vi.fn(),
   insertOutboundMessage: vi.fn(),
   insertMessageMedia: vi.fn(),
@@ -314,6 +316,62 @@ describe('conversation actions (mark-unread, read, star, forward)', () => {
         sourceMessageId: 5,
       });
       expect(res.status).toBe(422);
+    });
+  });
+
+  describe('POST /messages/revoke', () => {
+    it('revokes via Baileys, marks the DB row deleted, and emits the real message id', async () => {
+      repo.getMessageIdByWhatsappMessageId.mockResolvedValueOnce(42);
+      repo.markMessageAsDeleted.mockResolvedValueOnce(true);
+
+      const res = await call('POST', '/messages/revoke', {
+        conversationId: 10,
+        workspaceId: 1,
+        waJid: '2547000000@s.whatsapp.net',
+        whatsappMessageId: 'WA_REVOKE',
+        userId: 2,
+      });
+      expect(res.status).toBe(200);
+
+      expect(repo.getConversationJid).toHaveBeenCalledWith(10, 1);
+      expect(manager.sendContent).toHaveBeenCalledWith('2547000000@s.whatsapp.net', {
+        protocolMessage: {
+          type: 0,
+          key: { remoteJid: '2547000000@s.whatsapp.net', id: 'WA_REVOKE', fromMe: false },
+        },
+      });
+      expect(repo.getMessageIdByWhatsappMessageId).toHaveBeenCalledWith(1, 'WA_REVOKE');
+      expect(repo.markMessageAsDeleted).toHaveBeenCalledWith(1, 'WA_REVOKE', 'user');
+      expect(socket.emitMessageRevoked).toHaveBeenCalledWith(1, 10, {
+        messageId: 42,
+        whatsappMessageId: 'WA_REVOKE',
+      });
+    });
+
+    it('falls back to messageId 0 when the row is no longer in the database', async () => {
+      repo.getMessageIdByWhatsappMessageId.mockResolvedValueOnce(null);
+      repo.markMessageAsDeleted.mockResolvedValueOnce(false);
+
+      const res = await call('POST', '/messages/revoke', {
+        conversationId: 10,
+        workspaceId: 1,
+        waJid: '2547000000@s.whatsapp.net',
+        whatsappMessageId: 'WA_GONE',
+      });
+      expect(res.status).toBe(200);
+      expect(socket.emitMessageRevoked).toHaveBeenCalledWith(1, 10, {
+        messageId: 0,
+        whatsappMessageId: 'WA_GONE',
+      });
+    });
+
+    it('rejects a missing whatsappMessageId', async () => {
+      const res = await call('POST', '/messages/revoke', {
+        conversationId: 10,
+        workspaceId: 1,
+        waJid: '2547000000@s.whatsapp.net',
+      });
+      expect(res.status).toBe(400);
     });
   });
 

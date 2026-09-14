@@ -105,6 +105,10 @@ hold the listed permission(s) — see `07-permission-matrix.md`.
 | POST | `/api/v1/conversations/{id}/read` | Mark read for current user | `conversations.view` |
 | POST | `/api/v1/conversations/{id}/labels` | Attach label | `labels.manage` |
 | DELETE | `/api/v1/conversations/{id}/labels/{labelId}` | Detach label | `labels.manage` |
+| POST | `/api/v1/conversations/{id}/clear` | Clear all messages (gateway-backed, emits `conversation.cleared`) | `conversations.manage` |
+| DELETE | `/api/v1/conversations/{id}` | Delete conversation (gateway-backed, emits `conversation.deleted`) | `conversations.manage` |
+| POST | `/api/v1/conversations/{id}/block` | Block conversation | `conversations.manage` |
+| POST | `/api/v1/conversations/{id}/report` | Report conversation — body `{ "reason": string }` (stored in `report_reason`) | `conversations.manage` |
 
 ## 10. Messages
 | Method | Path | Purpose | Auth |
@@ -112,6 +116,9 @@ hold the listed permission(s) — see `07-permission-matrix.md`.
 | GET | `/api/v1/conversations/{id}/messages` | Paginated message history (cursor-based) | `conversations.view` |
 | POST | `/api/v1/conversations/{id}/messages` | Send outbound message (text/media) — enqueues via gateway | `conversations.reply` |
 | GET | `/api/v1/messages/{id}` | Single message detail incl. status events | `conversations.view` |
+| DELETE | `/api/v1/conversations/{id}/messages/{messageId}/delete-for-me` | Hide for me (emits `message.updated`) | `conversations.reply` |
+| POST | `/api/v1/messages/{id}/revoke` | Revoke/delete for everyone (emits `message.revoked`) | `conversations.reply` |
+| POST | `/api/v1/messages/{id}/reaction` | Add/update reaction `{ "emoji" }` (emits `message.reaction.created/removed`) | `conversations.reply` |
 | POST | `/api/v1/messages/{id}/retry` | Retry a failed outbound message | `conversations.reply` |
 
 ## 11. Leads
@@ -189,13 +196,16 @@ hold the listed permission(s) — see `07-permission-matrix.md`.
 | POST | `/api/v1/saved-filters` | Save a filter | Authenticated |
 | DELETE | `/api/v1/saved-filters/{id}` | Delete a saved filter | Authenticated |
 
-## 19. Dashboard
+## 19. Dashboard & Analytics
 | Method | Path | Purpose | Auth |
 |---|---|---|---|
-| GET | `/api/v1/dashboard/summary` | KPI tiles (open conversations, avg response time, etc.) | `reports.view` |
-| GET | `/api/v1/dashboard/conversations-volume` | Time-series for charts | `reports.view` |
-| GET | `/api/v1/dashboard/pipeline-conversion` | Funnel data | `reports.view` |
-| GET | `/api/v1/dashboard/agent-performance` | Per-agent workload/response metrics | `reports.view` |
+| GET | `/api/v1/dashboard/summary` | KPI summary (conversations, response-time averages, contacts, deals pipeline/won/lost, overdue tasks, agent workload) — no `leads` block by design | `dashboard.view_workspace` |
+| GET | `/api/v1/analytics/conversation-volume` | Time-series for charts | `analytics.view` |
+| GET | `/api/v1/analytics/response-time-trend` | Response-time trend | `analytics.view` |
+| GET | `/api/v1/analytics/won-vs-lost` | Deal won/lost totals | `analytics.view` |
+| GET | `/api/v1/analytics/agent-performance` | Per-agent completed tasks etc. | `analytics.view` |
+| GET | `/api/v1/analytics/task-completion-rate` | Task completion rate | `analytics.view` |
+| POST | `/api/v1/reports/export` | Queue a CSV export (`type`: contacts/tasks/deals/...) → `report.export_ready` notification → `GET /api/v1/reports/export/{notifId}/download` | `analytics.export` + throttle |
 
 ## 20. Audit Logs
 | Method | Path | Purpose | Auth |
@@ -211,6 +221,14 @@ hold the listed permission(s) — see `07-permission-matrix.md`.
 | GET | `/api/v1/whatsapp/connection/qr` | Get current QR payload (poll or via socket) | `whatsapp.connection.manage` |
 | POST | `/api/v1/whatsapp/connection/logout` | Log out / unlink number | `whatsapp.connection.manage` |
 | GET | `/api/v1/whatsapp/connection/events` | Recent connection event log | `whatsapp.connection.manage` |
+
+## 22. Failed Jobs (DLQ)
+| Method | Path | Purpose | Auth |
+|---|---|---|---|
+| GET | `/api/v1/failed-jobs` | Paginated workspace-scoped DLQ list — each row carries `command_name` + `exception_preview` (no raw serialized payload by design) | `dlq.manage` |
+| POST | `/api/v1/failed-jobs/{id}/retry` | Redispatch a single failed job of this workspace | `dlq.manage` |
+| POST | `/api/v1/failed-jobs/retry-all` | Redispatch every failed job of this workspace | `dlq.manage` |
+| DELETE | `/api/v1/failed-jobs/{id}` | Forget a single failed job (owned workspace only) | `dlq.manage` |
 
 ---
 

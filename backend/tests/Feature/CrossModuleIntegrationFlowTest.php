@@ -51,12 +51,13 @@ class CrossModuleIntegrationFlowTest extends TestCase
             ])->assertStatus(201);
         $contactId = $contactResponse->json('data.contact.id');
 
-        // 3. Convert the contact to a lead.
+        // 3. Create a lead (a first-class resource, POST /leads, since the old
+        // contacts/{id}/convert-to-lead endpoint no longer exists) for the contact.
         $leadResponse = $this->asUser($agent)
-            ->postJson("/api/v1/contacts/{$contactId}/convert-to-lead")
+            ->postJson('/api/v1/leads', ['contact_id' => $contactId])
             ->assertStatus(201);
         $leadId = $leadResponse->json('data.id');
-        $this->assertDatabaseHas('leads', ['id' => $leadId, 'contact_id' => $contactId, 'status' => 'new']);
+        $this->assertDatabaseHas('leads', ['id' => $leadId, 'contact_id' => $contactId, 'stage' => 'new']);
 
         // 4. Create a pipeline + stages, then a deal linked to the contact.
         $pipeline = Pipeline::factory()->create(['workspace_id' => $workspaceId]);
@@ -85,17 +86,19 @@ class CrossModuleIntegrationFlowTest extends TestCase
         ])->assertOk();
         $this->asUser($agent)->postJson("/api/v1/deals/{$dealId}/won")->assertOk();
 
-        $this->assertDatabaseHas('deals', ['id' => $dealId, 'status' => 'won', 'probability_percent' => 100]);
+        $this->assertDatabaseHas('deals', ['id' => $dealId, 'status' => 'won', 'pipeline_stage_id' => $wonStage->id]);
 
         // Full stage history recorded across every transition (null -> New -> Negotiation -> Won).
         $this->assertSame(3, DealStageHistory::query()->where('deal_id', $dealId)->count());
 
         // 7. Dashboard summary (a different controller/module entirely) reflects the won deal.
+        //    The summary has no dedicated `leads` block, so the lead's creation is verified
+        //    against its contact (which the summary does aggregate) instead.
         $summary = $this->asUser($manager)->getJson('/api/v1/dashboard/summary')->assertOk();
         $data = $summary->json('data');
 
         $this->assertEqualsWithDelta(2500.0, $data['deals']['won_value'], 0.01);
-        $this->assertGreaterThanOrEqual(1, $data['leads']['new']);
+        $this->assertGreaterThanOrEqual(1, $data['contacts']['new']);
     }
 
     public function test_flow_is_workspace_isolated_a_second_workspaces_agent_sees_none_of_it(): void

@@ -65,11 +65,16 @@ export function ContactForm({
 
   const watchedPhoneNumber = useWatch({ control, name: "phone_number" }) ?? "";
 
-  useEffect(() => {
-    if (defaultValues?.custom_fields) {
-      setCustomFieldValues(defaultValues.custom_fields);
-    }
-  }, [defaultValues?.custom_fields]);
+  // Re-sync custom field values when the parent passes a new draft (render-time
+  // state adjustment per react.dev/learn/you-might-not-need-an-effect - no
+  // cascading setState inside an effect body).
+  const [syncedCustomFields, setSyncedCustomFields] = useState<Record<string, unknown> | undefined>(
+    defaultValues?.custom_fields
+  );
+  if (defaultValues?.custom_fields && defaultValues.custom_fields !== syncedCustomFields) {
+    setSyncedCustomFields(defaultValues.custom_fields);
+    setCustomFieldValues(defaultValues.custom_fields);
+  }
 
   // Timezone is always filled in automatically from the visitor's browser;
   // the field is informational and not editable. Only set it when the form

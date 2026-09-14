@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import type { ConversationFilters } from "@/lib/conversations-api";
+import type {
+  ConversationFilters,
+  ConversationPriority,
+  ConversationStatus,
+} from "@/lib/conversations-api";
 
 export type TabFilter = "all" | "mine" | "unassigned" | "unread" | "waiting" | "sla_risk" | "sla_breach" | "archived";
 
@@ -21,9 +25,14 @@ export function useConversationFilters() {
   const [tabFilter, setTabFilter] = useState<TabFilter>("all");
   const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({});
 
-  // Initialize from URL params
-  useEffect(() => {
-    if (!searchParams) return;
+  // Initialize from URL params, re-parsing whenever the URL changes (render-time
+  // state adjustment per react.dev/learn/you-might-not-need-an-effect - no
+  // cascading setState inside an effect body).
+  const [syncedParams, setSyncedParams] = useState<string | null>(null);
+  const serializedParams = searchParams?.toString() ?? null;
+
+  if (serializedParams !== null && serializedParams !== syncedParams) {
+    setSyncedParams(serializedParams);
 
     const tab = (searchParams.get("tab") as TabFilter) || "all";
     setTabFilter(tab);
@@ -47,7 +56,7 @@ export function useConversationFilters() {
     }
 
     setAdvancedFilters(advanced);
-  }, [searchParams]);
+  }
 
   const syncToUrl = (tab: TabFilter, filters: AdvancedFilters) => {
     const params = new URLSearchParams();
@@ -85,8 +94,12 @@ export function useConversationFilters() {
   // Convert tab + advanced filters to API query
   const apiFilters: ConversationFilters = {
     ...(advancedFilters.agent && { assigned_to: advancedFilters.agent }),
-    ...(advancedFilters.status && { status: advancedFilters.status as any }),
-    ...(advancedFilters.priority && { priority: advancedFilters.priority as any }),
+    ...(advancedFilters.status && {
+      status: advancedFilters.status as ConversationStatus,
+    }),
+    ...(advancedFilters.priority && {
+      priority: advancedFilters.priority as ConversationPriority,
+    }),
     ...(advancedFilters.label && { label: advancedFilters.label }),
     ...(advancedFilters.team && { team_id: parseInt(advancedFilters.team) || undefined }),
     ...(advancedFilters.dealStage && { deal_stage: advancedFilters.dealStage }),

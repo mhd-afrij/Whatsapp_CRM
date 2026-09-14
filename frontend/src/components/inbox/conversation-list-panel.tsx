@@ -65,7 +65,7 @@ export function ConversationListPanel() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const { data: workspace } = useWorkspaceSettings();
-  const { data: whatsappStatus } = useWhatsappStatus({ enabled: true });
+  const { data: whatsappStatus, gatewayUnavailable: whatsappGatewayUnavailable } = useWhatsappStatus({ enabled: true });
   const whatsappActions = useWhatsappActions();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -235,17 +235,21 @@ export function ConversationListPanel() {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-text">WhatsApp Inbox</p>
             <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted">
-              {whatsappStatus?.status === "connected" ? (
+              {whatsappGatewayUnavailable ? (
+                <span className="h-3 w-3 animate-pulse rounded-full bg-warning" title="WhatsApp gateway is temporarily unavailable" />
+              ) : whatsappStatus?.status === "connected" ? (
                 <Wifi className="h-3.5 w-3.5 text-success" />
               ) : (
                 <WifiOff className="h-3.5 w-3.5 text-danger" />
               )}
               <span className="truncate">
-                {whatsappStatus?.phoneNumber
-                  ? `Connected ${whatsappStatus.phoneNumber}`
-                  : whatsappStatus?.status === "connected"
-                    ? "Connected"
-                    : "No active connection"}
+                {whatsappGatewayUnavailable
+                  ? "Gateway temporarily unavailable"
+                  : whatsappStatus?.phoneNumber
+                    ? `Connected ${whatsappStatus.phoneNumber}`
+                    : whatsappStatus?.status === "connected"
+                      ? "Connected"
+                      : "No active connection"}
               </span>
             </div>
           </div>
@@ -260,7 +264,7 @@ export function ConversationListPanel() {
             </button>
             <button
               type="button"
-              onClick={() => router.push("/settings/whatsapp")}
+              onClick={() => router.push("/settings/workspace/whatsapp")}
               aria-label="WhatsApp settings"
               className="rounded-full p-2 text-muted hover:bg-bg hover:text-text"
             >
@@ -279,7 +283,7 @@ export function ConversationListPanel() {
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted">
           <span className="inline-flex items-center gap-1 rounded-full border border-border bg-bg px-2 py-1">
             <MessageCircleMore className="h-3 w-3" />
-            <span className="capitalize">{whatsappStatus?.status ?? "idle"}</span>
+            <span className="capitalize">{whatsappGatewayUnavailable ? "gateway unavailable" : (whatsappStatus?.status ?? "idle")}</span>
           </span>
           {workspace?.timezone && (
             <span className="truncate rounded-full border border-border bg-bg px-2 py-1">

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Models\WorkspaceSetting;
 use App\Services\BusinessHoursService;
 use App\Support\AuditLogger;
 use App\Traits\ApiResponse;
@@ -18,11 +17,16 @@ class BusinessHoursController extends Controller
 
     /**
      * GET /api/v1/workspace/business-hours
+     *
+     * Authorization is provided by the route group's
+     * `permission:workspace.settings.manage` gate (docs/07-permission-matrix.md).
+     * There is intentionally no WorkspaceSetting model policy: honouring
+     * `authorize('viewAny', WorkspaceSetting::class)` here would hard-403 every
+     * Administrator because no such policy exists (only super-administrators
+     * slip through Gate::before).
      */
     public function show(Request $request)
     {
-        $this->authorize('viewAny', WorkspaceSetting::class);
-
         $config = $this->businessHoursService->getBusinessHoursConfig($request->user()->workspace_id);
 
         return $this->success($config, 'OK');
@@ -33,8 +37,6 @@ class BusinessHoursController extends Controller
      */
     public function update(Request $request)
     {
-        $this->authorize('update', WorkspaceSetting::class);
-
         $validator = Validator::make($request->all(), [
             'timezone' => 'required|string|max:50',
             'days' => 'required|array',
@@ -81,8 +83,6 @@ class BusinessHoursController extends Controller
      */
     public function status(Request $request)
     {
-        $this->authorize('viewAny', WorkspaceSetting::class);
-
         $isWithin = $this->businessHoursService->isWithinBusinessHours($request->user()->workspace_id);
         $nextOpening = $this->businessHoursService->getNextOpeningTime($request->user()->workspace_id);
 

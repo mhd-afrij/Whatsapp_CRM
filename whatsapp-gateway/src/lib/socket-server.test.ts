@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const emit = vi.fn();
 const on = vi.fn();
 const to = vi.fn(() => ({ to, emit }));
-const of = vi.fn(() => ({ to, emit, on }));
+const of = vi.fn(() => ({ to, emit, on, use: vi.fn() }));
 const adapter = vi.fn();
 
 vi.mock('socket.io', () => ({
@@ -57,6 +57,22 @@ describe('socket-server event envelope', () => {
     const firstId = emit.mock.calls[0][1].event_id;
     const secondId = emit.mock.calls[1][1].event_id;
     expect(firstId).not.toBe(secondId);
+  });
+
+  it('registers an authentication middleware on the gateway namespace', async () => {
+    const { createSocketServer } = await import('./socket-server');
+    createSocketServer({} as never);
+
+    expect(of).toHaveBeenCalledWith('/gateway');
+    // The returned namespace object must have an auth middleware wired up;
+    // without it any client could join any workspace room (P0).
+    const ns = of.mock.results[0].value as { use: ReturnType<typeof vi.fn> };
+    expect(ns.use).toHaveBeenCalledTimes(1);
+    const middleware = ns.use.mock.calls[0][0] as (
+      socket: unknown,
+      next: (err?: Error) => void,
+    ) => void;
+    expect(typeof middleware).toBe('function');
   });
 
   it('does nothing before createSocketServer has been called', async () => {

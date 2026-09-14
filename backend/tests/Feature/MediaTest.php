@@ -21,9 +21,12 @@ class MediaTest extends TestCase
 {
     use CreatesWorkspaceUsers, RefreshDatabase;
 
-    private function makeMessageWithMedia(int $workspaceId): array
+    private function makeMessageWithMedia(int $workspaceId, ?int $assignedUserId = null): array
     {
-        $conversation = Conversation::factory()->create(['workspace_id' => $workspaceId]);
+        $conversation = Conversation::factory()->create([
+            'workspace_id' => $workspaceId,
+            'assigned_user_id' => $assignedUserId,
+        ]);
 
         $messageId = DB::table('messages')->insertGetId([
             'workspace_id' => $workspaceId,
@@ -52,7 +55,7 @@ class MediaTest extends TestCase
     {
         $this->seedRbac();
         $agent = $this->userWithRole('Agent');
-        [$conversation, $messageId, $mediaId] = $this->makeMessageWithMedia($agent->workspace_id);
+        [$conversation, $messageId, $mediaId] = $this->makeMessageWithMedia($agent->workspace_id, $agent->id);
 
         Http::fake([
             '*/internal/whatsapp/media/*' => Http::response([
@@ -64,6 +67,22 @@ class MediaTest extends TestCase
             ->getJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$mediaId}/url")
             ->assertOk()
             ->assertJsonPath('data.url', 'https://signed.example/media/x');
+    }
+
+    public function test_user_who_cannot_view_the_conversation_is_denied_media_url(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $otherAgent = $this->userWithRole('Agent', ['name' => 'Other Agent']);
+
+        // Conversation is assigned to a different agent, so `conversations.view`
+        // (which every agent holds) must still not reveal the media - the same
+        // per-conversation visibility gate as the message/read surface.
+        [$conversation, $messageId, $mediaId] = $this->makeMessageWithMedia($agent->workspace_id, $otherAgent->id);
+
+        $this->asUser($agent)
+            ->getJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$mediaId}/url")
+            ->assertForbidden();
     }
 
     public function test_media_not_belonging_to_the_message_returns_404(): void
@@ -106,7 +125,7 @@ class MediaTest extends TestCase
     {
         $this->seedRbac();
         $agent = $this->userWithRole('Agent');
-        [$conversation, $messageId, $mediaId] = $this->makeMessageWithMedia($agent->workspace_id);
+        [$conversation, $messageId, $mediaId] = $this->makeMessageWithMedia($agent->workspace_id, $agent->id);
 
         Http::fake([
             '*/internal/whatsapp/media/*' => Http::response(['success' => false, 'message' => 'down'], 500),

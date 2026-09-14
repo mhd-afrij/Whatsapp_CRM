@@ -1,5 +1,6 @@
 import type { PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { query, execute, transaction } from '../lib/mysql';
+import { getStorageProviderName } from '../lib/storage';
 
 export type MessageType =
   | 'text'
@@ -455,7 +456,7 @@ export class MessageRepository {
         media.storagePath,
         media.blobName ?? media.storagePath,
         media.mediaUrl ?? null,
-        media.storageProvider ?? 'azure_blob',
+        media.storageProvider ?? getStorageProviderName(),
         media.checksumSha256,
       ],
     );
@@ -638,6 +639,17 @@ export class MessageRepository {
       'DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?',
       [messageId, userId, emoji],
     );
+  }
+
+  async getMessageIdByWhatsappMessageId(
+    workspaceId: number,
+    whatsappMessageId: string,
+  ): Promise<number | null> {
+    const [rows] = await query<RowDataPacket[]>(
+      'SELECT id FROM messages WHERE workspace_id = ? AND whatsapp_message_id = ? LIMIT 1',
+      [workspaceId, whatsappMessageId],
+    );
+    return rows.length > 0 ? (rows[0].id as number) : null;
   }
 
   async markMessageAsDeleted(

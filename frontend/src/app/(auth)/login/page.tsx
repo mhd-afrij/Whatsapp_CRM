@@ -113,10 +113,7 @@ export default function LoginPage() {
               </Link>
             </p>
             <p className="text-sm text-muted">
-              Don&apos;t have an account?{" "}
-              <Link href="/signup" className="font-medium text-primary hover:underline">
-                Sign up
-              </Link>
+              Accounts are managed through workspace invitations.
             </p>
           </div>
         </form>

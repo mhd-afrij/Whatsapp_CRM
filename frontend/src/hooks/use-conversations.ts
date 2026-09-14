@@ -154,10 +154,15 @@ export function useConversationList(filters: ConversationFilters) {
     socket.on("conversation.closed", handleConversationPayload);
     socket.on("conversation.reopened", handleConversationPayload);
     socket.on("conversation.priority_changed", handleConversationPayload);
+    socket.on("conversation.cleared", refresh);
+    socket.on("conversation.deleted", refresh);
     socket.on("conversation.read", refresh);
     socket.on("message.created", handleMessageCreated);
     socket.on("message.updated", refresh);
     socket.on("message.failed", refresh);
+    socket.on("message.revoked", refresh);
+    socket.on("message.reaction.created", refresh);
+    socket.on("message.reaction.removed", refresh);
     socket.on("sync.progress", handleSyncProgress);
     socket.on("sync.completed", handleSyncSettled);
     socket.on("sync.failed", handleSyncSettled);
@@ -170,10 +175,15 @@ export function useConversationList(filters: ConversationFilters) {
       socket.off("conversation.closed", handleConversationPayload);
       socket.off("conversation.reopened", handleConversationPayload);
       socket.off("conversation.priority_changed", handleConversationPayload);
+      socket.off("conversation.cleared", refresh);
+      socket.off("conversation.deleted", refresh);
       socket.off("conversation.read", refresh);
       socket.off("message.created", handleMessageCreated);
       socket.off("message.updated", refresh);
       socket.off("message.failed", refresh);
+      socket.off("message.revoked", refresh);
+      socket.off("message.reaction.created", refresh);
+      socket.off("message.reaction.removed", refresh);
       socket.off("sync.progress", handleSyncProgress);
       socket.off("sync.completed", handleSyncSettled);
       socket.off("sync.failed", handleSyncSettled);
@@ -210,6 +220,11 @@ export function useConversation(conversationId: number | null) {
     socket.on("conversation.closed", invalidate);
     socket.on("conversation.reopened", invalidate);
     socket.on("conversation.priority_changed", invalidate);
+    socket.on("conversation.cleared", invalidate);
+    socket.on("conversation.deleted", invalidate);
+    socket.on("message.revoked", invalidate);
+    socket.on("message.reaction.created", invalidate);
+    socket.on("message.reaction.removed", invalidate);
 
     return () => {
       socket.off("connect", joinRoom);
@@ -218,6 +233,11 @@ export function useConversation(conversationId: number | null) {
       socket.off("conversation.closed", invalidate);
       socket.off("conversation.reopened", invalidate);
       socket.off("conversation.priority_changed", invalidate);
+      socket.off("conversation.cleared", invalidate);
+      socket.off("conversation.deleted", invalidate);
+      socket.off("message.revoked", invalidate);
+      socket.off("message.reaction.created", invalidate);
+      socket.off("message.reaction.removed", invalidate);
     };
   }, [socket, conversationId, user?.workspace_id, queryClient]);
 
@@ -297,6 +317,38 @@ export function useMessages(conversationId: number | null) {
       refresh();
     };
 
+    // `message.revoked` marks the message deleted-for-everyone in the DB; drop
+    // the bubble immediately (same as "Delete for me") and refetch to settle.
+    const handleRevoked = (payload: { messageId: number }) => {
+      if (typeof payload?.messageId !== "number") {
+        refresh();
+        return;
+      }
+      queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
+        const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
+        if (!typedCurrent) return current;
+        return {
+          ...typedCurrent,
+          data: typedCurrent.data.filter((m) => m.id !== payload.messageId),
+        };
+      });
+      refresh();
+    };
+
+    // `message.reaction.created/removed` blurbs the reaction under the bubble;
+    // refetch brings the authoritative reaction list back.
+    const handleReaction = () => {
+      refresh();
+    };
+
+    // A conversation was cleared (all messages dropped) or deleted entirely on
+    // this device/workspace; drop the local cache and refetch so deleted rows
+    // never linger in the open panel.
+    const handleConversationGone = () => {
+      queryClient.setQueryData(messagesKey(conversationId), { data: [], meta: {} });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    };
+
     // While a history import is running for this workspace, imported messages
     // for the open conversation arrive without per-message events - refresh on
     // throttled sync.progress and immediately on completion/failure.
@@ -315,6 +367,11 @@ export function useMessages(conversationId: number | null) {
     socket.on("message.created", handleCreated);
     socket.on("message.updated", handleUpdated);
     socket.on("message.failed", handleFailed);
+    socket.on("message.revoked", handleRevoked);
+    socket.on("message.reaction.created", handleReaction);
+    socket.on("message.reaction.removed", handleReaction);
+    socket.on("conversation.cleared", handleConversationGone);
+    socket.on("conversation.deleted", handleConversationGone);
     socket.on("sync.progress", handleSyncProgress);
     socket.on("sync.completed", handleSyncSettled);
     socket.on("sync.failed", handleSyncSettled);
@@ -324,6 +381,11 @@ export function useMessages(conversationId: number | null) {
       socket.off("message.created", handleCreated);
       socket.off("message.updated", handleUpdated);
       socket.off("message.failed", handleFailed);
+      socket.off("message.revoked", handleRevoked);
+      socket.off("message.reaction.created", handleReaction);
+      socket.off("message.reaction.removed", handleReaction);
+      socket.off("conversation.cleared", handleConversationGone);
+      socket.off("conversation.deleted", handleConversationGone);
       socket.off("sync.progress", handleSyncProgress);
       socket.off("sync.completed", handleSyncSettled);
       socket.off("sync.failed", handleSyncSettled);

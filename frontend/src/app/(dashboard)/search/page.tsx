@@ -7,9 +7,10 @@ import { useGlobalSearch, useSearchCategoryResults } from "@/hooks/use-search";
 import { highlightMatch } from "@/components/search/highlight-match";
 import { SEARCH_CATEGORY_LABELS, type SearchCategory } from "@/lib/search-api";
 
-// The tasks module's pages were removed, so task search results are no longer
-// surfaced (the backend still indexes them; see lib/search-api.ts).
-const CATEGORY_ORDER: SearchCategory[] = ["contacts", "conversations", "deals"];
+// Tasks are indexed by the backend but their pages were removed, so task
+// results are not surfaced. Leads are searched on the backend and link to the
+// lead detail page.
+const CATEGORY_ORDER: SearchCategory[] = ["contacts", "conversations", "deals", "leads"];
 
 function resultLabel(category: SearchCategory, item: Record<string, unknown>): string {
   switch (category) {
@@ -22,6 +23,8 @@ function resultLabel(category: SearchCategory, item: Record<string, unknown>): s
     }
     case "deals":
       return (item.title as string) || `Deal #${item.id}`;
+    case "leads":
+      return ((item.contact as { full_name?: string } | null)?.full_name as string) || `Lead #${item.id}`;
     default:
       return `#${item.id}`;
   }
@@ -35,6 +38,8 @@ function resultHref(category: SearchCategory, id: number): string {
       return `/inbox/${id}`;
     case "deals":
       return `/deals/${id}`;
+    case "leads":
+      return `/leads/${id}`;
     default:
       return "#";
   }

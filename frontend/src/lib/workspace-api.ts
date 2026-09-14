@@ -131,7 +131,3 @@ export async function transferWorkspaceOwnership(userId: number): Promise<{ user
 export async function disableWorkspace(confirmation: string): Promise<{ id: number; is_active: boolean }> {
   return unwrap(apiClient.post("/workspace/disable", { confirmation }));
 }
-
-export async function deleteWorkspace(confirmation: string): Promise<{ id: number }> {
-  return unwrap(apiClient.post("/workspace/delete", { confirmation }));
-}
