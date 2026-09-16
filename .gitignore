@@ -37,5 +37,8 @@ media-storage/
 # Leftover tooling artifacts
 .codex-pr4-resolved/
 
+# Graphify knowledge-graph build artifacts (AST caches, generated graph)
+graphify-out/
+
 # Logs
 *.log
