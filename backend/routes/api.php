@@ -4,7 +4,6 @@ use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Api\V1\AnalyticsSettingController;
 use App\Http\Controllers\Api\V1\AiAssistantController;
 use App\Http\Controllers\Api\V1\AuditLogController;
-use App\Http\Controllers\Api\V1\AutomationRuleController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BusinessHoursController;
 use App\Http\Controllers\Api\V1\CalendarEventController;
@@ -42,6 +41,7 @@ use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TeamController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WebhookEndpointController;
+use App\Http\Controllers\Api\V1\WhatsappAccountController;
 use App\Http\Controllers\Api\V1\WhatsappController;
 use App\Http\Controllers\Api\V1\WorkspaceSettingController;
 use Illuminate\Support\Facades\Route;
@@ -392,11 +392,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/{task}/comments', [TaskController::class, 'storeComment'])->name('comments.store');
         });
 
-        Route::apiResource('automation-rules', AutomationRuleController::class)
-            ->except(['show'])
-            ->names('automation-rules')
-            ->middleware('permission:workspace.settings.manage');
-
         Route::prefix('notes')->name('notes.')->group(function () {
             Route::get('/', [InternalNoteController::class, 'index'])->name('index');
             Route::post('/', [InternalNoteController::class, 'store'])->name('store');
@@ -501,11 +496,26 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         // workspace.settings.manage gate.
         Route::prefix('settings')->name('settings.')->group(function () {
             Route::middleware('permission:workspace.settings.manage')->group(function () {
+                Route::get('/contacts', [SettingsController::class, 'contactSettings'])->name('contacts.show');
+                Route::patch('/contacts', [SettingsController::class, 'updateContactSettings'])->name('contacts.update');
+                Route::get('/inbox', [SettingsController::class, 'inboxSettings'])->name('inbox.show');
+                Route::patch('/inbox', [SettingsController::class, 'updateInboxSettings'])->name('inbox.update');
+
                 Route::prefix('inbox/routing-rules')->name('routing-rules.')->group(function () {
                     Route::get('/', [RoutingRuleController::class, 'index'])->name('index');
                     Route::post('/', [RoutingRuleController::class, 'store'])->name('store');
                     Route::patch('/{rule}', [RoutingRuleController::class, 'update'])->name('update');
                     Route::delete('/{rule}', [RoutingRuleController::class, 'destroy'])->name('destroy');
+                });
+
+                // Analytics Settings module - workspace-scoped tracking/reporting
+                // configuration consumed by the analytics dashboard. Shares the
+                // workspace.settings.manage gate with the other CRM settings modules.
+                Route::prefix('analytics')->name('analytics-settings.')->group(function () {
+                    Route::get('/', [AnalyticsSettingController::class, 'show'])->name('show');
+                    Route::patch('/', [AnalyticsSettingController::class, 'update'])->name('update');
+                    Route::match(['put', 'post'], '/', [AnalyticsSettingController::class, 'update'])->name('put');
+                    Route::post('/reset', [AnalyticsSettingController::class, 'reset'])->name('reset');
                 });
 
                 // Lead Settings module - JSON settings + statuses/sources/rules/automations.
@@ -557,6 +567,12 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                     Route::post('/{id}/enable', [LeadAutomationController::class, 'enable'])->name('enable');
                     Route::post('/{id}/disable', [LeadAutomationController::class, 'disable'])->name('disable');
                 });
+            });
+
+            Route::prefix('notifications')->name('notifications-settings.')->group(function () {
+                Route::get('/', [NotificationSettingsController::class, 'index'])->name('index');
+                Route::patch('/', [NotificationSettingsController::class, 'update'])->name('update');
+                Route::patch('/{notificationType}', [NotificationSettingsController::class, 'updateOne'])->name('update-one');
             });
         });
 
