@@ -46,7 +46,13 @@ class CalendarEventController extends Controller
             'starts_at' => ['required', 'date'],
             'ends_at' => ['sometimes', 'nullable', 'date', 'after_or_equal:starts_at'],
             'location' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:5000'],
+            'is_all_day' => ['sometimes', 'boolean'],
             'kind' => ['sometimes', Rule::in(['follow_up', 'call', 'meeting', 'reminder', 'other'])],
+            'contact_id' => ['sometimes', 'nullable', 'integer', Rule::exists('contacts', 'id')->where('workspace_id', $request->user()->workspace_id)],
+            'lead_id' => ['sometimes', 'nullable', 'integer', Rule::exists('leads', 'id')->where('workspace_id', $request->user()->workspace_id)],
+            'deal_id' => ['sometimes', 'nullable', 'integer', Rule::exists('deals', 'id')->where('workspace_id', $request->user()->workspace_id)],
+            'reminder_minutes' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:10080'],
         ]);
 
         if ($validator->fails()) {
@@ -74,7 +80,13 @@ class CalendarEventController extends Controller
             'starts_at' => ['sometimes', 'required', 'date'],
             'ends_at' => ['sometimes', 'nullable', 'date', 'after_or_equal:starts_at'],
             'location' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:5000'],
+            'is_all_day' => ['sometimes', 'boolean'],
             'kind' => ['sometimes', Rule::in(['follow_up', 'call', 'meeting', 'reminder', 'other'])],
+            'contact_id' => ['sometimes', 'nullable', 'integer', Rule::exists('contacts', 'id')->where('workspace_id', $request->user()->workspace_id)],
+            'lead_id' => ['sometimes', 'nullable', 'integer', Rule::exists('leads', 'id')->where('workspace_id', $request->user()->workspace_id)],
+            'deal_id' => ['sometimes', 'nullable', 'integer', Rule::exists('deals', 'id')->where('workspace_id', $request->user()->workspace_id)],
+            'reminder_minutes' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:10080'],
         ]);
 
         if ($validator->fails()) {
