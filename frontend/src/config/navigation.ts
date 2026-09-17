@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BarChart3, Bell, BellRing, CalendarDays, ContactRound, FileBarChart, FileText, Inbox, LayoutDashboard, MessagesSquare, MessageSquareText, Phone, ScrollText, Settings, SlidersHorizontal, UserRound, Users, Webhook } from "lucide-react";
+import { Building2, CalendarDays, ContactRound, FileBarChart, Inbox, LayoutDashboard, MessageSquareText, Phone, Settings, SlidersHorizontal, UserRound, Users } from "lucide-react";
 
 export interface NavigationItem {
   href: string;
@@ -23,10 +23,7 @@ export const NAVIGATION_SECTIONS: NavigationSection[] = [
       { href: "/inbox", label: "Inbox", icon: Inbox, permission: "conversations.view" },
       { href: "/contacts", label: "Contacts", icon: ContactRound, permission: "contacts.view" },
       { href: "/leads", label: "Leads", icon: Users, permission: "leads.manage" },
-      { href: "/messages", label: "Messages", icon: MessagesSquare, permission: "conversations.view" },
-      { href: "/templates", label: "Templates", icon: FileText, permission: "templates.manage" },
-      { href: "/analytics", label: "Analytics", icon: BarChart3, permission: "analytics.view" },
-      { href: "/calendar", label: "Calendar & Appointments", icon: CalendarDays, permission: "tasks.manage" },
+      { href: "/calendar", label: "Calendar", icon: CalendarDays, permission: "tasks.manage" },
       { href: "/reports", label: "Reports", icon: FileBarChart, permission: "analytics.view" },
     ],
   },
@@ -62,12 +59,21 @@ export interface SettingsHubCategory {
 
 export const SETTINGS_HUB_CATEGORIES: SettingsHubCategory[] = [
   {
+    label: "Workspace",
+    description: "Identity, branding and workspace-wide behavior.",
+    icon: Building2,
+    items: [
+      { label: "General", description: "Name, logo, category, country, timezone, language and away message.", href: "/settings/workspace/general" },
+      { label: "Danger Zone", description: "Transfer ownership or disable the workspace.", href: "/settings/workspace/danger" },
+    ],
+  },
+  {
     label: "CRM",
     description: "Configure the data model and sales workflow.",
     icon: ContactRound,
     items: [
       { label: "Contact Settings", description: "Fields, identification, ownership, lifecycle and duplicates.", href: "/settings/workspace/contacts" },
-      { label: "Lead Settings", description: "Pipelines, stages, assignment and sales automation.", href: "/settings/workspace/sales" },
+      { label: "Lead Settings", description: "Statuses, sources, assignment, scoring and conversion.", href: "/settings/workspace/leads" },
     ],
   },
   {
@@ -76,26 +82,31 @@ export const SETTINGS_HUB_CATEGORIES: SettingsHubCategory[] = [
     icon: MessageSquareText,
     items: [
       { label: "Inbox Settings", description: "Assignment, routing, status, SLA and working hours.", href: "/settings/workspace/inbox" },
+      { label: "Operations", description: "Business hours, away message and SLA rules.", href: "/settings/operations" },
       { label: "Notifications", description: "Choose how and when you receive alerts.", href: "/settings/notifications" },
-      { label: "Templates", description: "Quick replies and approved WhatsApp templates.", href: "/settings/workspace/templates" },
+      { label: "Quick Reply Templates", description: "Reusable replies agents can insert from the chat composer.", href: "/settings/workspace/templates" },
     ],
   },
   {
     label: "WhatsApp",
-    description: "Accounts, message templates, and webhooks.",
+    description: "Accounts and webhooks.",
     icon: Phone,
     items: [
       { label: "Accounts", description: "Connect numbers and manage connection health.", href: "/settings/whatsapp" },
-      { label: "Message Templates", description: "Approved WhatsApp message templates.", href: "/settings/workspace/templates?tab=whatsapp" },
-      { label: "Webhooks", description: "Monitor connectivity, events, logs and testing.", href: "/settings/workspace/whatsapp" },
+      { label: "Webhooks", description: "Endpoint CRUD, event subscriptions, delivery testing.", href: "/settings/workspace/webhooks" },
     ],
   },
   {
     label: "System",
-    description: "Analytics and audit history.",
+    description: "People, access, analytics and audit history.",
     icon: SlidersHorizontal,
     items: [
-      { label: "Analytics", description: "Reporting, attribution, metrics and retention.", href: "/settings/workspace/analytics" },
+      { label: "Users & Permissions", description: "Manage workspace members and access.", href: "/settings/workspace/users" },
+      { label: "Team Management", description: "Members, invitations and teams.", href: "/settings/workspace/team" },
+      { label: "Roles", description: "Configure roles and permissions.", href: "/settings/workspace/roles" },
+      { label: "Invitations", description: "Invite and manage pending workspace members.", href: "/settings/workspace/invites" },
+      { label: "AI Assistant", description: "Provider, model and API key for AI draft replies.", href: "/settings/ai" },
+      { label: "Analytics", description: "Tracking rules, retention, exports and access.", href: "/settings/workspace/analytics" },
       { label: "Audit Logs", description: "Track actions by users and integrations.", href: "/settings/audit-log" },
     ],
   },

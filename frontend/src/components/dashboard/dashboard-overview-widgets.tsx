@@ -31,7 +31,7 @@ function localToday() {
 
 function Panel({ title, eyebrow, children, action }: { title: string; eyebrow?: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <section className="flex flex-col justify-between rounded-xl border border-border bg-surface p-4 shadow-xs">
+    <section className="flex flex-col justify-between rounded-2xl border border-border bg-surface p-4 shadow-card transition-colors duration-200 ease-out-soft hover:border-primary/25 motion-reduce:transition-none">
       <div>
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
@@ -213,7 +213,7 @@ export function DashboardOverviewWidgets({ filters, summary, agentPerformance }:
     </div>
 
     {quickActions.length > 0 && (
-      <Panel title="Quick actions" eyebrow="Move faster"><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{quickActions.map(({ href, label, icon: Icon }) => <Link key={label} href={href} className="flex items-center gap-2 rounded-xl border border-border bg-bg px-3 py-3 text-xs font-semibold text-text transition hover:border-primary/40 hover:bg-primary-soft/30"><Icon className="size-4 text-primary" />{label}</Link>)}</div></Panel>
+      <Panel title="Quick actions" eyebrow="Move faster"><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{quickActions.map(({ href, label, icon: Icon }) => <Link key={label} href={href} className="flex items-center gap-2 rounded-xl border border-border bg-bg px-3 py-3 text-xs font-semibold text-text transition-all duration-200 ease-out-soft hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary-soft/30 hover:shadow-card motion-reduce:transition-none motion-reduce:hover:translate-y-0"><Icon className="size-4 text-primary" />{label}</Link>)}</div></Panel>
     )}
     <div className="sr-only">Workspace snapshot for {filters.from} to {filters.to}: {dueToday} open tasks due today across {conversationRows.length} recently active open conversations shown.</div>
   </>;

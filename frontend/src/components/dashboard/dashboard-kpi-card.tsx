@@ -10,12 +10,12 @@ interface DashboardKpiCardProps {
 }
 
 const tones = {
-  blue: "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
-  green: "bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300",
-  orange: "bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300",
-  red: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
-  violet: "bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
-  slate: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  blue: "bg-gradient-to-br from-blue-50 to-blue-100 text-blue-700 ring-1 ring-inset ring-blue-600/10 dark:from-blue-950/60 dark:to-blue-900/30 dark:text-blue-300 dark:ring-blue-400/20",
+  green: "bg-gradient-to-br from-green-50 to-green-100 text-green-700 ring-1 ring-inset ring-green-600/10 dark:from-green-950/60 dark:to-green-900/30 dark:text-green-300 dark:ring-green-400/20",
+  orange: "bg-gradient-to-br from-orange-50 to-orange-100 text-orange-700 ring-1 ring-inset ring-orange-600/10 dark:from-orange-950/60 dark:to-orange-900/30 dark:text-orange-300 dark:ring-orange-400/20",
+  red: "bg-gradient-to-br from-red-50 to-red-100 text-red-700 ring-1 ring-inset ring-red-600/10 dark:from-red-950/60 dark:to-red-900/30 dark:text-red-300 dark:ring-red-400/20",
+  violet: "bg-gradient-to-br from-violet-50 to-violet-100 text-violet-700 ring-1 ring-inset ring-violet-600/10 dark:from-violet-950/60 dark:to-violet-900/30 dark:text-violet-300 dark:ring-violet-400/20",
+  slate: "bg-gradient-to-br from-slate-100 to-slate-200 text-slate-700 ring-1 ring-inset ring-slate-600/10 dark:from-slate-800 dark:to-slate-900 dark:text-slate-300 dark:ring-slate-400/20",
 };
 
 function Sparkline({ values, tone }: { values: number[]; tone: DashboardKpiCardProps["tone"] }) {
@@ -30,7 +30,8 @@ function Sparkline({ values, tone }: { values: number[]; tone: DashboardKpiCardP
 
 export function DashboardKpiCard({ label, value, supportingText, icon: Icon, tone, trend }: DashboardKpiCardProps) {
   return (
-    <article className="group rounded-2xl border border-border bg-surface p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <article className="group relative overflow-hidden rounded-2xl border border-border bg-surface p-4 shadow-card animate-rise transition-all duration-200 ease-out-soft hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-card-hover motion-reduce:transition-none motion-reduce:hover:translate-y-0">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-primary/[0.06] to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 motion-reduce:transition-none" />
       <div className="flex items-start justify-between gap-3">
         <div className={`flex size-10 items-center justify-center rounded-xl ${tones[tone]}`}><Icon className="size-5" /></div>
         {trend && <Sparkline values={trend} tone={tone} />}
