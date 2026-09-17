@@ -1,5 +1,6 @@
 import { logger } from '../lib/logger';
 import { emitMessageCreated } from '../lib/socket-server';
+import { notifyNewMessage } from '../lib/laravel-client';
 import { normalizeInboundMessage } from './message-normalizer';
 import { MessageRepository, isDuplicateEntryError } from './message-repository';
 import { enqueueMediaDownload } from '../queues/media-download.queue';
@@ -151,6 +152,20 @@ export async function processOneMessage(
           lastMessagePreview: (result.normalized.body ?? `[${result.normalized.messageType}]`).slice(0, 255),
         },
       });
+
+      // Realtime bell notification (best-effort, fire-and-forget): only for
+      // live inbound messages, never for outbound sends (the requesting agent
+      // doesn't need a "new message" bell about their own actions) and never
+      // for history imports (those aren't "new" - see ProcessOneMessageOptions).
+      if (!isFromMe) {
+        void notifyNewMessage({
+          workspaceId,
+          conversationId: conversation.id,
+          messageId: insertResult.messageId,
+          messageType: result.normalized.messageType,
+          preview: (result.normalized.body ?? `[${result.normalized.messageType}]`).slice(0, 255),
+        });
+      }
     }
 
     return { status: 'inserted' };

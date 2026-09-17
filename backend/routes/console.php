@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Schedule;
 // notifications, and the SLA engine actually fire without manual invocations.
 
 Schedule::command('tasks:send-reminders')->everyMinute()->withoutOverlapping();
+Schedule::command('calendar-events:send-reminders')->everyMinute()->withoutOverlapping();
 Schedule::command('tasks:notify-overdue')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('conversations:notify-new-messages')->everyMinute()->withoutOverlapping();
 Schedule::command('whatsapp:notify-connection-events')->everyFiveMinutes()->withoutOverlapping();

@@ -13,8 +13,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Lead extends Model
 {
     use BelongsToWorkspace, HasFactory, SoftDeletes;
-    protected $fillable = ['workspace_id', 'contact_id', 'conversation_id', 'source', 'source_detail', 'campaign', 'landing_page', 'external_lead_id', 'stage', 'score', 'property_type', 'preferred_location', 'budget_min', 'budget_max', 'bedrooms', 'bathrooms', 'requirement_type', 'owner_user_id', 'assigned_team_id', 'notes', 'lost_reason', 'lost_notes', 'converted_at'];
-    protected function casts(): array { return ['budget_min' => 'decimal:2', 'budget_max' => 'decimal:2', 'converted_at' => 'datetime']; }
+    protected $fillable = ['workspace_id', 'contact_id', 'conversation_id', 'source', 'source_detail', 'campaign', 'landing_page', 'external_lead_id', 'stage', 'score', 'property_type', 'preferred_location', 'budget_min', 'budget_max', 'bedrooms', 'bathrooms', 'requirement_type', 'owner_user_id', 'assigned_team_id', 'notes', 'follow_up_date', 'lost_reason', 'lost_notes', 'converted_at'];
+    protected function casts(): array { return ['budget_min' => 'decimal:2', 'budget_max' => 'decimal:2', 'converted_at' => 'datetime', 'follow_up_date' => 'date:Y-m-d']; }
     public function contact(): BelongsTo { return $this->belongsTo(Contact::class); }
     public function conversation(): BelongsTo { return $this->belongsTo(Conversation::class); }
     public function owner(): BelongsTo { return $this->belongsTo(User::class, 'owner_user_id'); }

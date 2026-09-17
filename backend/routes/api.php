@@ -35,6 +35,13 @@ use App\Http\Controllers\Api\V1\WhatsappController;
 use App\Http\Controllers\Api\V1\WorkspaceSettingController;
 use Illuminate\Support\Facades\Route;
 
+// Gateway -> backend internal API (no Sanctum auth; guarded by EnsureInternalSecret's
+// shared-secret header). These routes must stay outside the `/v1` group on purpose.
+Route::prefix('internal')->name('api.internal.')->middleware('internal.secret')->group(function () {
+    Route::post('/whatsapp/messages/notify-new', [App\Http\Controllers\Api\Internal\WhatsappMessageNotifyController::class, 'notifyNewMessage'])
+        ->name('whatsapp.messages.notify-new');
+});
+
 Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::get('/health', HealthController::class)->name('health');
 
@@ -307,6 +314,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('/', [CalendarEventController::class, 'index'])->name('index');
             Route::post('/', [CalendarEventController::class, 'store'])->name('store');
             Route::patch('/{calendarEvent}', [CalendarEventController::class, 'update'])->name('update');
+            Route::post('/{calendarEvent}/complete', [CalendarEventController::class, 'complete'])->name('complete');
+            Route::post('/{calendarEvent}/reopen', [CalendarEventController::class, 'reopen'])->name('reopen');
             Route::delete('/{calendarEvent}', [CalendarEventController::class, 'destroy'])->name('destroy');
         });
 
