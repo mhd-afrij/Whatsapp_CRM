@@ -10,7 +10,13 @@ export interface CalendarEvent {
   starts_at: string;
   ends_at: string | null;
   location: string | null;
+  description: string | null;
+  is_all_day: boolean;
   kind: CalendarEventKind;
+  contact_id: number | null;
+  lead_id: number | null;
+  deal_id: number | null;
+  reminder_minutes: number | null;
   lead_id: number | null;
   lead: Pick<Lead, "id" | "contact"> | null;
   created_by: number | null;
@@ -35,7 +41,13 @@ export interface CalendarEventFormValues {
   starts_at: string;
   ends_at?: string | null;
   location?: string | null;
+  description?: string | null;
+  is_all_day?: boolean;
   kind?: CalendarEventKind;
+  contact_id?: number | null;
+  lead_id?: number | null;
+  deal_id?: number | null;
+  reminder_minutes?: number | null;
   lead_id?: number | null;
   reminder_at?: string | null;
 }
