@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\V1\SlaController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TeamController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\WebhookEndpointController;
 use App\Http\Controllers\Api\V1\WhatsappController;
 use App\Http\Controllers\Api\V1\WorkspaceSettingController;
 use Illuminate\Support\Facades\Route;
@@ -299,7 +300,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
         Route::apiResource('automation-rules', AutomationRuleController::class)
             ->except(['show'])
-            ->names('automation-rules');
+            ->names('automation-rules')
+            ->middleware('permission:workspace.settings.manage');
 
         Route::prefix('notes')->name('notes.')->group(function () {
             Route::get('/', [InternalNoteController::class, 'index'])->name('index');
@@ -447,6 +449,27 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             // authentication, same rationale as the notifications routes above.
             Route::get('/export/{notification}/download', [ReportExportController::class, 'download'])
                 ->name('export.download');
+        });
+
+        // Webhook endpoints - workspace integration surface. Read: webhooks.view.
+        // Mutations + secret rotation: webhooks.manage. "Send test" performs a real
+        // synchronous HTTP round-trip and must stay gated tightly (webhooks.test).
+        // Delivery of real events is always queued; see DeliverWebhookJob.
+        Route::prefix('webhooks')->name('webhooks.')->group(function () {
+            Route::get('/', [WebhookEndpointController::class, 'index'])
+                ->middleware('permission:webhooks.view')->name('index');
+            Route::post('/', [WebhookEndpointController::class, 'store'])
+                ->middleware('permission:webhooks.manage')->name('store');
+            Route::get('/{endpoint}', [WebhookEndpointController::class, 'show'])
+                ->middleware('permission:webhooks.view')->name('show');
+            Route::patch('/{endpoint}', [WebhookEndpointController::class, 'update'])
+                ->middleware('permission:webhooks.manage')->name('update');
+            Route::delete('/{endpoint}', [WebhookEndpointController::class, 'destroy'])
+                ->middleware('permission:webhooks.manage')->name('destroy');
+            Route::post('/{endpoint}/rotate-secret', [WebhookEndpointController::class, 'rotateSecret'])
+                ->middleware('permission:webhooks.manage')->name('rotate-secret');
+            Route::post('/{endpoint}/test', [WebhookEndpointController::class, 'test'])
+                ->middleware('permission:webhooks.test')->name('test');
         });
 
         // DLQ (Dead Letter Queue) management - Admin only

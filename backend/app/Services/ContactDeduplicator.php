@@ -12,9 +12,9 @@ use Illuminate\Support\Facades\DB;
  * a WhatsApp push name without first matching the existing number).
  *
  * One row per group survives; every linked record (whatsapp_contacts,
- * conversations, deals, tasks, notes, activities, labels) is re-pointed
- * to it and the victims are hard-deleted. The survivor is chosen as: a
- * non-WhatsApp-origin row first (a manually saved "Mr Blvck" beats an
+ * conversations, deals, tasks, leads, campaigns, notes, activities, labels)
+ * is re-pointed to it and the victims are hard-deleted. The survivor is chosen
+ * as: a non-WhatsApp-origin row first (a manually saved "Mr Blvck" beats an
  * auto-created "MOHAMED BATH..."), then the earliest created, then the lowest
  * id. Missing CRM fields on the survivor are enriched from the victims.
  *
@@ -91,6 +91,7 @@ class ContactDeduplicator
                 'tasks' => 'contact_id',
                 'internal_notes' => 'contact_id',
                 'contact_activities' => 'contact_id',
+                'leads' => 'contact_id',
             ];
 
             foreach ($mappings as $table => $column) {
@@ -106,6 +107,27 @@ class ContactDeduplicator
                 );
             }
             DB::table('contact_label')->where('contact_id', $victim->id)->delete();
+
+            // campaign_messages is keyed on (campaign_id, contact_id) and its
+            // contact FK cascades on delete - fold the victim's per-campaign
+            // dispatch rows into the survivor before the victim is removed.
+            foreach (DB::table('campaign_messages')->where('contact_id', $victim->id)->get() as $row) {
+                DB::table('campaign_messages')->updateOrInsert(
+                    ['campaign_id' => $row->campaign_id, 'contact_id' => $survivor->id],
+                    [
+                        'phone_number' => $row->phone_number,
+                        'rendered_content' => $row->rendered_content,
+                        'status' => $row->status,
+                        'conversation_id' => $row->conversation_id,
+                        'wa_message_id' => $row->wa_message_id,
+                        'dispatch_id' => $row->dispatch_id,
+                        'error' => $row->error,
+                        'sent_at' => $row->sent_at,
+                        'updated_at' => $row->updated_at ?? now(),
+                    ],
+                );
+            }
+            DB::table('campaign_messages')->where('contact_id', $victim->id)->delete();
 
             $victim->forceDelete();
         });

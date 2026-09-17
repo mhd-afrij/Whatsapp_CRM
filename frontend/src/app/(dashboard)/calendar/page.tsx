@@ -12,13 +12,7 @@ import type { Lead } from "@/lib/leads-api";
 import { ApiError } from "@/lib/api-client";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const EVENT_KINDS: Array<{ value: CalendarEventKind; label: string }> = [
-  { value: "follow_up", label: "Follow-up" },
-  { value: "call", label: "Call" },
-  { value: "meeting", label: "Meeting" },
-  { value: "reminder", label: "Reminder" },
-  { value: "other", label: "Other" },
-];
+const EVENT_KIND_LABELS: Record<CalendarEvent["kind"], string> = { follow_up: "Follow-up", call: "Call", meeting: "Appointment", reminder: "Reminder", other: "Event" };
 
 function buildMonthGrid(year: number, month: number): Date[] {
   const firstOfMonth = new Date(year, month, 1);
@@ -178,17 +172,86 @@ function CalendarView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-2xl font-semibold text-text">Calendar</h1><p className="text-sm text-muted">Plan lead follow-ups, meetings, calls, and reminders.</p></div><button type="button" onClick={() => setModalDate(new Date(cursor.getFullYear(), cursor.getMonth(), 1))} className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white"><Plus className="h-4 w-4" /> New event</button></div>
-      {notice && <button type="button" onClick={() => setNotice(null)} className="w-full rounded-xl bg-primary-soft px-3 py-2 text-left text-sm text-primary">{notice}</button>}
-      <div className="flex items-center justify-between"><button type="button" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} className="rounded-md border border-border p-1.5 text-muted hover:bg-primary-soft/40"><ChevronLeft className="h-4 w-4" /></button><span className="min-w-[10rem] text-center text-sm font-medium text-text">{monthLabel}</span><button type="button" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} className="rounded-md border border-border p-1.5 text-muted hover:bg-primary-soft/40"><ChevronRight className="h-4 w-4" /></button></div>
-      <div className="overflow-hidden rounded-2xl border border-border bg-surface"><div className="grid grid-cols-7 border-b border-border bg-primary-soft/30 text-center text-xs font-semibold uppercase text-muted">{WEEKDAYS.map((day) => <div key={day} className="px-2 py-2">{day}</div>)}</div><div className="grid grid-cols-7">{days.map((day) => { const currentMonth = day.getMonth() === cursor.getMonth(); const todayCell = dateKey(day) === dateKey(today); const dayEvents = eventsByDay.get(dateKey(day)) ?? []; return <div key={day.toISOString()} role="button" tabIndex={0} onClick={() => { if (!currentMonth) setCursor(new Date(day.getFullYear(), day.getMonth(), 1)); setModalDate(day); }} onKeyDown={(e) => { if (e.key === "Enter") setModalDate(day); }} className={`min-h-[145px] cursor-pointer border-b border-r border-border p-2 align-top transition hover:bg-primary-soft/10 ${currentMonth ? "bg-surface" : "bg-bg/60"}`}><span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${todayCell ? "bg-primary text-white" : currentMonth ? "text-text" : "text-muted"}`}>{day.getDate()}</span><div className="mt-1 space-y-1">{dayEvents.map((event) => <div key={event.id} onClick={(e) => e.stopPropagation()} className={`group flex items-center gap-1 rounded px-1.5 py-1 text-[11px] ${event.completed_at ? "bg-bg text-muted line-through" : event.kind === "follow_up" ? "bg-primary-soft text-primary" : "bg-amber-500/15 text-amber-700 dark:text-amber-300"}`} title={`${event.title} · ${new Date(event.starts_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}><button type="button" onClick={() => onToggle(event)} aria-label={event.completed_at ? `Reopen ${event.title}` : `Complete ${event.title}`} className="shrink-0 rounded-full border border-current p-0.5"><Check className="h-2.5 w-2.5" /></button><button type="button" onClick={() => { setModalDate(null); setEditingEvent(event); }} className="min-w-0 flex-1 truncate text-left">{event.title}</button><button type="button" onClick={() => { setModalDate(null); setEditingEvent(event); }} aria-label={`Edit ${event.title}`} className="hidden shrink-0 group-hover:block"><Pencil className="h-3 w-3" /></button><button type="button" onClick={() => onDelete(event)} aria-label={`Delete ${event.title}`} className="hidden shrink-0 text-danger group-hover:block"><Trash2 className="h-3 w-3" /></button></div>)}</div></div>; })}</div></div>
-      {eventsQuery.isError && <p className="text-sm text-danger">Unable to load calendar events.</p>}
-      {modalDate && <EventModal event={editingEvent} initialDate={modalDate} leads={leads} onClose={() => { setModalDate(null); setEditingEvent(null); }} onSaved={() => { setModalDate(null); setEditingEvent(null); setNotice("Event saved."); }} />}
-      {editingEvent && !modalDate && <EventModal event={editingEvent} initialDate={new Date(editingEvent.starts_at)} leads={leads} onClose={() => setEditingEvent(null)} onSaved={() => { setEditingEvent(null); setNotice("Event saved."); }} />}
+      <div className="flex items-center justify-between">
+        <div><h1 className="text-2xl font-semibold text-text">Calendar &amp; Appointments</h1><p className="mt-1 text-sm text-muted">Schedule meetings, calls, follow-ups, reminders, and other workspace events.</p></div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
+            className="rounded-md border border-border p-1.5 text-muted hover:bg-primary-soft/40"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="min-w-[10rem] text-center text-sm font-medium text-text">{monthLabel}</span>
+          <button
+            type="button"
+            onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
+            className="rounded-md border border-border p-1.5 text-muted hover:bg-primary-soft/40"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-border bg-surface">
+        <div className="grid grid-cols-7 border-b border-border bg-primary-soft/30 text-center text-xs font-semibold uppercase text-muted">
+          {WEEKDAYS.map((d) => (
+            <div key={d} className="px-2 py-2">
+              {d}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {days.map((day) => {
+            const isCurrentMonth = day.getMonth() === cursor.getMonth();
+            const isToday = dateKey(day) === dateKey(today);
+            const dayKey = dateKey(day);
+            const dayEvents = eventsByDay.get(dayKey) ?? [];
+
+            return (
+              <div
+                key={day.toISOString()}
+                className={`min-h-[110px] border-b border-r border-border p-2 last:border-r-0 ${
+                  isCurrentMonth ? "bg-surface" : "bg-bg/60"
+                }`}
+              >
+                <span
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${
+                    isToday ? "bg-primary text-white" : isCurrentMonth ? "text-text" : "text-muted"
+                  }`}
+                >
+                  {day.getDate()}
+                </span>
+                <div className="mt-1 space-y-1">
+                  {dayEvents.slice(0, 2).map((event) => (
+                    <div
+                      key={event.id}
+                      className="flex items-center gap-1 truncate rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] text-amber-700 dark:text-amber-300"
+                      title={`${event.title} · ${new Date(event.starts_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`}
+                    >
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                      <span className="truncate">{EVENT_KIND_LABELS[event.kind]}: {event.title}</span>
+                    </div>
+                  ))}
+                  {dayEvents.length > 2 && (
+                    <p className="px-1.5 text-[10px] text-muted">+{dayEvents.length - 2} more</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function CalendarPage() {
-  return <RequirePermission permission="tasks.manage"><Suspense fallback={null}><CalendarView /></Suspense></RequirePermission>;
+  return (
+    <RequirePermission permission="tasks.manage">
+      <Suspense fallback={null}>
+        <CalendarView />
+      </Suspense>
+    </RequirePermission>
+  );
 }

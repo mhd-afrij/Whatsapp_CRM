@@ -101,4 +101,114 @@ describe("apiClient 401 interceptor", () => {
     await expect(apiClient.get("/conversations")).rejects.toMatchObject({ status: 500 });
     expect(clearToken).not.toHaveBeenCalled();
   });
+
+  it("classifies a 502 with a recoverable gateway code as recoverable", async () => {
+    const { apiClient } = await import("./api-client");
+    apiClient.interceptors.request.clear();
+    apiClient.interceptors.request.use(() => {
+      const error = {
+        response: {
+          status: 502,
+          data: {
+            success: false,
+            message: "WhatsApp gateway is temporarily unavailable.",
+            code: "GATEWAY_UNREACHABLE",
+            data: { status: "unavailable", retryable: true },
+          },
+        },
+        isAxiosError: true,
+      };
+      return Promise.reject(error);
+    });
+
+    const { isGatewayRecoverableError } = await import("./api-client");
+    await expect(apiClient.get("/whatsapp/status")).rejects.toMatchObject({
+      status: 502,
+      code: "GATEWAY_UNREACHABLE",
+      recoverable: true,
+    });
+
+    try {
+      await apiClient.get("/whatsapp/status");
+    } catch (error) {
+      expect(isGatewayRecoverableError(error)).toBe(true);
+      expect((error as { data: unknown }).data).toEqual({ status: "unavailable", retryable: true });
+    }
+  });
+
+  it("keeps a non-gateway 502 as a regular (non-recoverable) failure", async () => {
+    const { apiClient } = await import("./api-client");
+    apiClient.interceptors.request.clear();
+    apiClient.interceptors.request.use(() => {
+      const error = {
+        response: {
+          status: 502,
+          data: { success: false, message: "Bad upstream gateway.", code: "UPSTREAM_ERROR" },
+        },
+        isAxiosError: true,
+      };
+      return Promise.reject(error);
+    });
+
+    const { isGatewayRecoverableError } = await import("./api-client");
+    try {
+      await apiClient.get("/conversations");
+    } catch (error) {
+      expect(isGatewayRecoverableError(error)).toBe(false);
+      expect((error as { recoverable: boolean }).recoverable).toBe(false);
+    }
+  });
+
+  it("treats GATEWAY_TIMEOUT and GATEWAY_UNAVAILABLE as recoverable too", async () => {
+    const { apiClient, GATEWAY_RECOVERABLE_CODES } = await import("./api-client");
+
+    for (const code of ["GATEWAY_TIMEOUT", "GATEWAY_UNAVAILABLE"]) {
+      apiClient.interceptors.request.clear();
+      apiClient.interceptors.request.use(() => {
+        const error = {
+          response: {
+            status: 502,
+            data: { success: false, message: "Down.", code },
+          },
+          isAxiosError: true,
+        };
+        return Promise.reject(error);
+      });
+
+      try {
+        await apiClient.get("/whatsapp/status");
+      } catch (error) {
+        expect((error as { recoverable: boolean }).recoverable).toBe(true);
+      }
+    }
+
+    expect(GATEWAY_RECOVERABLE_CODES.has("GATEWAY_UNREACHABLE")).toBe(true);
+    expect(GATEWAY_RECOVERABLE_CODES.has("GATEWAY_UNAUTHORIZED")).toBe(false);
+  });
+});
+
+describe("unwrap", () => {
+  it("treats a success envelope with null data as a successful null, not an error", async () => {
+    const { unwrap } = await import("./api-client");
+
+    const result = await unwrap<null>(
+      Promise.resolve({
+        data: { success: true, message: "Conversation deleted.", data: null },
+      })
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("still rejects a success:false envelope even when it carries no data", async () => {
+    const { unwrap, ApiError } = await import("./api-client");
+
+    await expect(
+      unwrap<unknown>(
+        Promise.resolve({
+          data: { success: false, message: "Forbidden.", data: null },
+        })
+      )
+    ).rejects.toBeInstanceOf(ApiError);
+  });
 });

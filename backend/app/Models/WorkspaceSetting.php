@@ -9,6 +9,7 @@ class WorkspaceSetting extends Model
 {
     protected $fillable = [
         'workspace_id', 'default_pipeline_id', 'business_hours', 'notification_defaults', 'branding',
+        'inbox_settings', 'contact_settings', 'lead_sales_settings', 'integration_settings',
         'away_message_enabled', 'away_message', 'away_message_trigger',
         'ai_provider', 'ai_model', 'ai_api_key', 'ai_business_context', 'ai_enabled',
     ];
@@ -19,6 +20,10 @@ class WorkspaceSetting extends Model
             'business_hours' => 'array',
             'notification_defaults' => 'array',
             'branding' => 'array',
+            'inbox_settings' => 'array',
+            'contact_settings' => 'array',
+            'lead_sales_settings' => 'array',
+            'integration_settings' => 'array',
             'away_message_enabled' => 'boolean',
             'ai_api_key' => 'encrypted',
             'ai_enabled' => 'boolean',

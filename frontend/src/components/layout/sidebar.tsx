@@ -3,372 +3,101 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  MessageSquare,
-  Users,
-  Settings,
-  ShieldCheck,
-  Smartphone,
-  CalendarDays,
-  BellRing,
-  Users2,
-  KeyRound,
-  Building2,
-  ScrollText,
-  Clock,
-  ChevronDown,
-  PanelLeftOpen,
-  UserRoundPlus,
-  UserRound,
-  Megaphone,
-} from "lucide-react";
+import { ChevronDown, ChevronsUpDown, PanelLeftOpen, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
+import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
 import { useMobileSidebar } from "@/components/layout/mobile-sidebar-context";
-import { X } from "lucide-react";
+import { NAVIGATION_SECTIONS, type NavigationItem, type NavigationSection } from "@/config/navigation";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/inbox", label: "Inbox", icon: MessageSquare },
-  { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/settings/profile", label: "Profile", icon: UserRound },
-  // Not permission-gated (unlike the items below) - every authenticated user manages
-  // their own notification preferences regardless of role.
-  { href: "/settings/notifications", label: "Notifications", icon: BellRing },
-];
+function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
+  const [open, setOpen] = useState(false);
+  const workspace = useWorkspaceSettings();
+  const name = workspace.data?.name ?? "Current workspace";
+  const logoUrl = workspace.data?.logo_url;
+  const initials = name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
 
-// Nav items gated on a permission beyond plain authentication. Kept separate
-// from `navItems` so adding another admin-only entry doesn't require
-// threading permission checks through the generic list.
-const permissionGatedNavItems = [
-  {
-    href: "/contacts",
-    label: "Contacts",
-    icon: Users,
-    permission: "contacts.view",
-  },
-  {
-    href: "/leads",
-    label: "Leads",
-    icon: UserRoundPlus,
-    permission: "leads.manage",
-  },
-  {
-    href: "/campaigns",
-    label: "Campaigns",
-    icon: Megaphone,
-    permission: "campaigns.view",
-  },
-  {
-    href: "/calendar",
-    label: "Calendar",
-    icon: CalendarDays,
-    permission: "tasks.manage",
-  },
-  {
-    href: "/settings/users",
-    label: "User Management",
-    icon: ShieldCheck,
-    permission: "users.manage",
-  },
-  {
-    href: "/settings/teams",
-    label: "Teams",
-    icon: Users2,
-    permission: "teams.view",
-  },
-  {
-    href: "/settings/roles",
-    label: "Roles & Permissions",
-    icon: KeyRound,
-    permission: "roles.view",
-  },
-  {
-    href: "/settings/whatsapp",
-    label: "WhatsApp",
-    icon: Smartphone,
-    permission: "whatsapp.connection.manage",
-  },
-  {
-    href: "/settings/workspace",
-    label: "Workspace Settings",
-    icon: Building2,
-    permission: "workspace.settings.manage",
-  },
-  {
-    href: "/settings/operations",
-    label: "Operations",
-    icon: Clock,
-    permission: "workspace.settings.manage",
-  },
-  {
-    href: "/settings/audit-log",
-    label: "Audit Log",
-    icon: ScrollText,
-    permission: "audit_logs.view",
-  },
-];
+  return (
+    <div className={cn("relative border-b border-border p-3", collapsed && "px-2")}>
+      <button type="button" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((value) => !value)} title={collapsed ? name : undefined} className={cn("flex w-full items-center gap-2 rounded-lg border border-border bg-bg px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary-soft/20", collapsed && "justify-center px-2")}>
+        {logoUrl ? <img src={logoUrl} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" /> : <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-[10px] font-bold text-primary">{initials || "WS"}</span>}
+        {!collapsed && (
+          <>
+            <span className="min-w-0 flex-1"><span className="block text-[10px] font-semibold uppercase tracking-wider text-muted">Workspace</span><span className="block truncate text-sm font-semibold text-text">{name}</span></span>
+            <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted" />
+          </>
+        )}
+      </button>
+      {open && (
+        <div role="menu" className={cn("absolute z-50 mt-2 w-[calc(100%-1.5rem)] overflow-hidden rounded-xl border border-border bg-surface p-1.5 shadow-xl", collapsed ? "left-12 top-1 w-56" : "left-3")}>
+          <div className="border-b border-border px-2.5 py-2"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Current workspace</p><p className="truncate text-sm font-semibold text-text">{name}</p></div>
+          <button type="button" disabled className="flex w-full cursor-not-allowed rounded-md px-2.5 py-2 text-left text-sm text-muted opacity-60">Switch workspace</button>
+          <button type="button" disabled className="flex w-full cursor-not-allowed rounded-md px-2.5 py-2 text-left text-sm text-muted opacity-60">View all workspaces</button>
+          <button type="button" disabled className="flex w-full cursor-not-allowed items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-muted opacity-60"><Plus className="h-4 w-4" />Create new workspace</button>
+          <Link href="/settings" onClick={() => setOpen(false)} className="block rounded-md px-2.5 py-2 text-sm font-medium text-text hover:bg-primary-soft/40">Manage workspaces</Link>
+        </div>
+      )}
+    </div>
+  );
+}
 
-// Category membership for grouping visible modules under section headers.
-// Everything under /settings lives in the single "Administration" section:
-// the Settings hub first, then user management and admin features.
-const categoryHrefs: Record<string, string[]> = {
-  workspace: [
-    "/dashboard",
-    "/inbox",
-    "/contacts",
-    "/leads",
-    "/campaigns",
-    "/calendar",
-  ],
-  administration: [
-    "/settings",
-    "/settings/profile",
-    "/settings/users",
-    "/settings/teams",
-    "/settings/roles",
-    "/settings/notifications",
-    "/settings/whatsapp",
-    "/settings/workspace",
-    "/settings/operations",
-    "/settings/audit-log",
-  ],
-};
-
-export function Sidebar() {
-  const pathname = usePathname();
-  const canManageUsers = usePermission("users.manage");
-  const canManageWhatsapp = usePermission("whatsapp.connection.manage");
+function NavigationGroups({ pathname, collapsed, onNavigate }: { pathname: string; collapsed: boolean; onNavigate?: () => void }) {
+  const canViewDashboard = usePermission("dashboard.view_workspace");
+  const canViewInbox = usePermission("conversations.view");
   const canViewContacts = usePermission("contacts.view");
   const canManageLeads = usePermission("leads.manage");
   const canManageTasks = usePermission("tasks.manage");
-  const canManageWorkspace = usePermission("workspace.settings.manage");
-  const canViewTeams = usePermission("teams.view");
-  const canViewRoles = usePermission("roles.view");
-  const canViewAuditLog = usePermission("audit_logs.view");
+  const canViewAnalytics = usePermission("analytics.view");
   const canViewCampaigns = usePermission("campaigns.view");
-  const permissionByHref: Record<string, boolean> = {
-    "/contacts": canViewContacts,
-    "/leads": canManageLeads,
-    "/campaigns": canViewCampaigns,
-    "/calendar": canManageTasks,
-    "/settings/users": canManageUsers,
-    "/settings/teams": canViewTeams,
-    "/settings/roles": canViewRoles,
-    "/settings/whatsapp": canManageWhatsapp,
-    "/settings/workspace": canManageWorkspace,
-    "/settings/operations": canManageWorkspace,
-    "/settings/audit-log": canViewAuditLog,
+  const canManageWorkspace = usePermission("workspace.settings.manage");
+  const canManageWhatsapp = usePermission("whatsapp.connection.manage");
+  const permissions: Record<string, boolean> = {
+    "dashboard.view_workspace": canViewDashboard,
+    "conversations.view": canViewInbox,
+    "contacts.view": canViewContacts,
+    "leads.manage": canManageLeads,
+    "tasks.manage": canManageTasks,
+    "analytics.view": canViewAnalytics,
+    "campaigns.view": canViewCampaigns,
+    "workspace.settings.manage": canManageWorkspace,
+    "whatsapp.connection.manage": canManageWhatsapp,
+  };
+  const sections = NAVIGATION_SECTIONS.map((section) => ({ ...section, items: section.items.filter((item) => !item.permission || permissions[item.permission]) })).filter((section) => section.items.length > 0);
+  const allItems = sections.flatMap((section) => section.items);
+  const activeHref = allItems.filter((item) => pathname === item.href || pathname.startsWith(item.href + "/")).sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ main: true, automation: true, channels: true, administration: true });
+
+  const renderItem = (item: NavigationItem) => {
+    const active = activeHref === item.href;
+    const Icon = item.icon;
+    return <Link key={item.href} href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined} title={collapsed ? item.label : undefined} className={cn("flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors", collapsed && "justify-center px-2", active ? "bg-primary-soft text-primary-dark" : "text-muted hover:bg-primary-soft/50 hover:text-text")}><Icon className="h-4 w-4 shrink-0" />{!collapsed && <span className="flex-1 whitespace-nowrap">{item.label}</span>}</Link>;
   };
 
-  const leadingHrefs = ["/contacts", "/leads", "/campaigns", "/calendar"];
-  const visibleGatedItems = permissionGatedNavItems.filter(
-    (item) => permissionByHref[item.href]
-  );
-  const leadingItems = visibleGatedItems.filter((item) => leadingHrefs.includes(item.href));
-  const otherGatedItems = visibleGatedItems.filter((item) => !leadingHrefs.includes(item.href));
+  const renderSection = (section: NavigationSection) => {
+    const open = openSections[section.id];
+    return <div key={section.id} className="space-y-1">
+      {!collapsed && <button type="button" onClick={() => setOpenSections((current) => ({ ...current, [section.id]: !open }))} aria-expanded={open} aria-controls={"sidebar-section-" + section.id} className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted transition-colors hover:bg-primary-soft/50 hover:text-text"><span>{section.label}</span><ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} /></button>}
+      <div id={"sidebar-section-" + section.id} inert={!open} className={cn("grid transition-all duration-300 ease-in-out motion-reduce:transition-none", open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")}><div className="overflow-hidden"><div className={cn("space-y-1", !collapsed && "pl-2")}>{section.items.map(renderItem)}</div></div></div>
+    </div>;
+  };
 
-  const [dashboardItem, inboxItem, ...restNavItems] = navItems;
-  const orderedItems = [dashboardItem, inboxItem, ...leadingItems, ...restNavItems, ...otherGatedItems];
+  return <nav className={cn("flex-1 space-y-2 overflow-y-auto px-3 py-4", collapsed && "px-2")}>{sections.map(renderSection)}</nav>;
+}
 
+function SidebarShell({ collapsed, onToggle, mobile = false, children }: { collapsed: boolean; onToggle?: () => void; mobile?: boolean; children: React.ReactNode }) {
+  return <aside className={cn("relative flex h-full flex-col border-r border-border bg-surface", mobile ? "w-64 max-w-[80vw] shadow-lg" : "hidden shrink-0 overflow-hidden md:flex", !mobile && (collapsed ? "w-16" : "w-64"))}>
+    <div className={cn("flex h-16 shrink-0 items-center border-b border-border", collapsed && !mobile ? "justify-center" : "gap-2 px-5")}><span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-primary" />{(!collapsed || mobile) && <span className="text-base font-semibold text-text">CRM WhatsApp</span>}{mobile && onToggle && <button type="button" onClick={onToggle} aria-label="Close navigation menu" className="ml-auto rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text"><X className="h-5 w-5" /></button>}</div>
+    <WorkspaceSwitcher collapsed={collapsed && !mobile} />
+    {!mobile && collapsed && <button type="button" onClick={onToggle} aria-label="Expand sidebar" title="Expand sidebar" className="mx-2 mt-2 flex items-center justify-center rounded-md p-2 text-muted transition-colors hover:bg-primary-soft/50 hover:text-text"><PanelLeftOpen className="h-4 w-4" /></button>}
+    {children}
+  </aside>;
+}
+
+export function Sidebar() {
+  const pathname = usePathname();
   const { isOpen, close, collapsed, toggleCollapsed } = useMobileSidebar();
-
-  // Sidebar structure: independently collapsible categories grouping modules
-  // by area.
-  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
-    workspace: true,
-    administration: false,
-  });
-  const toggleCategory = (key: string) =>
-    setOpenCategories((prev) => ({ ...prev, [key]: !prev[key] }));
-
-  // Auto-expand the category containing the active route when navigating
-  // (covers deep links). Adjusted during render, per React's recommended
-  // "adjusting state when a prop changes" pattern — no effect needed.
-  const [prevPathname, setPrevPathname] = useState(pathname);
-  if (prevPathname !== pathname) {
-    setPrevPathname(pathname);
-    setOpenCategories((prev) => {
-      const next = { ...prev };
-      for (const [key, hrefs] of Object.entries(categoryHrefs)) {
-        if (hrefs.some((href) => pathname === href || pathname?.startsWith(`${href}/`))) {
-          next[key] = true;
-        }
-      }
-      return next;
-    });
-  }
-
-  const renderNav = (onNavigate?: () => void) => {
-    const renderItem = (item: (typeof orderedItems)[number]) => {
-      const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
-      const Icon = item.icon;
-      return (
-        <Link
-          key={item.href}
-          href={item.href}
-          onClick={onNavigate}
-          aria-current={isActive ? "page" : undefined}
-          className={cn(
-            "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-            isActive
-              ? "bg-primary-soft text-primary-dark"
-              : "text-muted hover:bg-primary-soft/50 hover:text-text"
-          )}
-        >
-          <Icon className="h-4 w-4" />
-          <span className="flex-1 whitespace-nowrap">{item.label}</span>
-        </Link>
-      );
-    };
-
-    const renderCategory = (
-      key: string,
-      label: string,
-      items: (typeof orderedItems)[number][]
-    ) => {
-      const open = openCategories[key];
-      return (
-        <div className="space-y-1">
-          <button
-            type="button"
-            onClick={() => toggleCategory(key)}
-            aria-expanded={open}
-            aria-controls={`sidebar-category-${key}`}
-            className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:bg-primary-soft/50 hover:text-text"
-          >
-            <span className="flex items-center gap-2">
-              {label}
-              <span className="rounded-full bg-primary-soft px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-dark">
-                {items.length}
-              </span>
-            </span>
-            <ChevronDown
-              className={cn(
-                "h-3.5 w-3.5 transition-transform duration-200",
-                open && "rotate-180"
-              )}
-            />
-          </button>
-          <div
-            id={`sidebar-category-${key}`}
-            inert={!open}
-            className={cn(
-              "grid transition-all duration-300 ease-in-out motion-reduce:transition-none",
-              open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-            )}
-          >
-            <div className="overflow-hidden">
-              <div className="space-y-1 pl-2">{items.map(renderItem)}</div>
-            </div>
-          </div>
-        </div>
-      );
-    };
-
-    const itemByHref = new Map(orderedItems.map((item) => [item.href, item]));
-    const pick = (hrefs: string[]) =>
-      hrefs
-        .map((href) => itemByHref.get(href))
-        .filter((item): item is (typeof orderedItems)[number] => Boolean(item));
-
-    const workspaceItems = pick(categoryHrefs.workspace);
-    const administrationItems = pick(categoryHrefs.administration);
-
-    return (
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-        {workspaceItems.length > 0 && renderCategory("workspace", "Workspace", workspaceItems)}
-        {administrationItems.length > 0 &&
-          renderCategory("administration", "Administration", administrationItems)}
-      </nav>
-    );
-  };
-
-  return (
-    <>
-      {/* Desktop sidebar — collapses to an icon rail with a width transition */}
-      <aside
-        className={cn(
-          "hidden shrink-0 flex-col overflow-hidden border-r border-border bg-surface md:flex transition-[width] duration-300 ease-in-out",
-          collapsed ? "w-16" : "w-60"
-        )}
-      >
-        <div
-          className={cn(
-            "flex h-16 items-center border-b border-border",
-            collapsed ? "justify-center" : "gap-2 px-6"
-          )}
-        >
-          <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-primary" />
-          {!collapsed && <span className="text-base font-semibold text-text">CRM WhatsApp</span>}
-        </div>
-        {collapsed ? (
-          <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            <button
-              type="button"
-              onClick={toggleCollapsed}
-              aria-label="Expand sidebar"
-              title="Expand sidebar"
-              className="flex w-full items-center justify-center rounded-md p-2 text-muted transition-colors hover:bg-primary-soft/50 hover:text-text"
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </button>
-            {orderedItems.map((item) => {
-              const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  title={item.label}
-                  aria-label={item.label}
-                  aria-current={isActive ? "page" : undefined}
-                  className={cn(
-                    "flex items-center justify-center gap-1 rounded-md px-2 py-2 text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-primary-soft text-primary-dark"
-                      : "text-muted hover:bg-primary-soft/50 hover:text-text"
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                </Link>
-              );
-            })}
-          </nav>
-        ) : (
-          renderNav()
-        )}
-      </aside>
-
-      {/* Mobile drawer */}
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex md:hidden">
-          <button
-            type="button"
-            aria-label="Close navigation menu"
-            onClick={close}
-            className="absolute inset-0 bg-black/40 motion-reduce:transition-none"
-          />
-          <aside className="relative flex h-full w-64 max-w-[80vw] flex-col border-r border-border bg-surface shadow-lg">
-            <div className="flex h-16 items-center justify-between gap-2 border-b border-border px-4">
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-2.5 w-2.5 rounded-full bg-primary" />
-                <span className="text-base font-semibold text-text">CRM WhatsApp</span>
-              </div>
-              <button
-                type="button"
-                aria-label="Close navigation menu"
-                onClick={close}
-                className="rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            {renderNav(close)}
-          </aside>
-        </div>
-      )}
-    </>
-  );
+  return <>
+    <SidebarShell collapsed={collapsed} onToggle={toggleCollapsed}><NavigationGroups pathname={pathname} collapsed={collapsed} /></SidebarShell>
+    {isOpen && <div className="fixed inset-0 z-50 flex md:hidden"><button type="button" aria-label="Close navigation menu" onClick={close} className="absolute inset-0 bg-black/40 motion-reduce:transition-none" /><SidebarShell collapsed={false} mobile onToggle={close}><NavigationGroups pathname={pathname} collapsed={false} onNavigate={close} /></SidebarShell></div>}
+  </>;
 }

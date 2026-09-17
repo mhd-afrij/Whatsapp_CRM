@@ -81,7 +81,7 @@ export function notificationLinkFor(notification: AppNotification): string | nul
       return data.deal_id ? `/deals/${data.deal_id}` : null;
     case "whatsapp.connection.failed":
     case "whatsapp.connection.reauth_required":
-      return "/settings/whatsapp";
+      return "/settings/workspace/whatsapp";
     default:
       return null;
   }

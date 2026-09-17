@@ -3,7 +3,7 @@ import { Queue, Worker, type Job } from 'bullmq';
 import { getQueueConnectionOptions } from './connection';
 import { logger } from '../lib/logger';
 import { env } from '../config/env';
-import { getStorageClient } from '../lib/storage';
+import { getStorageClient, getStorageProviderName } from '../lib/storage';
 import { MessageRepository } from '../whatsapp/message-repository';
 import { connectionManager } from '../whatsapp/manager-instance';
 import type { BaileysRawMessage } from '../whatsapp/baileys-socket';
@@ -123,8 +123,8 @@ async function processMediaDownload(job: Job<MediaDownloadJobData>): Promise<voi
     storagePath,
     blobName: storagePath,
     mediaUrl: null,
-    storageProvider: 'azure_blob',
     checksumSha256: checksum,
+    storageProvider: getStorageProviderName(),
   });
 }
 

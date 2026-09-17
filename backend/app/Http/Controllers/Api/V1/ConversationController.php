@@ -15,7 +15,9 @@ use App\Models\UserPresence;
 use App\Services\ContactAutoLinker;
 use App\Services\GatewayClient;
 use App\Services\NotificationService;
+use App\Services\WebhookService;
 use App\Support\AuditLogger;
+use App\Support\WebhookEvents;
 use App\Traits\ApiResponse;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
@@ -32,6 +34,7 @@ class ConversationController extends Controller
     public function __construct(
         protected GatewayClient $gateway,
         protected ContactAutoLinker $contactAutoLinker,
+        protected WebhookService $webhooks,
     ) {}
 
     /**
@@ -292,6 +295,12 @@ class ConversationController extends Controller
             }
 
             AuditLogger::log('conversation.created', $user, $conversation, [], $request);
+
+            $this->webhooks->emit(
+                WebhookEvents::CONVERSATION_CREATED,
+                $user->workspace_id,
+                ['conversation_id' => $conversation->id, 'contact_id' => $contact->id]
+            );
 
             return $this->success($conversation, 'Conversation started', [], 201);
         } catch (RuntimeException $e) {

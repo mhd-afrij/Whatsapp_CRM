@@ -56,4 +56,14 @@ class Workspace extends Model
     {
         return $this->hasOne(WhatsappSession::class);
     }
+
+    public function whatsappSessions(): HasMany
+    {
+        return $this->hasMany(WhatsappSession::class);
+    }
+
+    public function whatsappAccountSettings(): HasMany
+    {
+        return $this->hasMany(WhatsappAccountSetting::class);
+    }
 }

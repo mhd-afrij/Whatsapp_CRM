@@ -105,6 +105,10 @@ class MediaController extends Controller
             return $this->error('Conversation not found.', null, 404);
         }
 
+        // Same per-conversation visibility gate as the message/read surface:
+        // a user may only fetch media for a conversation they could open.
+        $this->authorize('view', $conversation);
+
         try {
             return $this->gateway->mediaContent($media->id, $conversation->workspace_id);
         } catch (RuntimeException $e) {
@@ -129,6 +133,9 @@ class MediaController extends Controller
         if (! $conversation || $conversation->workspace_id !== $request->user()->workspace_id) {
             return $this->error('Conversation not found.', null, 404);
         }
+
+        // Same per-conversation visibility gate as the message/read surface.
+        $this->authorize('view', $conversation);
 
         try {
             $result = $this->gateway->mediaUrl($media->id, $conversation->workspace_id);

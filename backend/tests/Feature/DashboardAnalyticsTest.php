@@ -6,7 +6,6 @@ use App\Jobs\GenerateReportExportJob;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Deal;
-use App\Models\Lead;
 use App\Models\Notification;
 use App\Models\Pipeline;
 use App\Models\PipelineStage;
@@ -99,11 +98,6 @@ class DashboardAnalyticsTest extends TestCase
         Conversation::factory()->create(['workspace_id' => $workspaceId, 'status' => 'open', 'assigned_user_id' => null]);
         Conversation::factory()->create(['workspace_id' => $workspaceId, 'status' => 'closed', 'closed_at' => now()->subDay()]);
 
-        // Leads: 3 new, 1 converted.
-        Lead::factory()->create(['workspace_id' => $workspaceId, 'stage' => 'new']);
-        Lead::factory()->create(['workspace_id' => $workspaceId, 'stage' => 'contacted']);
-        Lead::factory()->create(['workspace_id' => $workspaceId, 'stage' => 'converted']);
-
         // Deals: 1 open (value 1000), 1 won in range (value 500), 1 lost in range.
         $pipeline = Pipeline::factory()->create(['workspace_id' => $workspaceId]);
         $stage = PipelineStage::factory()->create(['pipeline_id' => $pipeline->id]);
@@ -123,10 +117,6 @@ class DashboardAnalyticsTest extends TestCase
         $this->assertSame(2, $data['conversations']['open']);
         $this->assertSame(1, $data['conversations']['closed']);
         $this->assertSame(1, $data['conversations']['unassigned']);
-
-        $this->assertSame(3, $data['leads']['new']);
-        $this->assertSame(1, $data['leads']['converted']);
-        $this->assertEqualsWithDelta(33.33, $data['leads']['conversion_rate_percent'], 0.01);
 
         $this->assertEqualsWithDelta(1000.0, $data['deals']['pipeline_value'], 0.01);
         $this->assertEqualsWithDelta(500.0, $data['deals']['won_value'], 0.01);

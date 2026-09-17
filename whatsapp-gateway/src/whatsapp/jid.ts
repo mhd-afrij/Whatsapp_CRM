@@ -12,7 +12,10 @@
  * already includes a short country code; the gateway's account country is the
  * right default, overridable via WHATSAPP_COUNTRY_CODE):
  *   - numbers starting with a trunk zero  -> national: drop the zero, prefix CC
- *   - numbers shorter than 11 digits      -> too short to hold a CC: prefix CC
+ *   - explicitly E.164 ("+65 6123 4567" / "0065...") -> already international,
+ *     use as-is even when under 11 digits (a 10-digit CC is short)
+ *   - numbers already starting with the configured CC -> keep as-is
+ *   - other numbers shorter than 11 digits -> too short to hold a CC: prefix CC
  *   - anything else                       -> already international, use as-is
  * Group / non-`s.whatsapp.net` JIDs are returned untouched.
  */
@@ -35,10 +38,22 @@ export function normalizePhoneToJid(input: string, countryCode = '94'): string {
     throw new Error(`Cannot build a WhatsApp JID from "${input}"`);
   }
 
+  const trimmed = input.trim();
+  const explicitInternational = trimmed.startsWith('+');
+
   const cc = countryCode.replace(/[^0-9]/g, '');
 
+  if (digits.startsWith('00')) {
+    return `${digits.slice(2)}@s.whatsapp.net`;
+  }
+  if (explicitInternational) {
+    return `${digits}@s.whatsapp.net`;
+  }
   if (digits.startsWith('0')) {
     return `${cc}${digits.slice(1)}@s.whatsapp.net`;
+  }
+  if (digits.startsWith(cc)) {
+    return `${digits}@s.whatsapp.net`;
   }
   if (digits.length < 11) {
     return `${cc}${digits}@s.whatsapp.net`;

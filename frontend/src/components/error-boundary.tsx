@@ -6,6 +6,14 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
+/** Minimal shape of the optional `window.Sentry` global the host page may set. */
+interface SentryGlobal {
+  captureException?: (
+    error: Error,
+    options?: { contexts?: Record<string, unknown> }
+  ) => void;
+}
+
 export class ErrorBoundary extends React.Component<
   { children: React.ReactNode; fallback?: React.ReactNode },
   ErrorBoundaryState
@@ -22,8 +30,10 @@ export class ErrorBoundary extends React.Component<
   componentDidCatch(error: Error, info: React.ErrorInfo): void {
     console.error("ErrorBoundary caught:", error, info.componentStack);
 
-    if (typeof window !== "undefined" && (window as any).Sentry) {
-      const Sentry = (window as any).Sentry;
+    // Relay the error to Sentry when the host page has initialized it
+    // (the global is optional so the boundary stays a no-op otherwise).
+    if (typeof window !== "undefined" && "Sentry" in window) {
+      const Sentry = (window as unknown as { Sentry?: SentryGlobal }).Sentry;
       if (Sentry && typeof Sentry.captureException === "function") {
         Sentry.captureException(error, {
           contexts: { react: { componentStack: info.componentStack } },

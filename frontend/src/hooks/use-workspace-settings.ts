@@ -10,6 +10,7 @@ import {
   updateWorkspaceSettings,
   updateWorkspaceWhatsappAccount,
 } from "@/lib/workspace-api";
+import { WHATSAPP_STATUS_KEY } from "./use-whatsapp-connection";
 
 const workspaceKey = ["workspace-settings"] as const;
 
@@ -38,7 +39,13 @@ export function useUpdateWorkspaceWhatsappAccount() {
   return useMutation({
     mutationFn: ({ id, values }: { id: number; values: Parameters<typeof updateWorkspaceWhatsappAccount>[1] }) =>
       updateWorkspaceWhatsappAccount(id, values),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKey }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: workspaceKey });
+      // Account changes (default slot, assigned team, display name) can alter
+      // which WhatsApp session the connection status reflects - refresh it.
+      queryClient.invalidateQueries({ queryKey: WHATSAPP_STATUS_KEY });
+      void queryClient.refetchQueries({ queryKey: WHATSAPP_STATUS_KEY });
+    },
   });
 }
 

@@ -52,28 +52,13 @@ export function createApp() {
     res.status(isReady ? 200 : 503).json({ status: isReady ? 'ok' : 'unavailable', checks });
   });
 
-  // WhatsApp connection health: returns the current connection status
-  app.get('/whatsapp/health', async (_req: Request, res: Response) => {
+  // WhatsApp connection health: reports the process-level WhatsApp connection
+  // snapshot. This endpoint reflects whether THIS process is up and healthy -
+  // NOT external dependencies. Redis/MySQL readiness is the job of /readyz,
+  // so a temporary Redis blip never makes the gateway look "down" here (the
+  // CRM's own health probe treats a 502 from this endpoint as gateway-down).
+  app.get('/whatsapp/health', (_req: Request, res: Response) => {
     const snapshot = connectionManager.getSnapshot();
-
-    let redisHealthy = false;
-    try {
-      const pong = await getRedisClient().ping();
-      redisHealthy = pong === 'PONG';
-    } catch {
-      // Redis unreachable
-    }
-
-    let mysqlHealthy = false;
-    try {
-      if (isHealthy()) {
-        const pool = await getMysqlPool();
-        await pool.query('SELECT 1');
-        mysqlHealthy = true;
-      }
-    } catch {
-      // MySQL unreachable or query failed
-    }
 
     res.status(200).json({
       status: 'ok',
@@ -81,10 +66,6 @@ export function createApp() {
         status: snapshot.status,
         phoneNumber: snapshot.phoneNumber,
         qrPending: snapshot.status === 'qr_pending',
-      },
-      infrastructure: {
-        redis: redisHealthy ? 'ok' : 'error',
-        mysql: mysqlHealthy ? 'ok' : 'error',
       },
     });
   });

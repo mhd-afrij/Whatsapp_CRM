@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import OpusMediaRecorder from "opus-media-recorder";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -25,6 +26,7 @@ import {
   Paperclip,
   Phone,
   Pin,
+  PinOff,
   Search,
   Send,
   SmilePlus,
@@ -59,6 +61,7 @@ import { useCreateDeal, useDealPipelines } from "@/hooks/use-deals";
 import { useComposerDraft } from "@/hooks/use-composer-draft";
 import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
 import { ApiError } from "@/lib/api-client";
+import { isGatewayRecoverableError } from "@/lib/whatsapp-connection";
 import type { ConversationPriority, Message, OutboundMessageType } from "@/lib/conversations-api";
 import {
   uploadMessageMedia,
@@ -889,11 +892,14 @@ function StatusDropdown({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-text hover:bg-bg transition-colors"
+        title={`Status: ${current.label}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex h-9 items-center gap-1.5 rounded-full border border-border px-3.5 text-sm font-semibold text-text transition-colors hover:bg-bg focus:outline-none focus:ring-2 focus:ring-primary/20"
       >
-        <span className={cn("h-2 w-2 rounded-full", current.color)} />
+        <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", current.color)} />
         {current.label}
-        <ChevronDown className="h-3 w-3 text-muted" />
+        <ChevronDown className="h-3.5 w-3.5 text-muted" />
       </button>
       {open && (
         <div className="absolute left-0 top-full z-30 mt-1 w-36 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg">
@@ -941,6 +947,7 @@ function AssignDropdown({
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
+  const isAssigned = Boolean(conversation?.assigned_user_id);
   const assignedName = conversation?.assigned_user_id
     ? users?.find((u) => u.id === conversation.assigned_user_id)?.name || "Assigned"
     : "Unassigned";
@@ -950,11 +957,14 @@ function AssignDropdown({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-text hover:bg-bg transition-colors"
+        title={isAssigned ? `Assignee: ${assignedName}` : "Assign this conversation to an agent"}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex h-9 items-center gap-1.5 rounded-full border border-border px-3.5 text-[13px] font-medium transition-colors hover:bg-bg focus:outline-none focus:ring-2 focus:ring-primary/20"
       >
-        <UserRound className="h-3 w-3 text-muted" />
-        <span className="max-w-[80px] truncate">{assignedName}</span>
-        <ChevronDown className="h-3 w-3 text-muted" />
+        <UserRound className="h-3.5 w-3.5 shrink-0 text-muted" />
+        <span className={cn("max-w-[96px] truncate", isAssigned ? "text-text" : "text-muted")}>{assignedName}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-muted" />
       </button>
       {open && (
         <div className="absolute left-0 top-full z-30 mt-1 w-48 max-h-60 overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-lg">
@@ -1105,8 +1115,11 @@ function ActionMenu({
       <button
         type="button"
         aria-label="Conversation actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="More conversation actions"
         onClick={() => setOpen((current) => !current)}
-        className="rounded-full p-2 text-muted hover:bg-bg hover:text-text"
+        className="flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-bg text-muted transition hover:bg-border hover:text-text focus:outline-none focus:ring-2 focus:ring-primary/20"
       >
         <MoreVertical className="h-5 w-5" />
       </button>
@@ -1419,10 +1432,21 @@ export function Composer({
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = ["audio/webm", "audio/mp4", "audio/ogg"].find((mime) =>
+      const nativeMimeType = ["audio/ogg", "audio/mp4"].find((mime) =>
         MediaRecorder.isTypeSupported(mime)
       );
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const recorder = nativeMimeType
+        ? new MediaRecorder(stream, { mimeType: nativeMimeType })
+        : new OpusMediaRecorder(
+            stream,
+            { mimeType: "audio/ogg" },
+            {
+              encoderWorkerFactory: () =>
+                new Worker("/opus-media-recorder/encoderWorker.umd.js"),
+              OggOpusEncoderWasmPath: "/opus-media-recorder/OggOpusEncoder.wasm",
+              WebMOpusEncoderWasmPath: "/opus-media-recorder/WebMOpusEncoder.wasm",
+            }
+          );
       const chunks: Blob[] = [];
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunks.push(event.data);
@@ -1432,12 +1456,9 @@ export function Composer({
         streamRef.current = null;
         recorderRef.current = null;
         if (discardRecordingRef.current) return;
-        const mime = recorder.mimeType || mimeType || "audio/ogg";
+        const mime = recorder.mimeType || nativeMimeType || "audio/ogg";
         if (!ACCEPTED_ATTACHMENT_TYPES.split(",").includes(mime)) {
-          toast(
-            "Voice notes recorded in this browser (.webm) aren't accepted by WhatsApp. Attach an .ogg, .mp3, or .m4a file instead.",
-            "error"
-          );
+          toast("This browser could not create a WhatsApp-compatible audio recording.", "error");
           return;
         }
         const blob = new Blob(chunks, { type: mime });
@@ -1445,7 +1466,7 @@ export function Composer({
           toast("Voice note exceeds the 25 MB upload limit.", "error");
           return;
         }
-        const extension = (mime.split("/")[1] ?? "ogg").replace("mp4", "m4a");
+        const extension = mime === "audio/ogg" ? "ogg" : mime === "audio/mp4" ? "m4a" : "mp3";
         setAttachment({
           file: new File([blob], `voice-note-${Date.now()}.${extension}`, { type: mime }),
           previewUrl: null,
@@ -1583,7 +1604,17 @@ export function Composer({
     } else {
       sendMutation.mutate(
         { body: trimmed, replied_to_message_id: replyTo?.id ?? null },
-        { onSuccess: () => clearDraft() }
+        {
+          onSuccess: () => clearDraft(),
+          onError: (error) => {
+            if (isGatewayRecoverableError(error)) {
+              toast(
+                "WhatsApp gateway is temporarily unavailable. Your message wasn't sent — it's still in the composer and will go out once the gateway is back.",
+                "error",
+              );
+            }
+          },
+        }
       );
     }
     onClearReply();
@@ -1952,6 +1983,7 @@ export function HeaderIconButton({
   active = false,
   hideOnSmall = false,
   className,
+  badge,
 }: {
   icon: typeof Phone;
   label: string;
@@ -1959,6 +1991,7 @@ export function HeaderIconButton({
   active?: boolean;
   hideOnSmall?: boolean;
   className?: string;
+  badge?: number;
 }) {
   return (
     <button
@@ -1967,13 +2000,18 @@ export function HeaderIconButton({
       aria-label={label}
       title={label}
       className={cn(
-        "flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-bg text-muted transition hover:bg-border hover:text-text focus:outline-none focus:ring-2 focus:ring-primary/20",
+        "relative flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-bg text-muted transition hover:bg-border hover:text-text focus:outline-none focus:ring-2 focus:ring-primary/20",
         active && "border-primary/40 bg-primary/10 text-primary",
         hideOnSmall ? "hidden 2xl:flex" : "flex",
         className
       )}
     >
       <Icon className="h-4 w-4" />
+      {badge != null && badge > 0 && (
+        <span className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-white">
+          {badge > 9 ? "9+" : String(badge)}
+        </span>
+      )}
     </button>
   );
 }
@@ -2016,7 +2054,7 @@ export function ChatHeader({
   const subtitle = contactSubtitle(conversation, contact);
 
   return (
-    <header className="flex h-14 min-h-[56px] shrink-0 items-center justify-between gap-2 border-b border-border bg-surface/95 px-4 py-2 backdrop-blur z-20">
+    <header className="flex h-[58px] shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-4 z-20">
       <div className="flex min-w-0 items-center gap-2">
         <Link
           href="/inbox"
@@ -2028,17 +2066,17 @@ export function ChatHeader({
         {children && <div className="flex items-center gap-2">{children}</div>}
       </div>
 
-      <div className="flex shrink-0 items-center justify-end gap-1.5">
+      <div className="flex shrink-0 items-center justify-end gap-2">
         <HeaderIconButton icon={Phone} label="Call customer" onClick={onCall} />
-        <HeaderIconButton icon={Search} label="Search messages" onClick={onSearch} />
+        <HeaderIconButton icon={Search} label="Search Conversation" onClick={onSearch} />
 
         {onTogglePin && (
           <HeaderIconButton
-            icon={Pin}
+            icon={isPinned ? Pin : PinOff}
             label={isPinned ? "Unpin conversation" : "Pin conversation"}
             onClick={onTogglePin}
             active={isPinned}
-            className={cn(isPinned && "text-primary rotate-45")}
+            className={cn(isPinned && "text-primary")}
           />
         )}
 
@@ -2046,9 +2084,10 @@ export function ChatHeader({
           <div className="relative" ref={labelPopoverRef}>
             <HeaderIconButton
               icon={Tag}
-              label="Labels"
+              label="Manage Tags"
               onClick={() => setShowLabels((v) => !v)}
               active={showLabels}
+              badge={conversation?.labels?.length ?? 0}
             />
             {showLabels && (
               <div className="absolute right-0 top-full z-40 mt-2 w-72 rounded-xl border border-border bg-surface p-3 shadow-2xl">
@@ -2066,7 +2105,7 @@ export function ChatHeader({
         {setShowAiSummary && (
           <HeaderIconButton
             icon={Sparkles}
-            label="AI conversation summary"
+            label="AI Actions"
             onClick={() => setShowAiSummary((v) => !v)}
             active={showAiSummary}
           />
@@ -2679,10 +2718,3 @@ export function ChatPanel({
     </div>
   );
 }
-
-
-
-
-
-
-

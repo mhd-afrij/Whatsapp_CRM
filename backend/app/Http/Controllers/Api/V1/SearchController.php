@@ -55,7 +55,7 @@ class SearchController extends Controller
 
         if ($category !== null) {
             $perPage = min(max((int) $request->integer('per_page', 15), 1), 100);
-            $paginator = $this->queryFor($category, $q)->paginate($perPage);
+            $paginator = $this->queryFor($category, $q, $user)->paginate($perPage);
 
             return $this->success([
                 'query' => $q,
@@ -75,7 +75,7 @@ class SearchController extends Controller
                 continue;
             }
 
-            $query = $this->queryFor($cat, $q);
+            $query = $this->queryFor($cat, $q, $user);
             $categories[$cat] = [
                 'items' => (clone $query)->limit(5)->get()->values(),
                 'total' => $query->count(),
@@ -128,7 +128,7 @@ class SearchController extends Controller
         return "+{$escaped}*";
     }
 
-    private function queryFor(string $category, string $q)
+    private function queryFor(string $category, string $q, $user)
     {
         $useFt = $this->useFulltext();
 
@@ -142,7 +142,7 @@ class SearchController extends Controller
                 ->search($q)
                 ->orderByDesc('id'),
 
-            'conversations' => $useFt
+            'conversations' => ($useFt
                 ? Conversation::query()
                     ->with(['contact', 'whatsappContact'])
                     ->where(function ($query) use ($q) {
@@ -152,7 +152,6 @@ class SearchController extends Controller
                                 ->whereNull('deleted_for_me_at')
                                 ->whereRaw('MATCH(body) AGAINST(? IN BOOLEAN MODE)', [$this->fulltextQuery($q)]));
                     })
-                    ->orderByDesc('last_message_at')
                 : Conversation::query()
                     ->with(['contact', 'whatsappContact'])
                     ->where(function ($query) use ($q) {
@@ -161,8 +160,11 @@ class SearchController extends Controller
                             ->orWhereHas('messages', fn ($m) => $m
                                 ->whereNull('deleted_for_me_at')
                                 ->where('body', 'like', "%{$q}%"));
-                    })
-                    ->orderByDesc('last_message_at'),
+                    }))
+                // Same agent/team boundary as the inbox: a search must never
+                // surface a conversation the user couldn't open from the list.
+                ->visibleTo($user)
+                ->orderByDesc('last_message_at'),
 
             'deals' => Deal::query()
                 ->with(['contact'])

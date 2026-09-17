@@ -69,6 +69,16 @@ class S3StorageClient implements StorageClient {
 
 let client: StorageClient | null = null;
 
+/**
+ * The provider label persisted alongside message media
+ * (message_media.storage_provider). Mirrors the client getStorageClient()
+ * returns so callers never hardcode a provider that contradicts the storage
+ * the gateway actually writes to.
+ */
+export function getStorageProviderName(): string {
+  return env.S3_BUCKET ? 's3' : 'local';
+}
+
 export function getStorageClient(): StorageClient {
   if (client) return client;
 

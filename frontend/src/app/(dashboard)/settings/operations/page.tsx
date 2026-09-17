@@ -171,13 +171,16 @@ function AwayMessageTab() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    if (workspace) {
-      setEnabled(workspace.away_message_enabled ?? false);
-      setMessage(workspace.away_message ?? "");
-      setTrigger(workspace.away_message_trigger ?? "outside_hours");
-    }
-  }, [workspace]);
+  // Adjust editable fields when the saved settings arrive/update (render-time
+  // state adjustment per react.dev/learn/you-might-not-need-an-effect - no
+  // cascading setState inside an effect body).
+  const [syncedSettings, setSyncedSettings] = useState<typeof workspace | undefined>(undefined);
+  if (workspace && workspace !== syncedSettings) {
+    setSyncedSettings(workspace);
+    setEnabled(workspace.away_message_enabled ?? false);
+    setMessage(workspace.away_message ?? "");
+    setTrigger(workspace.away_message_trigger ?? "outside_hours");
+  }
 
   const handleSave = async () => {
     setIsSaving(true);

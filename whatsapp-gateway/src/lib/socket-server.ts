@@ -5,6 +5,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { getRedisClient } from '../lib/redis';
+import { verifySocketToken, canJoinRoom, type SocketPrincipal } from './socket-auth';
 import type { ConnectionUpdatedEvent } from '../whatsapp/connection-manager';
 
 let io: SocketIOServer | null = null;
@@ -34,6 +35,12 @@ function envelope<T>(eventType: string, workspaceId: number, data: T): EventEnve
  * Sets up the /gateway Socket.IO namespace with the Redis adapter (see
  * docs/EVENT_CATALOG.md). Wired with the adapter even for a single gateway
  * instance so horizontal scaling is a config change, not a rewrite.
+ *
+ * Every connection is authenticated: the frontend sends its Laravel Sanctum
+ * Bearer token in `handshake.auth.token` (see socket-provider.tsx) and the
+ * gateway verifies it against the shared personal_access_tokens table. Only
+ * the room set belonging to the verified workspace (and the client's own
+ * per-user room) is joinable.
  */
 export function createSocketServer(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
@@ -46,17 +53,44 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
 
   const gatewayNamespace = io.of('/gateway');
 
+  gatewayNamespace.use(async (socket, next) => {
+    const principal = await verifySocketToken(socket.handshake.auth?.token);
+    if (!principal) {
+      return next(new Error('unauthorized'));
+    }
+    socket.data.principal = principal;
+    next();
+  });
+
   gatewayNamespace.on('connection', (socket) => {
-    logger.info({ socketId: socket.id }, 'Socket.IO client connected to /gateway');
+    const principal = socket.data.principal as SocketPrincipal;
+    logger.info(
+      { socketId: socket.id, userId: principal.userId, workspaceId: principal.workspaceId },
+      'Socket.IO client connected to /gateway',
+    );
+
+    // Auto-join the client to its own workspace room so workspace-level
+    // broadcasts (connection.updated, contact.*, sync.*) reach it without the
+    // client needing to issue a join first.
+    void socket.join(`workspace:${principal.workspaceId}`);
 
     socket.on('join', (room: string) => {
-      if (typeof room === 'string') {
+      // Never leak another workspace's (or another user's) room to this client.
+      if (typeof room === 'string' && canJoinRoom(principal.workspaceId, principal.userId, room)) {
         void socket.join(room);
+      } else {
+        logger.warn(
+          { socketId: socket.id, userId: principal.userId, room },
+          'Rejected Socket.IO join to a room outside the client workspace',
+        );
       }
     });
 
     socket.on('disconnect', () => {
-      logger.debug({ socketId: socket.id }, 'Socket.IO client disconnected from /gateway');
+      logger.debug(
+        { socketId: socket.id, userId: principal.userId, workspaceId: principal.workspaceId },
+        'Socket.IO client disconnected from /gateway',
+      );
     });
   });
 

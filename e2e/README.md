@@ -45,6 +45,7 @@ E2E_BASE_URL=http://localhost:3000 npx playwright test
 | `auth.spec.ts` | Login, password reset, invitation, role restriction, cross-workspace |
 | `inbox.spec.ts` | Conversation list, message sending, internal notes, contact update |
 | `crm.spec.ts` | Contact creation, leads, pipeline, deal creation |
+| `smoke.spec.ts` | Route smoke checks: dashboard widgets, core routes, contact drawer, mobile viewport |
 | `tasks.spec.ts` | Task list, task creation, priority/status filters |
 | `admin.spec.ts` | Dashboard, report export, audit log, user suspension |
 | `whatsapp.spec.ts` | WhatsApp connection, QR code, message lifecycle |

@@ -18,6 +18,16 @@ describe('normalizePhoneToJid', () => {
     expect(normalizePhoneToJid('+94 76 5655 026')).toBe('94765655026@s.whatsapp.net');
   });
 
+  it('never prefixes a country code onto an explicitly international number', () => {
+    expect(normalizePhoneToJid('+65 6123 4567')).toBe('6561234567@s.whatsapp.net');
+    expect(normalizePhoneToJid('0065 6123 4567')).toBe('6561234567@s.whatsapp.net');
+    expect(normalizePhoneToJid('+44 20 7946 0958')).toBe('442079460958@s.whatsapp.net');
+  });
+
+  it('keeps a short number that already starts with the configured country code', () => {
+    expect(normalizePhoneToJid('9477123456')).toBe('9477123456@s.whatsapp.net');
+  });
+
   it('renormalizes a bad stored JID on s.whatsapp.net', () => {
     expect(normalizePhoneToJid('0750144774@s.whatsapp.net')).toBe('94750144774@s.whatsapp.net');
   });

@@ -21,9 +21,24 @@ export interface ApiFailure {
   message: string;
   errors?: Record<string, string[]> | string[] | null;
   code?: string | null;
+  data?: Record<string, unknown> | null;
 }
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
+
+/**
+ * Stable gateway failure codes the backend returns (HTTP 502) when the
+ * whatsapp-gateway service could not be reached or is not ready. These are
+ * *recoverable* - a temporary outage, not a permanent app error - so the
+ * frontend maps them to a "gateway unavailable" WhatsApp connection state
+ * instead of surfacing an unhandled error. Any other 502 with a different
+ * code still flows through the normal (non-recoverable) error path.
+ */
+export const GATEWAY_RECOVERABLE_CODES: ReadonlySet<string> = new Set([
+  "GATEWAY_UNREACHABLE",
+  "GATEWAY_TIMEOUT",
+  "GATEWAY_UNAVAILABLE",
+]);
 
 /**
  * Normalized error shape thrown by this client for every failed request,
@@ -34,6 +49,14 @@ export class ApiError extends Error {
   status: number | null;
   code: string | null;
   errors: Record<string, string[]> | string[] | null;
+  data: Record<string, unknown> | null;
+  /**
+   * True only for a standardized 502 with a recoverable gateway code
+   * (GATEWAY_UNREACHABLE / GATEWAY_TIMEOUT / GATEWAY_UNAVAILABLE). Lets
+   * callers treat a temporary WhatsApp-gateway outage as a recoverable
+   * connection state rather than a fatal API error.
+   */
+  recoverable: boolean;
 
   constructor(
     message: string,
@@ -41,6 +64,8 @@ export class ApiError extends Error {
       status?: number | null;
       code?: string | null;
       errors?: Record<string, string[]> | string[] | null;
+      data?: Record<string, unknown> | null;
+      recoverable?: boolean;
     } = {}
   ) {
     super(message);
@@ -48,7 +73,23 @@ export class ApiError extends Error {
     this.status = opts.status ?? null;
     this.code = opts.code ?? null;
     this.errors = opts.errors ?? null;
+    this.data = opts.data ?? null;
+    this.recoverable = opts.recoverable ?? false;
   }
+}
+
+/**
+ * True when an error represents a temporary WhatsApp-gateway outage that the
+ * rest of the app should treat as recoverable (show the gateway-unavailable
+ * state, keep retrying) rather than as a fatal error.
+ */
+export function isGatewayRecoverableError(error: unknown): error is ApiError {
+  return (
+    error instanceof ApiError &&
+    error.recoverable &&
+    error.code !== null &&
+    GATEWAY_RECOVERABLE_CODES.has(error.code)
+  );
 }
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
@@ -108,12 +149,24 @@ apiClient.interceptors.response.use(
         }
       }
 
+      const code = data?.code ?? null;
+      // A 502 with a recoverable gateway code means the WhatsApp gateway is
+      // temporarily unavailable. Mark it so the app can keep a recoverable
+      // "gateway unavailable" state and keep retrying instead of treating it
+      // as a fatal API error. Every other 502 flows through unchanged.
+      const recoverable =
+        status === 502 &&
+        code !== null &&
+        GATEWAY_RECOVERABLE_CODES.has(code);
+
       const message = data?.message || error.message || "Request failed";
       return Promise.reject(
         new ApiError(message, {
           status,
-          code: data?.code ?? null,
+          code,
           errors: data?.errors ?? null,
+          data: data?.data ?? null,
+          recoverable,
         })
       );
     }
@@ -151,7 +204,10 @@ export async function unwrap<T>(promise: Promise<{ data: ApiResponse<T> }>): Pro
       errors: envelope.errors ?? null,
     });
   }
-  return envelope.data as T;
+  // Many destructive/mutation endpoints return a successful response with an
+  // intentionally empty `data` (e.g. `data: null`). Those are still successes
+  // and must not be treated as failures.
+  return (envelope.data ?? null) as T;
 }
 
 export default apiClient;

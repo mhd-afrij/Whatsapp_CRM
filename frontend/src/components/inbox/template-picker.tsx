@@ -35,9 +35,13 @@ export function TemplatePicker({ onSelect, onClose }: TemplatePickerProps) {
     inputRef.current?.focus();
   }, []);
 
-  useEffect(() => {
+  // Reset the highlighted row when the search text changes (render-time state
+  // adjustment per react.dev/learn/you-might-not-need-an-effect).
+  const [prevSearch, setPrevSearch] = useState(search);
+  if (search !== prevSearch) {
+    setPrevSearch(search);
     setSelectedIndex(0);
-  }, [search]);
+  }
 
   useEffect(() => {
     const list = listRef.current;

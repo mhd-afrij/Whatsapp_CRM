@@ -57,7 +57,7 @@ export default function FailedJobsPage() {
           disabled={retryAllMutation.isPending || items.length === 0}
           className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
         >
-          Retry All ({items.length})
+          Retry All ({data?.total ?? 0})
         </button>
       </div>
 
@@ -118,13 +118,17 @@ export default function FailedJobsPage() {
                 </div>
                 {expandedId === job.id && (
                   <div className="mt-3 max-h-60 overflow-auto rounded bg-muted p-3 font-mono text-sm">
+                    {job.command_name && (
+                      <div className="mb-2">
+                        <strong>Command:</strong>
+                        <div className="mt-1 whitespace-pre-wrap">{job.command_name}</div>
+                      </div>
+                    )}
                     <div className="mb-2">
-                      <strong>Exception:</strong>
-                      <pre className="mt-1 whitespace-pre-wrap text-destructive">{job.exception}</pre>
-                    </div>
-                    <div>
-                      <strong>Payload:</strong>
-                      <pre className="mt-1 whitespace-pre-wrap">{JSON.stringify(job.payload, null, 2)}</pre>
+                      <strong>Exception preview:</strong>
+                      <pre className="mt-1 whitespace-pre-wrap text-destructive">
+                        {job.exception_preview ?? 'No exception recorded.'}
+                      </pre>
                     </div>
                   </div>
                 )}
