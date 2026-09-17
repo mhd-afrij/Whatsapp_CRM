@@ -41,6 +41,7 @@ export async function processOneMessage(
   workspaceId: number,
   raw: BaileysRawMessage,
   options: ProcessOneMessageOptions = {},
+  accountId: number | null = null,
 ): Promise<MessageProcessOutcome> {
   const live = options.live ?? true;
   const whatsappMessageId = raw.key.id ?? 'unknown';
@@ -61,7 +62,7 @@ export async function processOneMessage(
       logger.warn({ workspaceId, whatsappMessageId, reason: result.reason }, 'Recording unsupported message');
       try {
         const contact = await repository.findOrCreateWhatsappContact(workspaceId, waJid, raw.pushName ?? null);
-        const conversation = await repository.findOrCreateConversation(workspaceId, contact.id);
+        const conversation = await repository.findOrCreateConversation(workspaceId, contact.id, accountId);
         const inserted = await repository.insertInboundMessage(
           workspaceId,
           conversation.id,
@@ -93,7 +94,7 @@ export async function processOneMessage(
 
     const isFromMe = Boolean(raw.key.fromMe);
     const contact = await repository.findOrCreateWhatsappContact(workspaceId, waJid, raw.pushName ?? null);
-    const conversation = await repository.findOrCreateConversation(workspaceId, contact.id);
+    const conversation = await repository.findOrCreateConversation(workspaceId, contact.id, accountId);
 
     let insertResult: { messageId: number } | null = null;
     try {
@@ -105,13 +106,14 @@ export async function processOneMessage(
           repliedToWhatsappMessageId: result.normalized.repliedToWhatsappMessageId,
           status: 'delivered',
           sentAt: result.normalized.sentAt,
-        });
+        }, accountId);
       } else {
         insertResult = await repository.insertInboundMessage(
           workspaceId,
           conversation.id,
           result.normalized,
           { incrementUnread: live },
+          accountId,
         );
       }
     } catch (err) {
@@ -126,6 +128,7 @@ export async function processOneMessage(
     if (result.normalized.media && !isFromMe) {
       await enqueueMediaDownload({
         workspaceId,
+        accountId,
         messageId: insertResult.messageId,
         whatsappMessageId,
         rawMessage: raw,
@@ -139,6 +142,7 @@ export async function processOneMessage(
         message: {
           id: insertResult.messageId,
           conversationId: conversation.id,
+          accountId,
           direction: isFromMe ? 'outbound' : 'inbound',
           messageType: result.normalized.messageType,
           body: result.normalized.body,
@@ -164,10 +168,11 @@ export async function processOneMessage(
 export async function handleMessagesUpsert(
   workspaceId: number,
   payload: BaileysMessagesUpsert,
+  accountId: number | null = null,
 ): Promise<void> {
   if (payload.type !== 'notify' && payload.type !== 'append') return;
 
   for (const raw of payload.messages) {
-    await processOneMessage(workspaceId, raw, { live: true });
+    await processOneMessage(workspaceId, raw, { live: true }, accountId);
   }
 }

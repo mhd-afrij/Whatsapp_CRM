@@ -20,3 +20,11 @@ process.env.SESSION_LEASE_MS = '30000';
 process.env.SESSION_HEARTBEAT_INTERVAL_MS = '10000';
 process.env.LOG_LEVEL = 'silent';
 process.env.AZURE_STORAGE_URL_EXPIRY_SECONDS = '300';
+// Deterministic storage mode for tests: object storage must default to the
+// local-disk driver unless a test explicitly opts into S3 mode. Without this,
+// a developer's .env leaking S3_* values into the shell flips media access
+// into signed-URL mode and breaks local-file expectations.
+delete process.env.S3_BUCKET;
+delete process.env.S3_ENDPOINT;
+delete process.env.S3_ACCESS_KEY_ID;
+delete process.env.S3_SECRET_ACCESS_KEY;

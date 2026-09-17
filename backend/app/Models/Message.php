@@ -15,7 +15,7 @@ class Message extends Model
     use BelongsToWorkspace, ReadOnlyFromBackend;
 
     protected $fillable = [
-        'workspace_id', 'conversation_id', 'whatsapp_message_id', 'direction', 'sender_type',
+        'workspace_id', 'whatsapp_account_id', 'conversation_id', 'whatsapp_message_id', 'direction', 'sender_type',
         'sender_user_id', 'message_type', 'body', 'status', 'replied_to_message_id',
         'is_deleted_for_everyone', 'sent_at', 'starred_at', 'delivered_at', 'read_at', 'deleted_for_me_at',
     ];
@@ -23,6 +23,7 @@ class Message extends Model
     protected function casts(): array
     {
         return [
+            'whatsapp_account_id' => 'integer',
             'is_deleted_for_everyone' => 'boolean',
             'sent_at' => 'datetime',
             'starred_at' => 'datetime',

@@ -16,6 +16,7 @@ export interface AdvancedFilters {
   label?: string;
   dealStage?: string;
   dateRange?: { from: Date; to: Date };
+  whatsappAccountId?: number;
 }
 
 export function useConversationFilters() {
@@ -54,6 +55,8 @@ export function useConversationFilters() {
         advanced.dateRange = { from, to };
       }
     }
+    const waAccountId = searchParams.get("whatsappAccountId");
+    if (waAccountId) advanced.whatsappAccountId = parseInt(waAccountId, 10);
 
     setAdvancedFilters(advanced);
   }
@@ -72,6 +75,7 @@ export function useConversationFilters() {
       params.set("dateFrom", filters.dateRange.from.toISOString());
       params.set("dateTo", filters.dateRange.to.toISOString());
     }
+    if (filters.whatsappAccountId) params.set("whatsappAccountId", String(filters.whatsappAccountId));
 
     router.replace(`?${params.toString()}`, { scroll: false });
   };
@@ -102,6 +106,7 @@ export function useConversationFilters() {
     }),
     ...(advancedFilters.label && { label: advancedFilters.label }),
     ...(advancedFilters.team && { team_id: parseInt(advancedFilters.team) || undefined }),
+    ...(advancedFilters.whatsappAccountId && { whatsapp_account_id: advancedFilters.whatsappAccountId }),
     ...(advancedFilters.dealStage && { deal_stage: advancedFilters.dealStage }),
     ...(advancedFilters.dateRange && {
       date_from: advancedFilters.dateRange.from.toISOString(),

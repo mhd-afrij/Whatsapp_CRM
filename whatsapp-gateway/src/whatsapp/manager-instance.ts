@@ -1,7 +1,5 @@
-import { ConnectionManager } from './connection-manager';
-import { SessionLockRepository } from './session-lock-repository';
-import { env } from '../config/env';
-import { emitConnectionUpdated } from '../lib/socket-server';
+import { ConnectionManagerRegistry } from './connection-manager-registry';
+import { ConnectionManager, PairingCodeError } from './connection-manager';
 import { logger } from '../lib/logger';
 import type {
   BaileysContactsUpsert,
@@ -11,94 +9,87 @@ import type {
   BaileysPhoneNumberShare,
 } from './baileys-socket';
 
+export { PairingCodeError };
+
 /**
- * Process-wide singleton ConnectionManager. Emits every internal
- * connection.updated event onto the Socket.IO /gateway namespace, and
- * dispatches inbound message/status events into the Phase 5 sync pipeline.
+ * Process-wide singleton ConnectionManagerRegistry. Owns one
+ * ConnectionManager per WhatsApp account across all workspaces this gateway
+ * serves. Emits every internal connection.updated event onto the Socket.IO
+ * /gateway namespace, and dispatches inbound message/status events into the
+ * sync pipeline tagged with the originating account.
  *
  * Session-lock coordination (workspace_sync_assignments) is wired in only
- * when SESSION_LOCK_ENABLED=true - a single-instance deployment needs no
- * coordination and gets zero extra DB work (see src/config/env.ts).
+ * when SESSION_LOCK_ENABLED=true.
  */
-export const connectionManager = new ConnectionManager(
-  env.SESSION_LOCK_ENABLED
-    ? {
-        lockRepository: new SessionLockRepository(),
-        gatewayInstanceId: env.GATEWAY_INSTANCE_ID,
-        sessionLockLeaseMs: env.SESSION_LEASE_MS,
-        sessionLockHeartbeatMs: env.SESSION_HEARTBEAT_INTERVAL_MS,
-        socketConfig: {
-          ...(env.WHATSAPP_KEEPALIVE_INTERVAL_MS !== undefined
-            ? { keepAliveIntervalMs: env.WHATSAPP_KEEPALIVE_INTERVAL_MS }
-            : {}),
-        },
-      }
-    : {
-        socketConfig: {
-          ...(env.WHATSAPP_KEEPALIVE_INTERVAL_MS !== undefined
-            ? { keepAliveIntervalMs: env.WHATSAPP_KEEPALIVE_INTERVAL_MS }
-            : {}),
-        },
-      },
-);
+export const connectionRegistry = new ConnectionManagerRegistry();
 
-connectionManager.on('connection.updated', (payload) => {
-  emitConnectionUpdated(payload.workspaceId, payload);
+/**
+ * Legacy singleton-account manager, kept for backward compatibility where no
+ * account is selected (health checks, single-session boot paths, tests).
+ * New code should prefer connectionRegistry.getOrCreate(workspaceId, accountId).
+ */
+export const connectionManager = new ConnectionManager();
 
-  // A QR prompt means a brand-new pairing is starting (fresh session or
-  // re-auth after logout): clear any previous account's history-sync run so
-  // its summary does not linger on the UI once a different number links.
-  if (payload.status === 'qr_pending') {
-    void import('./history-sync')
-      .then(({ clearWorkspaceRun }) => clearWorkspaceRun(payload.workspaceId))
-      .catch((err) => logger.warn({ err }, 'Failed to clear history-sync state on QR pairing'));
-  }
+/**
+ * When a new manager is created in the registry, wire its Baileys events to
+ * the Socket.IO layer and sync pipeline. Each manager is an independent
+ * EventEmitter; the listener attachment is idempotent (one per manager).
+ */
+connectionRegistry.on('manager:created', (manager: ConnectionManager) => {
+  manager.on('connection.updated', (payload) => {
+    void import('../lib/socket-server')
+      .then(({ emitConnectionUpdated }) => emitConnectionUpdated(payload.workspaceId, payload))
+      .catch((err) => logger.warn({ err }, 'Failed to emit connection.updated'));
+
+    if (payload.status === 'qr_pending') {
+      void import('./history-sync')
+        .then(({ clearWorkspaceRun }) => clearWorkspaceRun(payload.workspaceId, payload.accountId))
+        .catch((err) => logger.warn({ err }, 'Failed to clear history-sync state on QR pairing'));
+    }
+  });
+
+  manager.on(
+    'messages.upsert',
+    ({ workspaceId, accountId, payload }: { workspaceId: number; accountId: number | null; payload: BaileysMessagesUpsert }) => {
+      void import('./inbound-pipeline')
+        .then(({ handleMessagesUpsert }) => handleMessagesUpsert(workspaceId, payload, accountId))
+        .catch((err) => logger.error({ err }, 'Unhandled error in inbound message pipeline'));
+    },
+  );
+
+  manager.on(
+    'messages.update',
+    ({ workspaceId, accountId, payload }: { workspaceId: number; accountId: number | null; payload: BaileysMessageUpdate[] }) => {
+      void import('./status-pipeline')
+        .then(({ handleMessagesUpdate }) => handleMessagesUpdate(workspaceId, payload, accountId))
+        .catch((err) => logger.error({ err }, 'Unhandled error in message status pipeline'));
+    },
+  );
+
+  manager.on(
+    'contacts.upsert',
+    ({ workspaceId, accountId, payload }: { workspaceId: number; accountId: number | null; payload: BaileysContactsUpsert }) => {
+      void import('./contacts-pipeline')
+        .then(({ handleContactsUpsert }) => handleContactsUpsert(workspaceId, payload, accountId))
+        .catch((err) => logger.error({ err }, 'Unhandled error in contacts upsert pipeline'));
+    },
+  );
+
+  manager.on(
+    'chats.phoneNumberShare',
+    ({ workspaceId, accountId, payload }: { workspaceId: number; accountId: number | null; payload: BaileysPhoneNumberShare }) => {
+      void import('./contacts-pipeline')
+        .then(({ handlePhoneNumberShare }) => handlePhoneNumberShare(workspaceId, payload, accountId))
+        .catch((err) => logger.error({ err }, 'Unhandled error in phone-number-share pipeline'));
+    },
+  );
+
+  manager.on(
+    'messaging-history.set',
+    ({ workspaceId, accountId, payload }: { workspaceId: number; accountId: number | null; payload: BaileysMessagingHistorySet }) => {
+      void import('./history-sync')
+        .then(({ handleMessagingHistorySet }) => handleMessagingHistorySet(workspaceId, payload, accountId))
+        .catch((err) => logger.error({ err }, 'Unhandled error in messaging-history.set pipeline'));
+    },
+  );
 });
-
-connectionManager.on(
-  'messages.upsert',
-  ({ workspaceId, payload }: { workspaceId: number; payload: BaileysMessagesUpsert }) => {
-    void import('./inbound-pipeline')
-      .then(({ handleMessagesUpsert }) => handleMessagesUpsert(workspaceId, payload))
-      .catch((err) => logger.error({ err }, 'Unhandled error in inbound message pipeline'));
-  },
-);
-
-connectionManager.on(
-  'messages.update',
-  ({ workspaceId, payload }: { workspaceId: number; payload: BaileysMessageUpdate[] }) => {
-    void import('./status-pipeline')
-      .then(({ handleMessagesUpdate }) => handleMessagesUpdate(workspaceId, payload))
-      .catch((err) => logger.error({ err }, 'Unhandled error in message status pipeline'));
-  },
-);
-
-connectionManager.on(
-  'contacts.upsert',
-  ({ workspaceId, payload }: { workspaceId: number; payload: BaileysContactsUpsert }) => {
-    void import('./contacts-pipeline')
-      .then(({ handleContactsUpsert }) => handleContactsUpsert(workspaceId, payload))
-      .catch((err) => logger.error({ err }, 'Unhandled error in contacts upsert pipeline'));
-  },
-);
-
-connectionManager.on(
-  'chats.phoneNumberShare',
-  ({ workspaceId, payload }: { workspaceId: number; payload: BaileysPhoneNumberShare }) => {
-    void import('./contacts-pipeline')
-      .then(({ handlePhoneNumberShare }) => handlePhoneNumberShare(workspaceId, payload))
-      .catch((err) => logger.error({ err }, 'Unhandled error in phone-number-share pipeline'));
-  },
-);
-
-connectionManager.on(
-  'messaging-history.set',
-  ({ workspaceId, payload }: { workspaceId: number; payload: BaileysMessagingHistorySet }) => {
-    // Historical import is coordinated by history-sync.ts: same idempotent
-    // persistence as live messages, but tracked as a sync run with progress
-    // state/events (see docs/EVENT_CATALOG.md) instead of per-message fan-out.
-    void import('./history-sync')
-      .then(({ handleMessagingHistorySet }) => handleMessagingHistorySet(workspaceId, payload))
-      .catch((err) => logger.error({ err }, 'Unhandled error in messaging-history.set pipeline'));
-  },
-);

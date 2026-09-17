@@ -42,7 +42,32 @@ export interface SessionRow extends RowDataPacket {
  * a real MySQL connection.
  */
 export class SessionRepository {
-  async getOrCreateSession(workspaceId: number): Promise<SessionRow> {
+  async getOrCreateSession(workspaceId: number, accountId?: number | null): Promise<SessionRow> {
+    if (accountId) {
+      const [rows] = await query<SessionRow[]>(
+        'SELECT * FROM whatsapp_sessions WHERE workspace_id = ? AND whatsapp_account_id = ? LIMIT 1',
+        [workspaceId, accountId],
+      );
+
+      if (rows.length > 0) {
+        return rows[0];
+      }
+
+      const result = await execute(
+        `INSERT INTO whatsapp_sessions (workspace_id, whatsapp_account_id, status, created_at, updated_at)
+         VALUES (?, ?, 'initializing', NOW(), NOW())`,
+        [workspaceId, accountId],
+      );
+
+      const [created] = await query<SessionRow[]>(
+        'SELECT * FROM whatsapp_sessions WHERE id = ? LIMIT 1',
+        [result.insertId],
+      );
+
+      return created[0];
+    }
+
+    // Legacy fallback: workspace-only (no account specified).
     const [rows] = await query<SessionRow[]>(
       'SELECT * FROM whatsapp_sessions WHERE workspace_id = ? LIMIT 1',
       [workspaceId],
@@ -64,6 +89,21 @@ export class SessionRepository {
     );
 
     return created[0];
+  }
+
+  /**
+   * Returns all active whatsapp_connections rows for a workspace, used by the
+   * ConnectionManagerRegistry to restore sessions on boot.
+   */
+  async findActiveAccountsForWorkspace(workspaceId: number): Promise<RowDataPacket[]> {
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT id AS account_id, workspace_id, name, status, session_id
+       FROM whatsapp_connections
+       WHERE workspace_id = ? AND status != 'failed'
+       ORDER BY id`,
+      [workspaceId],
+    );
+    return rows;
   }
 
   async updateStatus(

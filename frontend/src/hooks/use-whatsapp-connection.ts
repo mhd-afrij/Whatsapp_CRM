@@ -20,6 +20,7 @@ import {
 
 export const WHATSAPP_STATUS_KEY = ["whatsapp", "status"] as const;
 export const WHATSAPP_HISTORY_KEY = ["whatsapp", "connection-history"] as const;
+export const WHATSAPP_ACCOUNT_STATUS_KEY = (accountId: number) => ["whatsapp", "accounts", accountId, "connection-status"] as const;
 
 const GATEWAY_RETRY_DELAY_MS = 5_000;
 
@@ -54,9 +55,17 @@ export function useWhatsappStatus(options: { enabled?: boolean } = {}) {
 
   useEffect(() => {
     if (!socket || !enabled || !user?.workspace_id) return;
-    const handleUpdate = (payload: WhatsappStatus) => {
+    const handleUpdate = (payload: WhatsappStatus & { accountId?: number | null }) => {
       queryClient.setQueryData(WHATSAPP_STATUS_KEY, payload);
       queryClient.invalidateQueries({ queryKey: WHATSAPP_HISTORY_KEY });
+      // Also update the per-account status cache if accountId is present
+      if (payload.accountId !== undefined && payload.accountId !== null) {
+        queryClient.setQueryData(WHATSAPP_ACCOUNT_STATUS_KEY(payload.accountId), (current: unknown) => {
+          const base = (current as WhatsappStatus | undefined) ??
+            ({ status: "idle", qrCode: null, qrExpiresAt: null, phoneNumber: null } as WhatsappStatus);
+          return { ...base, ...payload };
+        });
+      }
     };
     const refreshStatus = () => {
       void queryClient.invalidateQueries({ queryKey: WHATSAPP_STATUS_KEY });

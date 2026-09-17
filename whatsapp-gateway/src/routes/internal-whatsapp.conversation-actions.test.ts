@@ -17,11 +17,22 @@ vi.mock('../lib/storage', () => ({
 
 const manager = vi.hoisted(() => ({
   sendContent: vi.fn().mockResolvedValue({ id: 'forwarded-wa-id-1' }),
+  sendPresenceUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../whatsapp/manager-instance', () => ({
   connectionManager: {
-    getSnapshot: vi.fn().mockReturnValue({}),
+    getSnapshot: vi.fn().mockReturnValue({ status: 'connected' }),
+    getSocket: vi.fn().mockReturnValue(null),
     sendContent: manager.sendContent,
+    sendPresenceUpdate: manager.sendPresenceUpdate,
+  },
+  connectionRegistry: {
+    getOrCreate: vi.fn().mockReturnValue({
+      getSnapshot: () => ({ accountId: null, status: 'connected' }),
+      getSocket: () => null,
+      sendContent: manager.sendContent,
+      sendPresenceUpdate: manager.sendPresenceUpdate,
+    }),
   },
 }));
 
@@ -48,7 +59,9 @@ const repo = vi.hoisted(() => ({
   setMessageStarred: vi.fn(),
   markMessageDeletedForMe: vi.fn(),
   getConversationJid: vi.fn(),
+  getConversationAccount: vi.fn(),
   getMessageIdByWhatsappMessageId: vi.fn(),
+  findMessageByWhatsappId: vi.fn().mockResolvedValue(null),
   markMessageAsDeleted: vi.fn(),
   findMessageMediaByMessageId: vi.fn(),
   insertOutboundMessage: vi.fn(),
@@ -80,6 +93,10 @@ describe('conversation actions (mark-unread, read, star, forward)', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     repo.getConversationJid.mockResolvedValue('2547000000@s.whatsapp.net');
+    // Default: legacy conversation with no owning account -> operations keep
+    // flowing through the legacy workspace manager (compat path). Ownership
+    // tests override this per case.
+    repo.getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: null });
     repo.insertOutboundMessage.mockResolvedValue({ messageId: 77 });
 
     const app = express();
@@ -266,7 +283,7 @@ describe('conversation actions (mark-unread, read, star, forward)', () => {
         body: 'forward me',
         messageType: 'text',
         status: 'sent',
-      });
+      }, null);
       expect(repo.insertMessageMedia).not.toHaveBeenCalled();
       expect(socket.emitMessageCreated).toHaveBeenCalledTimes(1);
     });
@@ -382,5 +399,114 @@ describe('conversation actions (mark-unread, read, star, forward)', () => {
       body: JSON.stringify({ workspaceId: 1 }),
     });
     expect(res.status).toBe(401);
+  });
+
+  // ------------------------------------------------------------------
+  // Phase 5.4 - conversation ownership enforcement (cross-account)
+  // ------------------------------------------------------------------
+
+  describe('account ownership enforcement', () => {
+    it('rejects a revoke whose accountId conflicts with the conversation owner', async () => {
+      repo.getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: 2 });
+
+      const res = await call('POST', '/messages/revoke', {
+        conversationId: 10,
+        workspaceId: 1,
+        waJid: '2547000000@s.whatsapp.net',
+        whatsappMessageId: 'WA_X',
+        accountId: 1,
+      });
+
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { data: { code: string } };
+      expect(body.data.code).toBe('ACCOUNT_OWNERSHIP_MISMATCH');
+      expect(manager.sendContent).not.toHaveBeenCalled();
+    });
+
+    it('sends a reaction from the conversation-owning account, not the caller preference', async () => {
+      // Conversation owned by account 3; no accountId in the request. The
+      // reaction route tolerates a message row that is no longer resolvable
+      // (the fake repo returns undefined) - the WhatsApp send still happens.
+      repo.getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: 3 });
+
+      const res = await call('POST', '/messages/reaction', {
+        conversationId: 10,
+        workspaceId: 1,
+        waJid: '2547000000@s.whatsapp.net',
+        whatsappMessageId: 'WA_R1',
+        emoji: '👍',
+      });
+
+      expect(res.status).toBe(200);
+      expect(manager.sendContent).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a reaction claimed by a foreign account', async () => {
+      repo.getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: 3 });
+
+      const res = await call('POST', '/messages/reaction', {
+        conversationId: 10,
+        workspaceId: 1,
+        waJid: '2547000000@s.whatsapp.net',
+        whatsappMessageId: 'WA_R2',
+        emoji: '👍',
+        accountId: 9,
+      });
+
+      expect(res.status).toBe(409);
+      expect(manager.sendContent).not.toHaveBeenCalled();
+    });
+
+    it('routes typing through the owning account and rejects a conflict', async () => {
+      repo.getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: 4 });
+
+      const ok = await call('POST', '/typing', {
+        conversationId: 10,
+        workspaceId: 1,
+        waJid: '2547000000@s.whatsapp.net',
+        isTyping: true,
+      });
+      expect(ok.status).toBe(200);
+      expect(manager.sendPresenceUpdate).toHaveBeenCalledWith('composing', '2547000000@s.whatsapp.net');
+
+      const conflict = await call('POST', '/typing', {
+        conversationId: 10,
+        workspaceId: 1,
+        waJid: '2547000000@s.whatsapp.net',
+        isTyping: true,
+        accountId: 5,
+      });
+      expect(conflict.status).toBe(409);
+      expect(manager.sendPresenceUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('forwards using the TARGET conversation account and rejects conflicts', async () => {
+      // Target conversation owned by account 6; source message is workspace-1.
+      repo.getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: 6 });
+      repo.findMessageById.mockResolvedValueOnce({
+        id: 1,
+        workspace_id: 1,
+        conversation_id: 99,
+        message_type: 'text',
+        body: 'forward me',
+      });
+
+      const res = await call('POST', '/conversations/10/messages/forward', {
+        workspaceId: 1,
+        sourceMessageId: 1,
+      });
+      expect(res.status).toBe(201);
+      // Outbound insert must carry the TARGET conversation's account.
+      expect(repo.insertOutboundMessage).toHaveBeenCalledWith(1, 10, expect.anything(), 6);
+
+      const conflict = await call('POST', '/conversations/10/messages/forward', {
+        workspaceId: 1,
+        sourceMessageId: 1,
+        accountId: 2,
+      });
+      expect(conflict.status).toBe(409);
+      // Only the first (allowed) forward produced a send.
+      expect(manager.sendContent).toHaveBeenCalledTimes(1);
+    });
   });
 });

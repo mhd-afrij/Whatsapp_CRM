@@ -26,13 +26,18 @@ const STATUS_RANK: Record<MessageStatus, number> = {
 export async function handleMessagesUpdate(
   workspaceId: number,
   updates: BaileysMessageUpdate[],
+  accountId: number | null = null,
 ): Promise<void> {
   for (const update of updates) {
-    await processOneStatusUpdate(workspaceId, update);
+    await processOneStatusUpdate(workspaceId, update, accountId);
   }
 }
 
-async function processOneStatusUpdate(workspaceId: number, update: BaileysMessageUpdate): Promise<void> {
+async function processOneStatusUpdate(
+  workspaceId: number,
+  update: BaileysMessageUpdate,
+  accountId: number | null,
+): Promise<void> {
   const whatsappMessageId = update.key.id;
   const statusCode = update.update.status;
   if (!whatsappMessageId || statusCode === undefined || !(statusCode in STATUS_CODE_MAP)) return;
