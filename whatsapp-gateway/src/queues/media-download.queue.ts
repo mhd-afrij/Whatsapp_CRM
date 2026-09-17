@@ -5,13 +5,15 @@ import { logger } from '../lib/logger';
 import { env } from '../config/env';
 import { getStorageClient, getStorageProviderName } from '../lib/storage';
 import { MessageRepository } from '../whatsapp/message-repository';
-import { connectionManager } from '../whatsapp/manager-instance';
+import { connectionManager, connectionRegistry } from '../whatsapp/manager-instance';
+import type { ConnectionManager } from '../whatsapp/connection-manager';
 import type { BaileysRawMessage } from '../whatsapp/baileys-socket';
 
 export const MEDIA_DOWNLOAD_QUEUE_NAME = 'media-download';
 
 export interface MediaDownloadJobData {
   workspaceId: number;
+  accountId: number | null;
   messageId: number;
   whatsappMessageId: string;
   rawMessage: BaileysRawMessage;
@@ -70,13 +72,36 @@ const SOCKET_POLL_INTERVAL_MS = 2_000;
  * `timeoutMs`, returning null if the connection never comes back. Polling
  * beats subscribing to connection.updated events here: the socket may already
  * be mid-reconnect when the job starts, and the poll cannot miss an event.
+ *
+ * Phase 5.5 - account isolation: a job carrying an accountId resolves ONLY
+ * that account's manager in the registry for the job's own workspace - it
+ * never touches another account's socket and never falls back to the legacy
+ * singleton. A null accountId is the controlled legacy path (pre-multi-
+ * account jobs still in flight) and routes to the legacy workspace manager
+ * with a deprecation warning; it must not grow.
  */
 export async function waitForMediaDownloader(
   timeoutMs: number = WAIT_FOR_SOCKET_MS,
+  accountId: number | null = null,
+  workspaceId: number = env.WHATSAPP_WORKSPACE_ID,
 ): Promise<((message: unknown) => Promise<Buffer>) | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const downloader = connectionManager.getMediaDownloader();
+    let manager: ConnectionManager | null;
+    if (accountId) {
+      // Strict: no manager creation, no legacy fallback. If the account's
+      // session is not running in this gateway process the job must wait
+      // (like a disconnect) or fail - it must never download through a
+      // different account's socket.
+      manager = connectionRegistry.get(workspaceId, accountId) ?? null;
+    } else {
+      logger.warn(
+        { event: 'legacy_account_fallback', workspaceId, messageId: 'media_download' },
+        'Media download job without accountId; polling the legacy workspace manager (deprecated)',
+      );
+      manager = connectionManager;
+    }
+    const downloader = manager?.getMediaDownloader() ?? null;
     if (downloader) {
       return downloader;
     }
@@ -86,9 +111,10 @@ export async function waitForMediaDownloader(
 }
 
 async function processMediaDownload(job: Job<MediaDownloadJobData>): Promise<void> {
-  const { workspaceId, messageId, whatsappMessageId, rawMessage, mimeType } = job.data;
+  const { workspaceId, accountId, messageId, whatsappMessageId, rawMessage, mimeType } = job.data;
 
-  const downloader = await waitForMediaDownloader();
+  // Account-scoped: wait for THIS account's socket, in THIS job's workspace.
+  const downloader = await waitForMediaDownloader(undefined, accountId, workspaceId);
   if (!downloader) {
     throw new Error(
       `No active WhatsApp socket to download media from (waited ${WAIT_FOR_SOCKET_MS / 60_000} minutes for a reconnect)`,

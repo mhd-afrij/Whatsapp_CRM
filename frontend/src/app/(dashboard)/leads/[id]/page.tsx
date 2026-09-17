@@ -119,6 +119,14 @@ function LeadDetail({ id }: { id: number }) {
             <dt className="text-muted">Contact phone</dt>
             <dd className="text-text">{lead.contact?.phone_number || "—"}</dd>
           </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-muted">Next follow-up</dt>
+            <dd><input type="date" value={lead.follow_up_date ?? ""} onChange={async (e) => {
+              setError(null);
+              try { await updateMutation.mutateAsync({ follow_up_date: e.target.value || null }); }
+              catch (err) { setError(err instanceof ApiError ? err.message : "Unable to update follow-up date."); }
+            }} disabled={updateMutation.isPending} className="rounded-md border border-border bg-bg px-2 py-1 text-sm text-text" /></dd>
+          </div>
           {lead.notes && (
             <div className="flex justify-between">
               <dt className="text-muted">Notes</dt>

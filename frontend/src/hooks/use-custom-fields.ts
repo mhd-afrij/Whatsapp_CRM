@@ -5,6 +5,7 @@ import {
   createCustomFieldDefinition,
   deleteCustomFieldDefinition,
   fetchCustomFieldDefinitions,
+  reorderCustomFieldDefinitions,
   updateCustomFieldDefinition,
   type CustomFieldDefinition,
   type CustomFieldDefinitionFormValues,
@@ -44,13 +45,27 @@ export function useDeleteCustomFieldDefinition(entityType = "contact") {
   });
 }
 
+export function useReorderCustomFieldDefinitions(entityType = "contact") {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: number[]) => reorderCustomFieldDefinitions(entityType, ids),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: customFieldsKey }),
+  });
+}
+
 export function fieldTypeLabel(type: CustomFieldDefinition["field_type"]): string {
   const labels: Record<CustomFieldDefinition["field_type"], string> = {
     text: "Text",
+    textarea: "Textarea",
     number: "Number",
-    select: "Select",
     date: "Date",
-    boolean: "Yes / No",
+    date_time: "Date & time",
+    select: "Dropdown",
+    multi_select: "Multi-select",
+    checkbox: "Checkbox",
+    url: "URL",
+    email: "Email",
+    phone: "Phone",
   };
   return labels[type] ?? type;
 }

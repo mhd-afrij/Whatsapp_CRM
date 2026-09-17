@@ -39,6 +39,7 @@ export function NewLeadModal({ onClose, initialContactId }: { onClose: () => voi
         source: values.source,
         stage: values.stage,
         notes: values.notes || null,
+        follow_up_date: values.follow_up_date || null,
       });
       onClose();
       router.push(`/leads/${lead.id}`);
@@ -100,6 +101,10 @@ export function NewLeadModal({ onClose, initialContactId }: { onClose: () => voi
             </div>
           </div>
 
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-text">Follow-up date</label>
+            <input type="date" {...register("follow_up_date")} className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text" />
+          </div>
           <div className="space-y-1">
             <label className="text-sm font-medium text-text">Notes</label>
             <textarea

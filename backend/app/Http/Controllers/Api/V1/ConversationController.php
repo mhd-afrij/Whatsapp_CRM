@@ -12,10 +12,13 @@ use App\Models\Message;
 use App\Models\MessageDispatchQueue;
 use App\Models\User;
 use App\Models\UserPresence;
+use App\Models\WhatsappAccount;
 use App\Services\ContactAutoLinker;
 use App\Services\GatewayClient;
 use App\Services\NotificationService;
+use App\Services\WebhookService;
 use App\Support\AuditLogger;
+use App\Support\WebhookEvents;
 use App\Traits\ApiResponse;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
@@ -32,6 +35,7 @@ class ConversationController extends Controller
     public function __construct(
         protected GatewayClient $gateway,
         protected ContactAutoLinker $contactAutoLinker,
+        protected WebhookService $webhooks,
     ) {}
 
     /**
@@ -45,7 +49,14 @@ class ConversationController extends Controller
 
         $query = Conversation::query()
             ->visibleTo($user)
-            ->with(['whatsappContact', 'contact', 'assignedUser', 'assignedTeam', 'labels']);
+            ->with([
+                'whatsappContact',
+                'contact',
+                'assignedUser',
+                'assignedTeam',
+                'labels',
+                'whatsappAccount:id,name',
+            ]);
 
         if (! $request->boolean('archived')) {
             $query->whereNull('archived_at');
@@ -85,6 +96,10 @@ class ConversationController extends Controller
 
         if ($request->filled('team_id')) {
             $query->where('assigned_team_id', $request->integer('team_id'));
+        }
+
+        if ($request->filled('whatsapp_account_id')) {
+            $query->where('whatsapp_account_id', $request->integer('whatsapp_account_id'));
         }
 
         if ($request->boolean('unread')) {
@@ -206,7 +221,7 @@ class ConversationController extends Controller
     public function show(Request $request, Conversation $conversation)
     {
         $this->authorize('view', $conversation);
-        $conversation->load(['whatsappContact', 'contact', 'assignedUser', 'assignedTeam', 'labels']);
+        $conversation->load(['whatsappContact', 'contact', 'assignedUser', 'assignedTeam', 'labels', 'whatsappAccount:id,name']);
 
         // Same lazy auto-provisioning as index - opening a thread from a
         // WhatsApp-only identity creates its CRM contact on first read.
@@ -265,6 +280,10 @@ class ConversationController extends Controller
                 'workspaceId' => $user->workspace_id,
                 'phoneNumber' => $contact->phone_number,
                 'contactId' => $contact->id,
+                'accountId' => WhatsappAccount::query()
+                    ->where('workspace_id', $user->workspace_id)
+                    ->where('is_active', true)
+                    ->value('id'),
             ]);
 
             $conversationId = $response['data']['conversationId'] ?? null;
@@ -292,6 +311,12 @@ class ConversationController extends Controller
             }
 
             AuditLogger::log('conversation.created', $user, $conversation, [], $request);
+
+            $this->webhooks->emit(
+                WebhookEvents::CONVERSATION_CREATED,
+                $user->workspace_id,
+                ['conversation_id' => $conversation->id, 'contact_id' => $contact->id]
+            );
 
             return $this->success($conversation, 'Conversation started', [], 201);
         } catch (RuntimeException $e) {
@@ -362,6 +387,7 @@ class ConversationController extends Controller
         $payload = [
             'workspaceId' => $conversation->workspace_id,
             'conversationId' => $conversation->id,
+            'accountId' => $conversation->whatsapp_account_id,
             'content' => ! empty($data['body']) ? $data['body'] : null,
             'mediaRef' => $data['media']['storage_path'] ?? null,
             'mediaMimeType' => $data['media']['mime_type'] ?? null,
@@ -784,7 +810,7 @@ class ConversationController extends Controller
         );
 
         try {
-            $this->gateway->markConversationRead($conversation->id, $conversation->workspace_id);
+            $this->gateway->markConversationRead($conversation->id, $conversation->workspace_id, $conversation->whatsapp_account_id);
         } catch (RuntimeException $e) {
             Log::warning('Failed to reset gateway unread counter', [
                 'conversation_id' => $conversation->id,
@@ -810,7 +836,7 @@ class ConversationController extends Controller
         $this->authorize('view', $conversation);
 
         try {
-            $result = $this->gateway->markConversationUnread($conversation->id, $conversation->workspace_id);
+            $result = $this->gateway->markConversationUnread($conversation->id, $conversation->workspace_id, $conversation->whatsapp_account_id);
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
         }
@@ -831,7 +857,7 @@ class ConversationController extends Controller
     protected function relayConversationEvent(string $event, Conversation $conversation, array $payload): void
     {
         try {
-            $this->gateway->emitEvent($event, $conversation->workspace_id, $conversation->id, $payload);
+            $this->gateway->emitEvent($event, $conversation->workspace_id, $conversation->id, $payload, $conversation->whatsapp_account_id);
         } catch (RuntimeException $e) {
             Log::warning('Failed to relay conversation event to gateway', [
                 'event' => $event,
@@ -962,7 +988,8 @@ class ConversationController extends Controller
                 $conversation->id,
                 $conversation->whatsappContact->wa_jid,
                 $message->whatsapp_message_id,
-                $request->user()->id
+                $request->user()->id,
+                $conversation->whatsapp_account_id
             );
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
@@ -1002,7 +1029,8 @@ class ConversationController extends Controller
                 $request->string('emoji'),
                 false,
                 $request->user()->id,
-                $request->user()->name
+                $request->user()->name,
+                $conversation->whatsapp_account_id
             );
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
@@ -1042,7 +1070,8 @@ class ConversationController extends Controller
                 $request->string('emoji'),
                 true,
                 $request->user()->id,
-                $request->user()->name
+                $request->user()->name,
+                $conversation->whatsapp_account_id
             );
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
@@ -1082,7 +1111,8 @@ class ConversationController extends Controller
                 $conversation->whatsappContact->wa_jid,
                 $request->boolean('is_typing'),
                 $request->user()->id,
-                $request->user()->name
+                $request->user()->name,
+                $conversation->whatsapp_account_id
             );
         } catch (RuntimeException $e) {
             // Typing indicators are best-effort; don't fail the request
@@ -1222,7 +1252,7 @@ class ConversationController extends Controller
         $starred = (bool) $validated['starred'];
 
         try {
-            $this->gateway->setMessageStarred($conversation->workspace_id, $conversation->id, $message->id, $starred);
+            $this->gateway->setMessageStarred($conversation->workspace_id, $conversation->id, $message->id, $starred, $conversation->whatsapp_account_id);
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
         }
@@ -1255,6 +1285,7 @@ class ConversationController extends Controller
                 $conversation->id,
                 $message->id,
                 $request->user()->id,
+                $conversation->whatsapp_account_id,
             );
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
@@ -1298,7 +1329,8 @@ class ConversationController extends Controller
                 $conversation->workspace_id,
                 $target->id,
                 $message->id,
-                $request->user()->id
+                $request->user()->id,
+                $target->whatsapp_account_id
             );
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
@@ -1322,7 +1354,7 @@ class ConversationController extends Controller
         $this->authorize('close', $conversation);
 
         try {
-            $result = $this->gateway->clearConversation($conversation->id, $conversation->workspace_id);
+            $result = $this->gateway->clearConversation($conversation->id, $conversation->workspace_id, $conversation->whatsapp_account_id);
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
         }
@@ -1343,7 +1375,7 @@ class ConversationController extends Controller
         $this->authorize('close', $conversation);
 
         try {
-            $this->gateway->deleteConversation($conversation->id, $conversation->workspace_id);
+            $this->gateway->deleteConversation($conversation->id, $conversation->workspace_id, $conversation->whatsapp_account_id);
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
         }
@@ -1448,6 +1480,7 @@ class ConversationController extends Controller
         $payload = [
             'workspaceId' => $conversation->workspace_id,
             'conversationId' => $conversation->id,
+            'accountId' => $conversation->whatsapp_account_id,
             'content' => $message->body,
             'mediaRef' => $message->media?->storage_path,
             'mediaMimeType' => $message->media?->mime_type,

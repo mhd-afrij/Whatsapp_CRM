@@ -11,7 +11,18 @@ export interface CustomFieldDefinition {
   entity_type: string;
   name: string;
   key: string;
-  field_type: 'text' | 'number' | 'select' | 'date' | 'boolean';
+  field_type:
+    | "text"
+    | "textarea"
+    | "number"
+    | "date"
+    | "date_time"
+    | "select"
+    | "multi_select"
+    | "checkbox"
+    | "url"
+    | "email"
+    | "phone";
   options: CustomFieldOption[] | null;
   is_required: boolean;
   is_active: boolean;
@@ -52,4 +63,8 @@ export async function updateCustomFieldDefinition(
 
 export async function deleteCustomFieldDefinition(id: number): Promise<void> {
   await apiClient.delete(`/custom-field-definitions/${id}`);
+}
+
+export async function reorderCustomFieldDefinitions(entityType: string, ids: number[]): Promise<void> {
+  await apiClient.post('/custom-field-definitions/reorder', { entity_type: entityType, ids });
 }

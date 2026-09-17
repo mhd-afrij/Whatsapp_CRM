@@ -63,10 +63,10 @@ export function SettingsSection({
   );
 }
 
-export function PathArrow() {
+export function PathArrow({ className }: { className?: string }) {
   return (
     <svg
-      className="h-4 w-4"
+      className={cn("h-4 w-4", className)}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

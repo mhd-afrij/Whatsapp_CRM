@@ -20,6 +20,7 @@ export interface AdminUser {
   last_login_at: string | null;
   roles: RoleRef[];
   role_keys?: Array<"super_admin" | "admin" | "user">;
+  status?: "ACTIVE" | "SUSPENDED";
   teams: TeamMembership[];
   created_at: string;
 }
@@ -51,40 +52,76 @@ export interface AdminUserListParams {
 export async function fetchAdminUsers(
   params: AdminUserListParams
 ): Promise<{ data: AdminUser[]; meta: AdminUserListMeta }> {
-  const { data } = await apiClient.get("/users", { params });
+  const { data } = await apiClient.get("/workspace/users", { params });
   return { data: data.data, meta: data.meta };
 }
 
 export async function fetchAdminUser(id: number): Promise<AdminUserDetail> {
-  return unwrap(apiClient.get(`/users/${id}`));
+  return unwrap(apiClient.get(`/workspace/users/${id}`));
 }
 
 export async function updateAdminUser(
   id: number,
   values: Partial<{ name: string; email: string; role_id: number; team_ids: number[] }>
 ): Promise<AdminUser> {
-  return unwrap(apiClient.patch(`/users/${id}`, values));
+  return unwrap(apiClient.patch(`/workspace/users/${id}`, values));
 }
 
 export async function suspendUser(id: number): Promise<{ id: number; is_active: boolean }> {
-  return unwrap(apiClient.patch(`/users/${id}/suspend`));
+  return unwrap(apiClient.post(`/workspace/users/${id}/suspend`));
 }
 
 export async function reactivateUser(id: number): Promise<{ id: number; is_active: boolean }> {
-  return unwrap(apiClient.patch(`/users/${id}/reactivate`));
+  return unwrap(apiClient.post(`/workspace/users/${id}/reactivate`));
+}
+
+export async function removeWorkspaceUser(id: number): Promise<null> {
+  return unwrap(apiClient.delete(`/workspace/users/${id}`));
 }
 
 export async function inviteUser(values: {
   email: string;
   role_id: number;
-}): Promise<{ id: number; email: string; expires_at: string }> {
-  return unwrap(apiClient.post("/auth/invitations", values));
+  first_name?: string;
+  last_name?: string;
+  message?: string;
+  send_email?: boolean;
+}): Promise<Invitation> {
+  return unwrap(apiClient.post("/workspace/invitations", values));
 }
 
-export async function resendInvitation(
-  invitationId: number
-): Promise<{ id: number; email: string; expires_at: string }> {
-  return unwrap(apiClient.post(`/invitations/${invitationId}/resend`));
+export interface Invitation {
+  id: number;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  message: string | null;
+  status: "pending" | "accepted" | "expired" | "revoked";
+  role: RoleRef | null;
+  invited_by: { id: number; name: string; email: string } | null;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export async function fetchInvitations(): Promise<Invitation[]> {
+  return unwrap(apiClient.get("/workspace/invitations"));
+}
+
+export async function updateInvitation(
+  invitationId: number,
+  values: Partial<{ role_id: number; message: string | null }>
+): Promise<Invitation> {
+  return unwrap(apiClient.patch(`/workspace/invitations/${invitationId}`, values));
+}
+
+export async function resendInvitation(invitationId: number): Promise<Invitation> {
+  return unwrap(apiClient.post(`/workspace/invitations/${invitationId}/resend`));
+}
+
+export async function revokeInvitation(invitationId: number): Promise<Invitation> {
+  return unwrap(apiClient.post(`/workspace/invitations/${invitationId}/revoke`));
 }
 
 // --- Teams ---
@@ -156,7 +193,7 @@ export interface PermissionEntry {
 export type PermissionCatalog = Record<string, PermissionEntry[]>;
 
 export async function fetchRoles(): Promise<Role[]> {
-  return unwrap(apiClient.get("/roles"));
+  return unwrap(apiClient.get("/workspace/roles"));
 }
 
 export async function createRole(values: {
@@ -164,18 +201,18 @@ export async function createRole(values: {
   description?: string;
   permissions?: string[];
 }): Promise<Role> {
-  return unwrap(apiClient.post("/roles", values));
+  return unwrap(apiClient.post("/workspace/roles", values));
 }
 
 export async function updateRole(
   id: number,
   values: Partial<{ name: string; description: string; permissions: string[] }>
 ): Promise<Role> {
-  return unwrap(apiClient.patch(`/roles/${id}`, values));
+  return unwrap(apiClient.patch(`/workspace/roles/${id}`, values));
 }
 
 export async function deleteRole(id: number): Promise<null> {
-  return unwrap(apiClient.delete(`/roles/${id}`));
+  return unwrap(apiClient.delete(`/workspace/roles/${id}`));
 }
 
 export async function fetchPermissionCatalog(): Promise<PermissionCatalog> {

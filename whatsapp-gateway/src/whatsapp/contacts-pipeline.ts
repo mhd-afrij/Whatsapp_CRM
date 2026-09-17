@@ -23,6 +23,7 @@ const repository = new MessageRepository();
 export async function handleContactsUpsert(
   workspaceId: number,
   payload: BaileysContactsUpsert,
+  accountId: number | null = null,
 ): Promise<void> {
   for (const contact of payload) {
     const contactName = contact.name?.trim();
@@ -53,10 +54,11 @@ export async function handleContactsUpsert(
 export async function handlePhoneNumberShare(
   workspaceId: number,
   payload: BaileysPhoneNumberShare,
+  accountId: number | null = null,
 ): Promise<void> {
   try {
     await repository.setLidJid(workspaceId, payload.jid, payload.lid);
   } catch (err) {
-    logger.error({ err, workspaceId, lid: payload.lid, jid: payload.jid }, 'Failed to persist LID phone-number share');
+    logger.error({ err, workspaceId, accountId, lid: payload.lid, jid: payload.jid }, 'Failed to persist LID phone-number share');
   }
 }

@@ -13,6 +13,7 @@ class Workspace extends Model
 
     protected $fillable = [
         'name', 'slug', 'business_category', 'country', 'whatsapp_number', 'timezone', 'language', 'logo_path', 'is_active',
+        'whatsapp_display_name', 'onboarding_step',
     ];
 
     protected function casts(): array
@@ -65,5 +66,10 @@ class Workspace extends Model
     public function whatsappAccountSettings(): HasMany
     {
         return $this->hasMany(WhatsappAccountSetting::class);
+    }
+
+    public function whatsappAccounts(): HasMany
+    {
+        return $this->hasMany(WhatsappAccount::class);
     }
 }

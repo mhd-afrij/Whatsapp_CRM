@@ -36,9 +36,11 @@ class User extends Authenticatable
         'workspace_id',
         'name',
         'email',
+        'username',
         'password',
         'avatar_path',
         'about',
+        'position',
         'is_active',
         'last_login_at',
     ];
@@ -121,6 +123,19 @@ class User extends Authenticatable
     public function isSuperAdmin(): bool
     {
         return $this->hasRoleKey(self::ROLE_SUPER_ADMIN);
+    }
+
+    /**
+     * True when the user holds this workspace's Owner role (self-service signup
+     * creator, or a later owner transferred via the workspace ownership flow).
+     * Deliberately distinct from isSuperAdmin(): an Owner has full control of
+     * their own workspace but never platform-level privileges.
+     */
+    public function isWorkspaceOwner(): bool
+    {
+        return $this->roles()
+            ->get(['name', 'slug'])
+            ->contains(fn (Role $role) => in_array($role->slug, ['owner'], true) || $role->name === 'Owner');
     }
 
     public function isAdmin(): bool

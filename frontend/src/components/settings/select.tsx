@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { forwardRef } from "react";
+import { forwardRef, useRef, useState } from "react";
 
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   options: Array<{ value: string; label: string }>;
@@ -48,9 +48,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
 );
 Select.displayName = "Select";
 
-interface SelectOption {
-  value: string;
-  label: string;
+interface SelectFieldProps extends Omit<SelectProps, "onChange"> {
+  onChange?: (value: string) => void;
+  placeholder?: string;
 }
 
 export function SelectField({
@@ -64,9 +64,9 @@ export function SelectField({
   disabled,
   placeholder,
   ...props
-}: SelectProps & { placeholder?: string }) {
-  const selectRef = React_UseRef<HTMLSelectElement>(null);
-  const [selectValue, setSelectValue] = React_UseState(value ?? "");
+}: SelectFieldProps) {
+  const selectRef = useRef<HTMLSelectElement>(null);
+  const [selectValue, setSelectValue] = useState(value ?? "");
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newVal = e.target.value;
@@ -94,7 +94,3 @@ export function SelectField({
     />
   );
 }
-
-// Re-export React hook functions
-const React_UseRef: <T>(initialValue: T) => React.RefObject<T> = React.useRef as any;
-const React_UseState: <T>(initialState: T | (() => T)) => [T, React.Dispatch<React.SetStateAction<T>>] = React.useState as any;

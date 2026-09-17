@@ -21,15 +21,36 @@ class Invitation extends Model
     }
 
     protected $fillable = [
-        'workspace_id', 'email', 'role_id', 'invited_by', 'token', 'status', 'expires_at', 'accepted_at',
+        'workspace_id', 'email', 'first_name', 'last_name', 'message', 'role_id', 'invited_by',
+        'token', 'token_hash', 'status', 'expires_at', 'accepted_at', 'revoked_at',
     ];
+
+    protected ?string $plainToken = null;
 
     protected function casts(): array
     {
         return [
             'expires_at' => 'datetime',
             'accepted_at' => 'datetime',
+            'revoked_at' => 'datetime',
         ];
+    }
+
+    public function setPlainToken(string $token): self
+    {
+        $this->plainToken = $token;
+
+        return $this;
+    }
+
+    public function inviteUrlToken(): ?string
+    {
+        return $this->plainToken ?? $this->token;
+    }
+
+    public function workspace(): BelongsTo
+    {
+        return $this->belongsTo(Workspace::class);
     }
 
     public function role(): BelongsTo

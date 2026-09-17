@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AnalyticsController;
+use App\Http\Controllers\Api\V1\AnalyticsSettingController;
 use App\Http\Controllers\Api\V1\AiAssistantController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AutomationRuleController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\Api\V1\BusinessHoursController;
 use App\Http\Controllers\Api\V1\CalendarEventController;
 use App\Http\Controllers\Api\V1\CampaignController;
 use App\Http\Controllers\Api\V1\ContactController;
+use App\Http\Controllers\Api\V1\ContactTagController;
 use App\Http\Controllers\Api\V1\ConversationController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DealController;
@@ -17,27 +19,47 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\InternalNoteController;
 use App\Http\Controllers\Api\V1\LabelController;
 use App\Http\Controllers\Api\V1\LeadController;
+use App\Http\Controllers\Api\V1\LeadAssignmentRuleController;
+use App\Http\Controllers\Api\V1\LeadAutomationController;
+use App\Http\Controllers\Api\V1\LeadScoringRuleController;
+use App\Http\Controllers\Api\V1\LeadSettingsController;
+use App\Http\Controllers\Api\V1\LeadSourceController;
+use App\Http\Controllers\Api\V1\LeadStatusController;
 use App\Http\Controllers\Api\V1\MediaController;
 use App\Http\Controllers\Api\V1\MessageTemplateController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\NotificationPreferenceController;
+use App\Http\Controllers\Api\V1\NotificationSettingsController;
 use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\PipelineController;
 use App\Http\Controllers\Api\V1\ReportExportController;
 use App\Http\Controllers\Api\V1\RoleController;
+use App\Http\Controllers\Api\V1\RoutingRuleController;
 use App\Http\Controllers\Api\V1\SearchController;
+use App\Http\Controllers\Api\V1\SettingsController;
 use App\Http\Controllers\Api\V1\SlaController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TeamController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\WebhookEndpointController;
 use App\Http\Controllers\Api\V1\WhatsappController;
 use App\Http\Controllers\Api\V1\WorkspaceSettingController;
 use Illuminate\Support\Facades\Route;
+
+// Gateway -> backend internal API (no Sanctum auth; guarded by EnsureInternalSecret's
+// shared-secret header). These routes must stay outside the `/v1` group on purpose.
+Route::prefix('internal')->name('api.internal.')->middleware('internal.secret')->group(function () {
+    Route::post('/whatsapp/messages/notify-new', [App\Http\Controllers\Api\Internal\WhatsappMessageNotifyController::class, 'notifyNewMessage'])
+        ->name('whatsapp.messages.notify-new');
+});
 
 Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::get('/health', HealthController::class)->name('health');
 
     Route::prefix('auth')->name('auth.')->group(function () {
+        Route::post('/signup', [AuthController::class, 'signup'])
+            ->middleware('throttle:signup')
+            ->name('signup');
         Route::post('/login', [AuthController::class, 'login'])
             ->middleware('throttle:login')
             ->name('login');
@@ -50,11 +72,27 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('/invitations/accept', [AuthController::class, 'acceptInvitation'])
             ->middleware('throttle:invitation-accept')
             ->name('invitations.accept');
+        Route::post('/invitations/{token}/accept', [AuthController::class, 'acceptInvitationFromToken'])
+            ->middleware('throttle:invitation-accept')
+            ->name('invitations.accept-token');
+
+        // Onboarding Step 1 live username availability check (public, rate-limited).
+        Route::get('/username-available', [AuthController::class, 'usernameAvailable'])
+            ->middleware('throttle:username-check')
+            ->name('username-available');
 
         Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
             Route::get('/me', [AuthController::class, 'me'])->name('me');
             Route::patch('/me', [AuthController::class, 'updateMe'])->name('me.update');
+
+            // Onboarding wizard: resumable state + Steps 2-4 (workspace/profile,
+            // WhatsApp number, and completion). Connection itself never happens
+            // here — the wizard reuses the real gateway QR/pairing endpoints.
+            Route::get('/onboarding', [AuthController::class, 'onboardingStatus'])->name('onboarding.status');
+            Route::post('/onboarding/workspace', [AuthController::class, 'onboardingWorkspace'])->name('onboarding.workspace');
+            Route::post('/onboarding/whatsapp', [AuthController::class, 'onboardingWhatsapp'])->name('onboarding.whatsapp');
+            Route::post('/onboarding/complete', [AuthController::class, 'onboardingComplete'])->name('onboarding.complete');
 
             // Permission matrix (docs/07-permission-matrix.md) names this
             // "invitations.manage" — used here instead of a non-existent "users.create".
@@ -77,12 +115,30 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::patch('/users/{user}/suspend', [UserController::class, 'suspend'])
             ->middleware('permission:users.manage')
             ->name('users.suspend');
+        Route::post('/users/{user}/suspend', [UserController::class, 'suspend'])
+            ->middleware('permission:users.manage')
+            ->name('users.suspend-post');
         Route::patch('/users/{user}/reactivate', [UserController::class, 'reactivate'])
             ->middleware('permission:users.manage')
             ->name('users.reactivate');
+        Route::post('/users/{user}/reactivate', [UserController::class, 'reactivate'])
+            ->middleware('permission:users.manage')
+            ->name('users.reactivate-post');
+        Route::delete('/users/{user}', [UserController::class, 'destroy'])
+            ->middleware('permission:users.manage')
+            ->name('users.destroy');
+        Route::get('/invitations', [UserController::class, 'invitations'])
+            ->middleware('permission:invitations.manage')
+            ->name('invitations.index');
+        Route::patch('/invitations/{invitation}', [UserController::class, 'updateInvitation'])
+            ->middleware('permission:invitations.manage')
+            ->name('invitations.update');
         Route::post('/invitations/{invitation}/resend', [UserController::class, 'resendInvitation'])
             ->middleware('permission:invitations.manage')
             ->name('invitations.resend');
+        Route::post('/invitations/{invitation}/revoke', [UserController::class, 'revokeInvitation'])
+            ->middleware('permission:invitations.manage')
+            ->name('invitations.revoke');
 
         Route::prefix('teams')->name('teams.')->group(function () {
             Route::get('/', [TeamController::class, 'index'])->name('index');
@@ -102,6 +158,32 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::delete('/{role}', [RoleController::class, 'destroy'])->name('destroy');
         });
 
+        Route::prefix('workspace')->name('workspace-access.')->group(function () {
+            Route::get('/users', [UserController::class, 'index'])->middleware('permission:users.view')->name('users.index');
+            Route::get('/users/{user}', [UserController::class, 'show'])->middleware('permission:users.view')->name('users.show');
+            Route::patch('/users/{user}', [UserController::class, 'update'])->middleware('permission:users.manage')->name('users.update');
+            Route::post('/users/{user}/suspend', [UserController::class, 'suspend'])->middleware('permission:users.manage')->name('users.suspend');
+            Route::post('/users/{user}/reactivate', [UserController::class, 'reactivate'])->middleware('permission:users.manage')->name('users.reactivate');
+            Route::delete('/users/{user}', [UserController::class, 'destroy'])->middleware('permission:users.manage')->name('users.destroy');
+
+            Route::get('/roles', [RoleController::class, 'index'])->middleware('permission:roles.view')->name('roles.index');
+            Route::post('/roles', [RoleController::class, 'store'])->middleware('permission:roles.manage')->name('roles.store');
+            Route::get('/roles/{role}', [RoleController::class, 'show'])->middleware('permission:roles.view')->name('roles.show');
+            Route::patch('/roles/{role}', [RoleController::class, 'update'])->middleware('permission:roles.manage')->name('roles.update');
+            Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->middleware('permission:roles.manage')->name('roles.destroy');
+
+            Route::get('/invitations', [UserController::class, 'invitations'])->middleware('permission:invitations.manage')->name('invitations.index');
+            Route::post('/invitations', [AuthController::class, 'invite'])->middleware(['permission:invitations.manage', 'throttle:invitation-create'])->name('invitations.store');
+            Route::patch('/invitations/{invitation}', [UserController::class, 'updateInvitation'])->middleware('permission:invitations.manage')->name('invitations.update');
+            Route::post('/invitations/{invitation}/resend', [UserController::class, 'resendInvitation'])->middleware('permission:invitations.manage')->name('invitations.resend');
+            Route::post('/invitations/{invitation}/revoke', [UserController::class, 'revokeInvitation'])->middleware('permission:invitations.manage')->name('invitations.revoke');
+        });
+
+        Route::prefix('admin')->name('admin.')->group(function () {
+            Route::get('/users', [UserController::class, 'index'])->middleware('permission:users.view')->name('users.index');
+            Route::get('/workspaces/{workspace}/users', [UserController::class, 'index'])->middleware('permission:users.view')->name('workspaces.users.index');
+        });
+
         Route::get('/permissions', [PermissionController::class, 'index'])->name('permissions.index');
 
         Route::prefix('custom-field-definitions')->name('custom-field-definitions.')->middleware('permission:workspace.settings.manage')->group(function () {
@@ -109,6 +191,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'store'])->name('store');
             Route::patch('/{id}', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'update'])->name('update');
             Route::delete('/{id}', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'destroy'])->name('destroy');
+            Route::post('/reorder', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'reorder'])->name('reorder');
         });
 
         Route::prefix('whatsapp')->name('whatsapp.')->middleware('permission:whatsapp.connection.manage')->group(function () {
@@ -121,6 +204,25 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/reconnect', [WhatsappController::class, 'reconnect'])->name('reconnect');
             Route::post('/reset-data', [WhatsappController::class, 'resetData'])->name('reset-data');
             Route::get('/connection-history', [WhatsappController::class, 'connectionHistory'])->name('connection-history');
+
+            // Managed WhatsApp connections (backend-owned bookkeeping around the
+            // gateway's per-account Baileys sessions). All workspace scoping is
+            // enforced by the WorkspaceScope global scope + the service layer;
+            // workspace_id is never accepted from the client.
+            Route::prefix('accounts')->name('accounts.')->group(function () {
+                Route::get('/', [WhatsappAccountController::class, 'index'])->name('index');
+                Route::post('/', [WhatsappAccountController::class, 'store'])->name('store');
+                Route::get('/{account}', [WhatsappAccountController::class, 'show'])->name('show');
+                Route::patch('/{account}', [WhatsappAccountController::class, 'update'])->name('update');
+                Route::delete('/{account}', [WhatsappAccountController::class, 'destroy'])->name('destroy');
+                Route::post('/{account}/connect', [WhatsappAccountController::class, 'connect'])->name('connect');
+                Route::get('/{account}/connection-status', [WhatsappAccountController::class, 'connectionStatus'])->name('connection-status');
+                Route::post('/{account}/reconnect', [WhatsappAccountController::class, 'reconnect'])->name('reconnect');
+                Route::post('/{account}/disconnect', [WhatsappAccountController::class, 'disconnect'])->name('disconnect');
+                Route::post('/{account}/qr', [WhatsappAccountController::class, 'qr'])->name('qr');
+                Route::post('/{account}/set-active', [WhatsappAccountController::class, 'setActive'])->name('set-active');
+                Route::post('/{account}/set-active-force', [WhatsappAccountController::class, 'setActiveForce'])->name('set-active-force');
+            });
         });
 
         Route::prefix('presence')->name('presence.')->group(function () {
@@ -306,6 +408,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('/', [CalendarEventController::class, 'index'])->name('index');
             Route::post('/', [CalendarEventController::class, 'store'])->name('store');
             Route::patch('/{calendarEvent}', [CalendarEventController::class, 'update'])->name('update');
+            Route::post('/{calendarEvent}/complete', [CalendarEventController::class, 'complete'])->name('complete');
+            Route::post('/{calendarEvent}/reopen', [CalendarEventController::class, 'reopen'])->name('reopen');
             Route::delete('/{calendarEvent}', [CalendarEventController::class, 'destroy'])->name('destroy');
         });
 
@@ -391,6 +495,78 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::patch('/', [NotificationPreferenceController::class, 'update'])->name('update');
         });
 
+        // Lead Settings module - CRM lead configuration. Contacts/inbox settings
+        // and analytics/notification settings live under the same `settings` prefix
+        // on their own feature branches; each group shares the
+        // workspace.settings.manage gate.
+        Route::prefix('settings')->name('settings.')->group(function () {
+            Route::middleware('permission:workspace.settings.manage')->group(function () {
+                Route::prefix('inbox/routing-rules')->name('routing-rules.')->group(function () {
+                    Route::get('/', [RoutingRuleController::class, 'index'])->name('index');
+                    Route::post('/', [RoutingRuleController::class, 'store'])->name('store');
+                    Route::patch('/{rule}', [RoutingRuleController::class, 'update'])->name('update');
+                    Route::delete('/{rule}', [RoutingRuleController::class, 'destroy'])->name('destroy');
+                });
+
+                // Lead Settings module - JSON settings + statuses/sources/rules/automations.
+                // All share the workspace.settings.manage gate.
+                Route::prefix('leads')->name('leads-settings.')->group(function () {
+                    Route::get('/', [LeadSettingsController::class, 'show'])->name('show');
+                    Route::patch('/', [LeadSettingsController::class, 'update'])->name('update');
+                    Route::patch('/assignment', [LeadSettingsController::class, 'updateAssignment'])->name('update-assignment');
+                    Route::patch('/scoring', [LeadSettingsController::class, 'updateScoring'])->name('update-scoring');
+                    Route::patch('/conversion', [LeadSettingsController::class, 'updateConversion'])->name('update-conversion');
+                });
+
+                Route::prefix('lead-statuses')->name('lead-statuses.')->group(function () {
+                    Route::get('/', [LeadStatusController::class, 'index'])->name('index');
+                    Route::post('/', [LeadStatusController::class, 'store'])->name('store');
+                    Route::patch('/{id}', [LeadStatusController::class, 'update'])->name('update');
+                    Route::delete('/{id}', [LeadStatusController::class, 'destroy'])->name('destroy');
+                    Route::post('/reorder', [LeadStatusController::class, 'reorder'])->name('reorder');
+                });
+
+                Route::prefix('lead-sources')->name('lead-sources.')->group(function () {
+                    Route::get('/', [LeadSourceController::class, 'index'])->name('index');
+                    Route::post('/', [LeadSourceController::class, 'store'])->name('store');
+                    Route::patch('/{id}', [LeadSourceController::class, 'update'])->name('update');
+                    Route::delete('/{id}', [LeadSourceController::class, 'destroy'])->name('destroy');
+                    Route::post('/reorder', [LeadSourceController::class, 'reorder'])->name('reorder');
+                });
+
+                Route::prefix('lead-assignment-rules')->name('lead-assignment-rules.')->group(function () {
+                    Route::get('/', [LeadAssignmentRuleController::class, 'index'])->name('index');
+                    Route::post('/', [LeadAssignmentRuleController::class, 'store'])->name('store');
+                    Route::patch('/{id}', [LeadAssignmentRuleController::class, 'update'])->name('update');
+                    Route::delete('/{id}', [LeadAssignmentRuleController::class, 'destroy'])->name('destroy');
+                    Route::post('/reorder', [LeadAssignmentRuleController::class, 'reorder'])->name('reorder');
+                });
+
+                Route::prefix('lead-scoring-rules')->name('lead-scoring-rules.')->group(function () {
+                    Route::get('/', [LeadScoringRuleController::class, 'index'])->name('index');
+                    Route::post('/', [LeadScoringRuleController::class, 'store'])->name('store');
+                    Route::patch('/{id}', [LeadScoringRuleController::class, 'update'])->name('update');
+                    Route::delete('/{id}', [LeadScoringRuleController::class, 'destroy'])->name('destroy');
+                });
+
+                Route::prefix('lead-automations')->name('lead-automations.')->group(function () {
+                    Route::get('/', [LeadAutomationController::class, 'index'])->name('index');
+                    Route::post('/', [LeadAutomationController::class, 'store'])->name('store');
+                    Route::patch('/{id}', [LeadAutomationController::class, 'update'])->name('update');
+                    Route::delete('/{id}', [LeadAutomationController::class, 'destroy'])->name('destroy');
+                    Route::post('/{id}/enable', [LeadAutomationController::class, 'enable'])->name('enable');
+                    Route::post('/{id}/disable', [LeadAutomationController::class, 'disable'])->name('disable');
+                });
+            });
+        });
+
+        Route::prefix('contact-tags')->name('contact-tags.')->middleware('permission:workspace.settings.manage')->group(function () {
+            Route::get('/', [ContactTagController::class, 'index'])->name('index');
+            Route::post('/', [ContactTagController::class, 'store'])->name('store');
+            Route::patch('/{tag}', [ContactTagController::class, 'update'])->name('update');
+            Route::delete('/{tag}', [ContactTagController::class, 'destroy'])->name('destroy');
+        });
+
         // Phase 13/14 - Dashboard & Analytics (see docs/08-implementation-roadmap.md and
         // PROJECT_STATUS.md for why analytics.view/analytics.export exist beyond the
         // original docs/07-permission-matrix.md table).
@@ -439,6 +615,27 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             // authentication, same rationale as the notifications routes above.
             Route::get('/export/{notification}/download', [ReportExportController::class, 'download'])
                 ->name('export.download');
+        });
+
+        // Webhook endpoints - workspace integration surface. Read: webhooks.view.
+        // Mutations + secret rotation: webhooks.manage. "Send test" performs a real
+        // synchronous HTTP round-trip and must stay gated tightly (webhooks.test).
+        // Delivery of real events is always queued; see DeliverWebhookJob.
+        Route::prefix('webhooks')->name('webhooks.')->group(function () {
+            Route::get('/', [WebhookEndpointController::class, 'index'])
+                ->middleware('permission:webhooks.view')->name('index');
+            Route::post('/', [WebhookEndpointController::class, 'store'])
+                ->middleware('permission:webhooks.manage')->name('store');
+            Route::get('/{endpoint}', [WebhookEndpointController::class, 'show'])
+                ->middleware('permission:webhooks.view')->name('show');
+            Route::patch('/{endpoint}', [WebhookEndpointController::class, 'update'])
+                ->middleware('permission:webhooks.manage')->name('update');
+            Route::delete('/{endpoint}', [WebhookEndpointController::class, 'destroy'])
+                ->middleware('permission:webhooks.manage')->name('destroy');
+            Route::post('/{endpoint}/rotate-secret', [WebhookEndpointController::class, 'rotateSecret'])
+                ->middleware('permission:webhooks.manage')->name('rotate-secret');
+            Route::post('/{endpoint}/test', [WebhookEndpointController::class, 'test'])
+                ->middleware('permission:webhooks.test')->name('test');
         });
 
         // DLQ (Dead Letter Queue) management - Admin only

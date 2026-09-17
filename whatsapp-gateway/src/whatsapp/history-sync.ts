@@ -67,7 +67,12 @@ interface RunState {
   lastEmitAt: number;
 }
 
-const runs = new Map<number, RunState>();
+const runs = new Map<string, RunState>();
+
+/** In-process run key: one per (workspace, account) so concurrent account syncs stay isolated. */
+function runKey(workspaceId: number, accountId: number | null): string {
+  return `${workspaceId}:${accountId ?? ''}`;
+}
 
 function freshSnapshot(): HistorySyncSnapshot {
   const now = new Date().toISOString();
@@ -119,9 +124,10 @@ function toSnapshot(persisted: Record<string, unknown> | null): HistorySyncSnaps
   };
 }
 
-/** Loads (or lazily creates) the in-process run for a workspace, resuming a persisted 'syncing' run after a gateway restart. */
-async function getRun(workspaceId: number): Promise<RunState> {
-  let run = runs.get(workspaceId);
+/** Loads (or lazily creates) the in-process run for a workspace+account, resuming a persisted 'syncing' run after a gateway restart. */
+async function getRun(workspaceId: number, accountId: number | null = null): Promise<RunState> {
+  const key = runKey(workspaceId, accountId);
+  let run = runs.get(key);
   if (run) {
     return run;
   }
@@ -142,7 +148,7 @@ async function getRun(workspaceId: number): Promise<RunState> {
     settleTimer: null,
     lastEmitAt: 0,
   };
-  runs.set(workspaceId, run);
+  runs.set(key, run);
   return run;
 }
 
@@ -155,10 +161,11 @@ async function getRun(workspaceId: number): Promise<RunState> {
 export async function handleMessagingHistorySet(
   workspaceId: number,
   payload: BaileysMessagingHistorySet,
+  accountId: number | null = null,
 ): Promise<void> {
-  const run = await getRun(workspaceId);
+  const run = await getRun(workspaceId, accountId);
 
-  const next = run.chain.then(() => processHistoryPayload(workspaceId, run, payload));
+  const next = run.chain.then(() => processHistoryPayload(workspaceId, run, payload, accountId));
   run.chain = next.catch((err) => {
     // Safety net: processHistoryPayload handles its own failures; this should never fire.
     logger.error({ err, workspaceId }, 'Unhandled error inside history-sync processing chain');
@@ -171,6 +178,7 @@ async function processHistoryPayload(
   workspaceId: number,
   run: RunState,
   payload: BaileysMessagingHistorySet,
+  accountId: number | null,
 ): Promise<void> {
   try {
     let snapshot = run.snapshot;
@@ -218,7 +226,7 @@ async function processHistoryPayload(
     if (Array.isArray(payload.contacts) && payload.contacts.length > 0) {
       try {
         const { handleContactsUpsert } = await import('./contacts-pipeline');
-        await handleContactsUpsert(workspaceId, payload.contacts);
+        await handleContactsUpsert(workspaceId, payload.contacts, accountId);
       } catch (err) {
         logger.error({ err, workspaceId }, 'Error syncing contacts from history sync');
       }
@@ -227,7 +235,7 @@ async function processHistoryPayload(
     for (let i = 0; i < messages.length; i += HISTORY_CHUNK_SIZE) {
       const chunk = messages.slice(i, i + HISTORY_CHUNK_SIZE);
       for (const raw of chunk) {
-        const outcome = await processOneMessage(workspaceId, raw, { live: false });
+        const outcome = await processOneMessage(workspaceId, raw, { live: false }, accountId);
         switch (outcome.status) {
           case 'inserted':
           case 'unsupported':
@@ -322,29 +330,33 @@ async function completeRun(workspaceId: number, run: RunState): Promise<void> {
  * exists, otherwise the last persisted checkpoint (survives gateway restarts).
  * Never throws - a database hiccup yields null so status reads stay resilient.
  */
-export async function getSyncSnapshot(workspaceId: number): Promise<HistorySyncSnapshot | null> {
-  const run = runs.get(workspaceId);
+export async function getSyncSnapshot(workspaceId: number, accountId: number | null = null): Promise<HistorySyncSnapshot | null> {
+  const run = runs.get(runKey(workspaceId, accountId));
   if (run?.snapshot) {
     return { ...run.snapshot };
   }
   try {
     return toSnapshot(await repository.getSnapshot(workspaceId));
   } catch (err) {
-    logger.warn({ err, workspaceId }, 'Failed to read history-sync snapshot from checkpoint');
+    logger.warn({ err, workspaceId, accountId }, 'Failed to read history-sync snapshot from checkpoint');
     return null;
   }
 }
 
 /**
- * Drops the workspace's run entirely (memory + checkpoint row). Used on
+ * Drops the workspace's runs entirely (memory + checkpoint row). Used on
  * reset-data and whenever a fresh QR pairing starts: the previous account's
  * run summary must not linger on the UI once a different number links.
+ * With an accountId, only that account's in-process run is dropped (the
+ * checkpoint row stays workspace-scoped).
  */
-export async function clearWorkspaceRun(workspaceId: number): Promise<void> {
-  const run = runs.get(workspaceId);
-  if (run) {
-    clearSettleTimer(run);
-    runs.delete(workspaceId);
+export async function clearWorkspaceRun(workspaceId: number, accountId: number | null = null): Promise<void> {
+  for (const key of [...runs.keys()]) {
+    if (key.startsWith(`${workspaceId}:`) && (accountId === null || key === runKey(workspaceId, accountId))) {
+      const run = runs.get(key);
+      if (run) clearSettleTimer(run);
+      runs.delete(key);
+    }
   }
   try {
     await repository.clear(workspaceId);

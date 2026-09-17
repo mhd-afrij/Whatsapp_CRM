@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\AnalyticsSetting;
 use App\Models\Conversation;
 use App\Models\Deal;
 use App\Models\Message;
@@ -21,6 +22,12 @@ use Illuminate\Support\Facades\Cache;
  *
  * Shared filters (all optional, all endpoints): from, to (date range, default last 30
  * days, same resolution as DashboardController), agent_user_id, status.
+ *
+ * Every endpoint first resolves the workspace's AnalyticsSetting (see
+ * AnalyticsSettingController). When analytics is disabled, or the specific
+ * metric's tracking toggle is off, the endpoint reports
+ * `{ tracked: false, ... }` instead of returning fabricated zeros - the
+ * dashboard must be able to distinguish "0" from "not tracked".
  */
 class AnalyticsController extends Controller
 {
@@ -28,6 +35,10 @@ class AnalyticsController extends Controller
     public function conversationVolume(Request $request)
     {
         [$from, $to] = $this->range($request);
+
+        if ($notTracked = $this->notTracked($request, fn ($s) => ! $s->analytics_enabled || ! $s->track_conversations)) {
+            return $notTracked;
+        }
 
         return $this->cached($request, 'conversation-volume', $from, $to, function () use ($from, $to) {
             $counts = Conversation::query()
@@ -44,6 +55,10 @@ class AnalyticsController extends Controller
     public function responseTimeTrend(Request $request)
     {
         [$from, $to] = $this->range($request);
+
+        if ($notTracked = $this->notTracked($request, fn ($s) => ! $s->analytics_enabled || ! $s->track_response_time)) {
+            return $notTracked;
+        }
 
         return $this->cached($request, 'response-time-trend', $from, $to, function () use ($from, $to) {
             $conversationIds = Conversation::query()
@@ -93,6 +108,10 @@ class AnalyticsController extends Controller
     {
         [$from, $to] = $this->range($request);
 
+        if ($notTracked = $this->notTracked($request, fn ($s) => ! $s->analytics_enabled || ! $s->track_leads || ! $s->track_won_leads || ! $s->track_lost_leads)) {
+            return $notTracked;
+        }
+
         return $this->cached($request, 'won-vs-lost', $from, $to, function () use ($from, $to, $request) {
             $query = Deal::query()
                 ->whereIn('status', ['won', 'lost'])
@@ -128,6 +147,10 @@ class AnalyticsController extends Controller
     public function agentPerformance(Request $request)
     {
         [$from, $to] = $this->range($request);
+
+        if ($notTracked = $this->notTracked($request, fn ($s) => ! $s->analytics_enabled || ! $s->track_agent_performance)) {
+            return $notTracked;
+        }
 
         return $this->cached($request, 'agent-performance', $from, $to, function () use ($from, $to, $request) {
             $conversationQuery = Conversation::query()
@@ -170,6 +193,10 @@ class AnalyticsController extends Controller
     {
         [$from, $to] = $this->range($request);
 
+        if ($notTracked = $this->notTracked($request, fn ($s) => ! $s->analytics_enabled)) {
+            return $notTracked;
+        }
+
         return $this->cached($request, 'task-completion-rate', $from, $to, function () use ($from, $to, $request) {
             $query = Task::query()->whereBetween('created_at', [$from, $to]);
             if ($request->filled('agent_user_id')) {
@@ -185,6 +212,37 @@ class AnalyticsController extends Controller
                 'rate_percent' => $total > 0 ? round(($completed / $total) * 100, 2) : 0.0,
             ];
         });
+    }
+
+    /**
+     * Returns a standardized "not tracked" response when the workspace's
+     * analytics settings disable the requested metric. The payload keeps the
+     * endpoint's usual shape (empty series) plus `tracked: false` and a
+     * machine-readable `unavailable_reason`, so existing charts keep rendering
+     * while the UI can show an honest "tracking disabled" state.
+     */
+    private function notTracked(Request $request, \Closure $disabled): ?object
+    {
+        // Fresh rows must be seeded with the recommended defaults - otherwise
+        // attributes stay null/unset and every "enabled" check reads falsy.
+        $settings = AnalyticsSetting::query()->firstOrCreate(
+            ['workspace_id' => $request->user()->workspace_id],
+            array_merge(
+                ['workspace_id' => $request->user()->workspace_id],
+                AnalyticsSetting::recommendedDefaults()
+            )
+        );
+
+        if (! $disabled($settings)) {
+            return null;
+        }
+
+        return $this->success([
+            'tracked' => false,
+            'unavailable_reason' => ! $settings->analytics_enabled
+                ? 'analytics_disabled'
+                : 'metric_not_tracked',
+        ]);
     }
 
     private function range(Request $request): array

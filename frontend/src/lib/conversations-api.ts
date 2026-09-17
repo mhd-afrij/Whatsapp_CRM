@@ -40,9 +40,16 @@ export interface LabelSummary {
   color_hex?: string | null;
 }
 
+/** Minimal WhatsApp account info embedded on conversations (backend eager-loads `whatsappAccount:id,name`). */
+export interface WhatsappAccountSummary {
+  id: number;
+  name: string;
+}
+
 export interface Conversation {
   id: number;
   workspace_id: number;
+  whatsapp_account_id: number | null;
   status: ConversationStatus;
   priority: ConversationPriority;
   unread_count: number;
@@ -61,6 +68,7 @@ export interface Conversation {
   assigned_user: UserSummary | null;
   assigned_team: TeamSummary | null;
   labels: LabelSummary[];
+  whatsapp_account?: WhatsappAccountSummary | null;
 }
 
 export interface MessageMedia {
@@ -154,6 +162,7 @@ export interface ConversationFilters {
   priority?: ConversationPriority;
   assigned_to?: "me" | "unassigned" | string;
   team_id?: number;
+  whatsapp_account_id?: number;
   label?: string;
   unread?: boolean;
   archived?: boolean;
