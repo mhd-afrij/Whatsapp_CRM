@@ -28,7 +28,7 @@ class CustomFieldDefinitionController extends Controller
         $validated = $request->validate([
             'entity_type' => 'required|string|max:50|in:contact,lead,deal',
             'name' => 'required|string|max:100',
-            'field_type' => 'required|string|in:text,number,select,date,boolean',
+            'field_type' => 'required|string|in:text,textarea,number,date,date_time,select,multi_select,checkbox,url,email,phone',
             'options' => 'nullable|array',
             'options.*.label' => 'required_with:options|string|max:100',
             'options.*.value' => 'required_with:options|string|max:100',
@@ -73,7 +73,7 @@ class CustomFieldDefinitionController extends Controller
 
         $validated = $request->validate([
             'name' => 'sometimes|string|max:100',
-            'field_type' => 'sometimes|string|in:text,number,select,date,boolean',
+            'field_type' => 'sometimes|string|in:text,textarea,number,date,date_time,select,multi_select,checkbox,url,email,phone',
             'options' => 'nullable|array',
             'options.*.label' => 'required_with:options|string|max:100',
             'options.*.value' => 'required_with:options|string|max:100',
@@ -96,5 +96,28 @@ class CustomFieldDefinitionController extends Controller
         $definition->delete();
 
         return $this->success(null, 'Custom field deleted.');
+    }
+
+    public function reorder(Request $request)
+    {
+        $validated = $request->validate([
+            'entity_type' => 'required|string|max:50|in:contact,lead,deal',
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'nullable|integer',
+        ]);
+
+        foreach (array_values($validated['ids']) as $index => $id) {
+            if ($id === null) {
+                continue;
+            }
+
+            CustomFieldDefinition::query()
+                ->where('workspace_id', $request->user()->workspace_id)
+                ->where('entity_type', $validated['entity_type'])
+                ->where('id', $id)
+                ->update(['sort_order' => $index]);
+        }
+
+        return $this->success(null, 'Custom fields reordered.');
     }
 }

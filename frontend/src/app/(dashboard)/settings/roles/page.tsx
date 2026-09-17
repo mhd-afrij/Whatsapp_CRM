@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { usePermission } from "@/hooks/use-permission";
+import { SettingsBreadcrumb } from "@/components/settings/settings-breadcrumb";
 import {
   useCreateRole,
   useDeleteRole,
@@ -428,6 +429,13 @@ function RolesManager() {
 
   return (
     <div className="space-y-6">
+      <SettingsBreadcrumb
+        items={[
+          { label: "Settings", href: "/settings" },
+          { label: "System", href: "/settings" },
+          { label: "Roles & Permissions" },
+        ]}
+      />
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

@@ -135,7 +135,6 @@ class WorkspaceSettingsAndAuditLogTest extends TestCase
             'inbox_settings' => ['assignment_mode' => 'round_robin', 'greeting_message' => 'Hi there!'],
             'contact_settings' => ['import_default_tags' => ['new'], 'duplicate_policy' => 'ask'],
             'lead_sales_settings' => ['default_deal_stage' => 'proposal'],
-            'integration_settings' => ['webhooks' => ['https://example.com/hook']],
         ])->assertOk();
 
         $this->assertDatabaseHas('workspace_settings', [
@@ -143,14 +142,12 @@ class WorkspaceSettingsAndAuditLogTest extends TestCase
             'inbox_settings' => json_encode(['assignment_mode' => 'round_robin', 'greeting_message' => 'Hi there!']),
             'contact_settings' => json_encode(['import_default_tags' => ['new'], 'duplicate_policy' => 'ask']),
             'lead_sales_settings' => json_encode(['default_deal_stage' => 'proposal']),
-            'integration_settings' => json_encode(['webhooks' => ['https://example.com/hook']]),
         ]);
 
         $response = $this->asUser($admin)->getJson('/api/v1/workspace')->assertOk();
         $response->assertJsonPath('data.inbox_settings.assignment_mode', 'round_robin');
         $response->assertJsonPath('data.contact_settings.duplicate_policy', 'ask');
         $response->assertJsonPath('data.lead_sales_settings.default_deal_stage', 'proposal');
-        $response->assertJsonPath('data.integration_settings.webhooks.0', 'https://example.com/hook');
     }
 
     public function test_administrator_can_upload_workspace_logo(): void

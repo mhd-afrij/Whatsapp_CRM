@@ -46,7 +46,6 @@ export interface WorkspaceSettings {
   inbox_settings: Record<string, unknown>;
   contact_settings: Record<string, unknown>;
   lead_sales_settings: Record<string, unknown>;
-  integration_settings: Record<string, unknown>;
   away_message_enabled: boolean;
   away_message: string | null;
   away_message_trigger: "outside_hours" | "once_per_conversation";
@@ -54,7 +53,6 @@ export interface WorkspaceSettings {
   detached_whatsapp_accounts: WorkspaceWhatsappAccount[];
   storage: WorkspaceStorageInfo;
   security: WorkspaceSecurityInfo;
-  billing: { configured: boolean; message: string };
 }
 
 export async function fetchWorkspaceSettings(): Promise<WorkspaceSettings> {
@@ -76,7 +74,6 @@ export interface UpdateWorkspaceSettingsValues {
   inbox_settings?: Record<string, unknown>;
   contact_settings?: Record<string, unknown>;
   lead_sales_settings?: Record<string, unknown>;
-  integration_settings?: Record<string, unknown>;
   away_message_enabled?: boolean;
   away_message?: string | null;
   away_message_trigger?: "outside_hours" | "once_per_conversation";
