@@ -8,13 +8,16 @@ import {
   deleteRole,
   deleteTeam,
   fetchAdminUsers,
+  fetchInvitations,
   fetchPermissionCatalog,
   fetchRoles,
   fetchTeams,
   inviteUser,
   reactivateUser,
   removeTeamMember,
+  removeWorkspaceUser,
   resendInvitation,
+  revokeInvitation,
   suspendUser,
   updateAdminUser,
   updateRole,
@@ -26,6 +29,7 @@ const usersKey = (params: AdminUserListParams) => ["admin-users", params] as con
 const teamsKey = ["teams"] as const;
 const rolesKey = ["roles"] as const;
 const permissionsKey = ["permissions"] as const;
+const invitationsKey = ["workspace-invites"] as const;
 
 export function useAdminUsers(params: AdminUserListParams) {
   return useQuery({
@@ -58,13 +62,35 @@ export function useReactivateUser() {
   return useMutation({ mutationFn: reactivateUser, onSuccess: invalidate });
 }
 
-export function useInviteUser() {
+export function useRemoveWorkspaceUser() {
   const invalidate = useInvalidateUsers();
-  return useMutation({ mutationFn: inviteUser, onSuccess: invalidate });
+  return useMutation({ mutationFn: removeWorkspaceUser, onSuccess: invalidate });
+}
+
+export function useInviteUser() {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateUsers();
+  return useMutation({
+    mutationFn: inviteUser,
+    onSuccess: () => {
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: invitationsKey });
+    },
+  });
+}
+
+export function useInvitations() {
+  return useQuery({ queryKey: invitationsKey, queryFn: fetchInvitations });
 }
 
 export function useResendInvitation() {
-  return useMutation({ mutationFn: resendInvitation });
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: resendInvitation, onSuccess: () => queryClient.invalidateQueries({ queryKey: invitationsKey }) });
+}
+
+export function useRevokeInvitation() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: revokeInvitation, onSuccess: () => queryClient.invalidateQueries({ queryKey: invitationsKey }) });
 }
 
 // --- Teams ---

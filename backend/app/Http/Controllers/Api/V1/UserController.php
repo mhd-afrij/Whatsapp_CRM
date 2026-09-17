@@ -33,11 +33,20 @@ class UserController extends Controller
         if ($isAdminQuery && ($user->isSuperAdmin() || $user->hasPermission('users.view'))) {
             $query = User::query()->with('roles', 'teams');
 
+            if (! $user->isSuperAdmin()) {
+                $query->where('workspace_id', $user->workspace_id);
+            }
+
             if ($search = $request->query('search')) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
                         ->orWhere('email', 'like', "%{$search}%");
                 });
+            }
+
+            $workspaceId = $request->route('workspace') ?? $request->query('workspace_id');
+            if ($request->user()->isSuperAdmin() && $workspaceId) {
+                $query->where('workspace_id', is_object($workspaceId) ? $workspaceId->id : $workspaceId);
             }
 
             if ($roleId = $request->query('role_id')) {
@@ -62,6 +71,7 @@ class UserController extends Controller
         }
 
         $users = User::query()
+            ->where('workspace_id', $user->workspace_id)
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
@@ -110,6 +120,10 @@ class UserController extends Controller
             if ($this->roleIsSuperAdmin($role) && ! $request->user()->isSuperAdmin()) {
                 return $this->error('Only a super admin can assign the super admin role.', null, 403);
             }
+
+            if ($this->wouldLeaveNoActiveAdmin($user, (int) $data['role_id'])) {
+                return $this->error('This workspace must have at least one active Workspace Admin.', null, 422);
+            }
         }
 
         $before = array_intersect_key(
@@ -145,16 +159,19 @@ class UserController extends Controller
             return $this->error('Only pending invitations can be resent.', null, 422);
         }
 
-        $invitation->forceFill(['expires_at' => now()->addDays(7)])->save();
+        $plainToken = \Illuminate\Support\Str::random(64);
+        $tokenHash = hash('sha256', $plainToken);
+        $invitation->forceFill([
+            'token' => $tokenHash,
+            'token_hash' => $tokenHash,
+            'expires_at' => now()->addDays(7),
+        ])->save();
+        $invitation->setPlainToken($plainToken)->loadMissing('workspace', 'role', 'inviter');
         $invitation->notify(new InvitationNotification($invitation));
 
         AuditLogger::log('invitation.resent', $request->user(), $invitation, [], $request);
 
-        return $this->success([
-            'id' => $invitation->id,
-            'email' => $invitation->email,
-            'expires_at' => $invitation->expires_at,
-        ], 'Invitation resent successfully.');
+        return $this->success($this->invitationPayload($invitation->fresh(['role', 'inviter'])), 'Invitation resent successfully.');
     }
 
     public function suspend(Request $request, User $user)
@@ -164,6 +181,10 @@ class UserController extends Controller
         }
 
         $this->authorize('suspend', $user);
+
+        if ($this->wouldLeaveNoActiveAdmin($user)) {
+            return $this->error('This workspace must have at least one active Workspace Admin.', null, 422);
+        }
 
         $user->forceFill(['is_active' => false])->save();
         $user->tokens()->delete();
@@ -184,10 +205,139 @@ class UserController extends Controller
         return $this->success(['id' => $user->id, 'is_active' => $user->is_active], 'User reactivated successfully.');
     }
 
+
+    public function invitations(Request $request)
+    {
+        $query = Invitation::query()->with('role:id,name,slug', 'inviter:id,name,email')
+            ->where('workspace_id', $request->user()->workspace_id);
+
+        if ($status = $request->query('status')) {
+            $query->where('status', $status);
+        }
+
+        return $this->success($query->latest()->get()->map(fn (Invitation $invitation) => $this->invitationPayload($invitation)), 'OK');
+    }
+
+    public function updateInvitation(Request $request, Invitation $invitation)
+    {
+        $this->authorize('resendInvitation', $invitation);
+
+        if ($invitation->workspace_id !== $request->user()->workspace_id && ! $request->user()->isSuperAdmin()) {
+            abort(404);
+        }
+
+        if ($invitation->status !== 'pending') {
+            return $this->error('Only pending invitations can be changed.', null, 422);
+        }
+
+        $data = $request->validate([
+            'role_id' => ['sometimes', 'integer', Rule::exists('roles', 'id')->where('workspace_id', $invitation->workspace_id)],
+            'message' => ['sometimes', 'nullable', 'string', 'max:1000'],
+        ]);
+
+        $before = $invitation->only(array_keys($data));
+        $invitation->fill($data)->save();
+
+        AuditLogger::log('invitation.updated', $request->user(), $invitation, $data, $request, $before);
+
+        return $this->success($this->invitationPayload($invitation->fresh(['role', 'inviter'])), 'Invitation updated successfully.');
+    }
+
+    public function revokeInvitation(Request $request, Invitation $invitation)
+    {
+        $this->authorize('resendInvitation', $invitation);
+
+        if ($invitation->workspace_id !== $request->user()->workspace_id && ! $request->user()->isSuperAdmin()) {
+            abort(404);
+        }
+
+        if ($invitation->status !== 'pending') {
+            return $this->error('Only pending invitations can be revoked.', null, 422);
+        }
+
+        $invitation->forceFill(['status' => 'revoked', 'revoked_at' => now()])->save();
+
+        AuditLogger::log('invitation.revoked', $request->user(), $invitation, [], $request);
+
+        return $this->success($this->invitationPayload($invitation->fresh(['role', 'inviter'])), 'Invitation revoked successfully.');
+    }
+
+    public function destroy(Request $request, User $user)
+    {
+        $this->authorize('delete', $user);
+
+        if ($user->workspace_id !== $request->user()->workspace_id && ! $request->user()->isSuperAdmin()) {
+            abort(404);
+        }
+
+        if ($this->wouldLeaveNoActiveAdmin($user)) {
+            return $this->error('This workspace must have at least one active Workspace Admin.', null, 422);
+        }
+
+        $before = $this->adminUserPayload($user->load('roles', 'teams'));
+        $user->roles()->detach();
+        $user->teams()->detach();
+        $user->delete();
+
+        AuditLogger::log('user.removed_from_workspace', $request->user(), $user, [], $request, $before);
+
+        return $this->success(null, 'User removed from workspace successfully.');
+    }
+
     protected function roleIsSuperAdmin(Role $role): bool
     {
         return in_array($role->slug, ['super_admin', 'super-administrator'], true)
             || $role->name === 'Super Administrator';
+    }
+
+
+    protected function wouldLeaveNoActiveAdmin(User $target, ?int $replacementRoleId = null): bool
+    {
+        if (! $this->isWorkspaceAdmin($target)) {
+            return false;
+        }
+
+        if ($replacementRoleId && $this->isWorkspaceAdminRole(Role::query()->find($replacementRoleId))) {
+            return false;
+        }
+
+        $activeAdminCount = User::query()
+            ->where('workspace_id', $target->workspace_id)
+            ->where('is_active', true)
+            ->whereHas('roles', fn ($q) => $q->whereIn('slug', ['admin', 'administrator', 'owner'])->orWhere('name', 'Administrator')->orWhere('name', 'Owner'))
+            ->count();
+
+        return $activeAdminCount <= 1;
+    }
+
+    protected function isWorkspaceAdmin(User $user): bool
+    {
+        return $user->roles()
+            ->where(fn ($q) => $q->whereIn('slug', ['admin', 'administrator', 'owner'])->orWhere('name', 'Administrator')->orWhere('name', 'Owner'))
+            ->exists();
+    }
+
+    protected function isWorkspaceAdminRole(?Role $role): bool
+    {
+        return $role !== null && (in_array($role->slug, ['admin', 'administrator', 'owner'], true) || $role->name === 'Administrator' || $role->name === 'Owner');
+    }
+
+    protected function invitationPayload(Invitation $invitation): array
+    {
+        return [
+            'id' => $invitation->id,
+            'email' => $invitation->email,
+            'first_name' => $invitation->first_name,
+            'last_name' => $invitation->last_name,
+            'message' => $invitation->message,
+            'status' => $invitation->status,
+            'role' => $invitation->role ? ['id' => $invitation->role->id, 'name' => $invitation->role->name, 'slug' => $invitation->role->slug] : null,
+            'invited_by' => $invitation->inviter ? ['id' => $invitation->inviter->id, 'name' => $invitation->inviter->name, 'email' => $invitation->inviter->email] : null,
+            'expires_at' => $invitation->expires_at,
+            'accepted_at' => $invitation->accepted_at,
+            'revoked_at' => $invitation->revoked_at,
+            'created_at' => $invitation->created_at,
+        ];
     }
 
     protected function adminUserPayload(User $user): array
