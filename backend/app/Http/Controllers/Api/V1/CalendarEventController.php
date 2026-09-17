@@ -15,7 +15,7 @@ class CalendarEventController extends Controller
     public function index(Request $request)
     {
         $this->authorize('viewAny', CalendarEvent::class);
-        $query = CalendarEvent::query()->with(['lead.contact', 'creator'])->orderBy('starts_at');
+        $query = CalendarEvent::query()->with(['lead.contact', 'contact', 'deal', 'creator'])->orderBy('starts_at');
 
         if ($request->filled('date')) {
             $query->whereDate('starts_at', $request->string('date')->toString());
@@ -42,7 +42,10 @@ class CalendarEventController extends Controller
             'description' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'is_all_day' => ['sometimes', 'boolean'],
             'kind' => ['sometimes', Rule::in(['follow_up', 'call', 'meeting', 'reminder', 'other'])],
+            'contact_id' => ['sometimes', 'nullable', 'integer', Rule::exists('contacts', 'id')->where('workspace_id', $request->user()->workspace_id)],
             'lead_id' => ['sometimes', 'nullable', 'integer', Rule::exists('leads', 'id')],
+            'deal_id' => ['sometimes', 'nullable', 'integer', Rule::exists('deals', 'id')->where('workspace_id', $request->user()->workspace_id)],
+            'reminder_minutes' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:10080'],
             'reminder_at' => ['sometimes', 'nullable', 'date'],
         ]);
         if ($validator->fails()) {
@@ -58,7 +61,7 @@ class CalendarEventController extends Controller
         ]));
         AuditLogger::log('calendar_event.created', $request->user(), $event, $data, $request);
 
-        return $this->success($event->load(['lead.contact', 'creator']), 'Calendar event created', null, 201);
+        return $this->success($event->load(['lead.contact', 'contact', 'deal', 'creator']), 'Calendar event created', null, 201);
     }
 
     public function update(Request $request, CalendarEvent $calendarEvent)
@@ -72,7 +75,10 @@ class CalendarEventController extends Controller
             'description' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'is_all_day' => ['sometimes', 'boolean'],
             'kind' => ['sometimes', Rule::in(['follow_up', 'call', 'meeting', 'reminder', 'other'])],
+            'contact_id' => ['sometimes', 'nullable', 'integer', Rule::exists('contacts', 'id')->where('workspace_id', $request->user()->workspace_id)],
             'lead_id' => ['sometimes', 'nullable', 'integer', Rule::exists('leads', 'id')],
+            'deal_id' => ['sometimes', 'nullable', 'integer', Rule::exists('deals', 'id')->where('workspace_id', $request->user()->workspace_id)],
+            'reminder_minutes' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:10080'],
             'reminder_at' => ['sometimes', 'nullable', 'date'],
         ]);
         if ($validator->fails()) {
@@ -88,7 +94,7 @@ class CalendarEventController extends Controller
         $calendarEvent->update($data);
         AuditLogger::log('calendar_event.updated', $request->user(), $calendarEvent, $data, $request, $before);
 
-        return $this->success($calendarEvent->load(['lead.contact', 'creator']), 'Calendar event updated');
+        return $this->success($calendarEvent->load(['lead.contact', 'contact', 'deal', 'creator']), 'Calendar event updated');
     }
 
     public function complete(Request $request, CalendarEvent $calendarEvent)
@@ -96,7 +102,7 @@ class CalendarEventController extends Controller
         $this->authorize('update', $calendarEvent);
         $calendarEvent->update(['completed_at' => now()]);
         AuditLogger::log('calendar_event.completed', $request->user(), $calendarEvent, [], $request);
-        return $this->success($calendarEvent->fresh(['lead.contact', 'creator']), 'Calendar event completed');
+        return $this->success($calendarEvent->fresh(['lead.contact', 'contact', 'deal', 'creator']), 'Calendar event completed');
     }
 
     public function reopen(Request $request, CalendarEvent $calendarEvent)
@@ -104,7 +110,7 @@ class CalendarEventController extends Controller
         $this->authorize('update', $calendarEvent);
         $calendarEvent->update(['completed_at' => null]);
         AuditLogger::log('calendar_event.reopened', $request->user(), $calendarEvent, [], $request);
-        return $this->success($calendarEvent->fresh(['lead.contact', 'creator']), 'Calendar event reopened');
+        return $this->success($calendarEvent->fresh(['lead.contact', 'contact', 'deal', 'creator']), 'Calendar event reopened');
     }
 
     public function destroy(Request $request, CalendarEvent $calendarEvent)

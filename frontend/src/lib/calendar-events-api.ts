@@ -17,7 +17,6 @@ export interface CalendarEvent {
   lead_id: number | null;
   deal_id: number | null;
   reminder_minutes: number | null;
-  lead_id: number | null;
   lead: Pick<Lead, "id" | "contact"> | null;
   created_by: number | null;
   reminder_at: string | null;
@@ -48,7 +47,6 @@ export interface CalendarEventFormValues {
   lead_id?: number | null;
   deal_id?: number | null;
   reminder_minutes?: number | null;
-  lead_id?: number | null;
   reminder_at?: string | null;
 }
 
