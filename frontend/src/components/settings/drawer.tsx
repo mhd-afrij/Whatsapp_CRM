@@ -1,7 +1,6 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { forwardRef } from "react";
 
 interface DrawerProps {
   open: boolean;
@@ -59,12 +58,14 @@ function DrawerOverlay({ onClick }: { onClick: () => void }) {
   return <div className="fixed inset-0 bg-black/40 z-40" onClick={onClick} />;
 }
 
-function DrawerClose({ onClick, className }: { onClick: () => void; className?: string }) {
+function DrawerClose({ onClick, className, children }: { onClick: () => void; className?: string; children?: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick} className={cn("flex h-7 w-7 items-center justify-center rounded-lg", className)} aria-label="Close">
-      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M18 6L6 18M6 6l12 12" />
-      </svg>
+      {children ?? (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+      )}
     </button>
   );
 }

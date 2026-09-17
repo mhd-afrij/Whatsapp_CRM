@@ -6,7 +6,7 @@ import { SETTINGS_HUB_CATEGORIES } from "@/config/navigation";
 import { SettingsHubSearch, fbGetCardIcon } from "@/components/settings/settings-hub-search";
 import { cn } from "@/lib/utils";
 
-const HUB_SECTIONS = ["CRM", "Communication", "WhatsApp", "System"];
+const HUB_SECTIONS = ["Workspace", "CRM", "Communication", "WhatsApp", "System"];
 
 export default function SettingsRootPage() {
   return (
