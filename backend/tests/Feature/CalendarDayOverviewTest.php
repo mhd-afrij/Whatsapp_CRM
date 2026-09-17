@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\CalendarEvent;
+use App\Models\Contact;
+use App\Models\Deal;
 use App\Models\Lead;
 use App\Models\Notification;
 use App\Models\Task;
@@ -165,6 +167,40 @@ class CalendarDayOverviewTest extends TestCase
         $requester->postJson("/api/v1/calendar-events/{$eventId}/reopen")
             ->assertOk()->assertJsonPath('data.completed_at', null);
         $this->assertNull(CalendarEvent::find($eventId)->completed_at);
+    }
+
+    public function test_calendar_events_persist_details_links_and_reminder_minutes(): void
+    {
+        [$user, $requester] = $this->seedDay();
+        $contact = Contact::factory()->create(['workspace_id' => $user->workspace_id]);
+        $lead = Lead::factory()->create(['workspace_id' => $user->workspace_id]);
+        $deal = Deal::factory()->create(['workspace_id' => $user->workspace_id]);
+
+        $event = $requester->postJson('/api/v1/calendar-events', [
+            'title' => 'Site visit',
+            'starts_at' => '2026-08-20T10:00:00',
+            'description' => 'Bring the brochure.',
+            'is_all_day' => true,
+            'contact_id' => $contact->id,
+            'lead_id' => $lead->id,
+            'deal_id' => $deal->id,
+            'reminder_minutes' => 60,
+        ])->assertCreated();
+
+        $event->assertJsonPath('data.contact_id', $contact->id)
+            ->assertJsonPath('data.deal_id', $deal->id)
+            ->assertJsonPath('data.reminder_minutes', 60)
+            ->assertJsonPath('data.description', 'Bring the brochure.')
+            ->assertJsonPath('data.is_all_day', true);
+
+        $this->assertDatabaseHas('calendar_events', [
+            'id' => $event->json('data.id'),
+            'contact_id' => $contact->id,
+            'lead_id' => $lead->id,
+            'deal_id' => $deal->id,
+            'reminder_minutes' => 60,
+            'is_all_day' => true,
+        ]);
     }
 
     public function test_lead_follow_up_date_syncs_one_calendar_event_and_can_be_cleared(): void
