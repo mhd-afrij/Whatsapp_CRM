@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\BusinessHoursController;
 use App\Http\Controllers\Api\V1\CalendarEventController;
 use App\Http\Controllers\Api\V1\CampaignController;
 use App\Http\Controllers\Api\V1\ContactController;
+use App\Http\Controllers\Api\V1\ContactTagController;
 use App\Http\Controllers\Api\V1\ConversationController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DealController;
@@ -17,6 +18,12 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\InternalNoteController;
 use App\Http\Controllers\Api\V1\LabelController;
 use App\Http\Controllers\Api\V1\LeadController;
+use App\Http\Controllers\Api\V1\LeadAssignmentRuleController;
+use App\Http\Controllers\Api\V1\LeadAutomationController;
+use App\Http\Controllers\Api\V1\LeadScoringRuleController;
+use App\Http\Controllers\Api\V1\LeadSettingsController;
+use App\Http\Controllers\Api\V1\LeadSourceController;
+use App\Http\Controllers\Api\V1\LeadStatusController;
 use App\Http\Controllers\Api\V1\MediaController;
 use App\Http\Controllers\Api\V1\MessageTemplateController;
 use App\Http\Controllers\Api\V1\NotificationController;
@@ -25,6 +32,7 @@ use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\PipelineController;
 use App\Http\Controllers\Api\V1\ReportExportController;
 use App\Http\Controllers\Api\V1\RoleController;
+use App\Http\Controllers\Api\V1\RoutingRuleController;
 use App\Http\Controllers\Api\V1\SearchController;
 use App\Http\Controllers\Api\V1\SlaController;
 use App\Http\Controllers\Api\V1\TaskController;
@@ -389,6 +397,78 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::prefix('notification-preferences')->name('notification-preferences.')->group(function () {
             Route::get('/', [NotificationPreferenceController::class, 'index'])->name('index');
             Route::patch('/', [NotificationPreferenceController::class, 'update'])->name('update');
+        });
+
+        // Lead Settings module - CRM lead configuration. Contacts/inbox settings
+        // and analytics/notification settings live under the same `settings` prefix
+        // on their own feature branches; each group shares the
+        // workspace.settings.manage gate.
+        Route::prefix('settings')->name('settings.')->group(function () {
+            Route::middleware('permission:workspace.settings.manage')->group(function () {
+                Route::prefix('inbox/routing-rules')->name('routing-rules.')->group(function () {
+                    Route::get('/', [RoutingRuleController::class, 'index'])->name('index');
+                    Route::post('/', [RoutingRuleController::class, 'store'])->name('store');
+                    Route::patch('/{rule}', [RoutingRuleController::class, 'update'])->name('update');
+                    Route::delete('/{rule}', [RoutingRuleController::class, 'destroy'])->name('destroy');
+                });
+
+                // Lead Settings module - JSON settings + statuses/sources/rules/automations.
+                // All share the workspace.settings.manage gate.
+                Route::prefix('leads')->name('leads-settings.')->group(function () {
+                    Route::get('/', [LeadSettingsController::class, 'show'])->name('show');
+                    Route::patch('/', [LeadSettingsController::class, 'update'])->name('update');
+                    Route::patch('/assignment', [LeadSettingsController::class, 'updateAssignment'])->name('update-assignment');
+                    Route::patch('/scoring', [LeadSettingsController::class, 'updateScoring'])->name('update-scoring');
+                    Route::patch('/conversion', [LeadSettingsController::class, 'updateConversion'])->name('update-conversion');
+                });
+
+                Route::prefix('lead-statuses')->name('lead-statuses.')->group(function () {
+                    Route::get('/', [LeadStatusController::class, 'index'])->name('index');
+                    Route::post('/', [LeadStatusController::class, 'store'])->name('store');
+                    Route::patch('/{id}', [LeadStatusController::class, 'update'])->name('update');
+                    Route::delete('/{id}', [LeadStatusController::class, 'destroy'])->name('destroy');
+                    Route::post('/reorder', [LeadStatusController::class, 'reorder'])->name('reorder');
+                });
+
+                Route::prefix('lead-sources')->name('lead-sources.')->group(function () {
+                    Route::get('/', [LeadSourceController::class, 'index'])->name('index');
+                    Route::post('/', [LeadSourceController::class, 'store'])->name('store');
+                    Route::patch('/{id}', [LeadSourceController::class, 'update'])->name('update');
+                    Route::delete('/{id}', [LeadSourceController::class, 'destroy'])->name('destroy');
+                    Route::post('/reorder', [LeadSourceController::class, 'reorder'])->name('reorder');
+                });
+
+                Route::prefix('lead-assignment-rules')->name('lead-assignment-rules.')->group(function () {
+                    Route::get('/', [LeadAssignmentRuleController::class, 'index'])->name('index');
+                    Route::post('/', [LeadAssignmentRuleController::class, 'store'])->name('store');
+                    Route::patch('/{id}', [LeadAssignmentRuleController::class, 'update'])->name('update');
+                    Route::delete('/{id}', [LeadAssignmentRuleController::class, 'destroy'])->name('destroy');
+                    Route::post('/reorder', [LeadAssignmentRuleController::class, 'reorder'])->name('reorder');
+                });
+
+                Route::prefix('lead-scoring-rules')->name('lead-scoring-rules.')->group(function () {
+                    Route::get('/', [LeadScoringRuleController::class, 'index'])->name('index');
+                    Route::post('/', [LeadScoringRuleController::class, 'store'])->name('store');
+                    Route::patch('/{id}', [LeadScoringRuleController::class, 'update'])->name('update');
+                    Route::delete('/{id}', [LeadScoringRuleController::class, 'destroy'])->name('destroy');
+                });
+
+                Route::prefix('lead-automations')->name('lead-automations.')->group(function () {
+                    Route::get('/', [LeadAutomationController::class, 'index'])->name('index');
+                    Route::post('/', [LeadAutomationController::class, 'store'])->name('store');
+                    Route::patch('/{id}', [LeadAutomationController::class, 'update'])->name('update');
+                    Route::delete('/{id}', [LeadAutomationController::class, 'destroy'])->name('destroy');
+                    Route::post('/{id}/enable', [LeadAutomationController::class, 'enable'])->name('enable');
+                    Route::post('/{id}/disable', [LeadAutomationController::class, 'disable'])->name('disable');
+                });
+            });
+        });
+
+        Route::prefix('contact-tags')->name('contact-tags.')->middleware('permission:workspace.settings.manage')->group(function () {
+            Route::get('/', [ContactTagController::class, 'index'])->name('index');
+            Route::post('/', [ContactTagController::class, 'store'])->name('store');
+            Route::patch('/{tag}', [ContactTagController::class, 'update'])->name('update');
+            Route::delete('/{tag}', [ContactTagController::class, 'destroy'])->name('destroy');
         });
 
         // Phase 13/14 - Dashboard & Analytics (see docs/08-implementation-roadmap.md and

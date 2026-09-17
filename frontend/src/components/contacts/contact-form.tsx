@@ -295,7 +295,7 @@ function CustomFieldInput({
         </div>
       );
 
-    case "boolean":
+    case "checkbox":
       return (
         <div className="flex items-center gap-2">
           <input

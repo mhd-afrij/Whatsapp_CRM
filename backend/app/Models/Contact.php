@@ -92,6 +92,11 @@ class Contact extends Model
         return $this->belongsToMany(Label::class, 'contact_label')->withPivot('created_at');
     }
 
+    public function tags(): BelongsToMany
+    {
+        return $this->belongsToMany(ContactTag::class, 'contact_tag_contact')->withTimestamps();
+    }
+
     /**
      * Search by name/email/company/phone where phone matches on the normalized
      * key too, so searching "0771234567" finds a contact stored as
