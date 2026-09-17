@@ -17,7 +17,7 @@ class RolePermissionSeedingTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_seeding_creates_the_five_system_roles_for_the_default_workspace(): void
+    public function test_seeding_creates_the_six_system_roles_for_the_default_workspace(): void
     {
         $this->seed(WorkspaceSeeder::class);
         $this->seed(PermissionSeeder::class);
@@ -26,7 +26,7 @@ class RolePermissionSeedingTest extends TestCase
         $roleNames = Role::query()->where('is_system', true)->pluck('name')->sort()->values()->all();
 
         $this->assertSame(
-            ['Administrator', 'Agent', 'Manager', 'Super Administrator', 'Viewer'],
+            ['Administrator', 'Agent', 'Manager', 'Owner', 'Super Administrator', 'Viewer'],
             $roleNames
         );
     }

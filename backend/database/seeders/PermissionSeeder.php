@@ -98,6 +98,13 @@ class PermissionSeeder extends Seeder
             ['name' => 'templates.use', 'group' => 'templates'],
             ['name' => 'templates.manage', 'group' => 'templates'],
             ['name' => 'dlq.manage', 'group' => 'admin'],
+
+            // Webhook endpoints surface. WebhookEndpointController is routed under
+            // routes/api.php with permission:webhooks.* - these must exist in the
+            // catalog or only super admins (who bypass all checks) can reach them.
+            ['name' => 'webhooks.view', 'group' => 'webhooks'],
+            ['name' => 'webhooks.manage', 'group' => 'webhooks'],
+            ['name' => 'webhooks.test', 'group' => 'webhooks'],
         ];
     }
 

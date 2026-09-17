@@ -54,3 +54,18 @@ export function formatDisplayPhone(input: string | null | undefined): string | n
   return cleaned;
 }
 
+/**
+ * Formats a WhatsApp JID/phone for compact topbar display: strips any device
+ * suffix ("94788198996:20" -> "94788198996") and pretty-prints a +94 number
+ * as "+94 78 819 8996". Falls back to formatDisplayPhone for other shapes.
+ */
+export function formatWhatsAppNumber(input: string | null | undefined): string | null {
+  const base = formatDisplayPhone(input?.split(":")[0] ?? null);
+  if (!base) return null;
+  const digits = base.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("94")) {
+    return `+${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 11)}`;
+  }
+  return base;
+}
+
