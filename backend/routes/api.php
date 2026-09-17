@@ -112,12 +112,30 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::patch('/users/{user}/suspend', [UserController::class, 'suspend'])
             ->middleware('permission:users.manage')
             ->name('users.suspend');
+        Route::post('/users/{user}/suspend', [UserController::class, 'suspend'])
+            ->middleware('permission:users.manage')
+            ->name('users.suspend-post');
         Route::patch('/users/{user}/reactivate', [UserController::class, 'reactivate'])
             ->middleware('permission:users.manage')
             ->name('users.reactivate');
+        Route::post('/users/{user}/reactivate', [UserController::class, 'reactivate'])
+            ->middleware('permission:users.manage')
+            ->name('users.reactivate-post');
+        Route::delete('/users/{user}', [UserController::class, 'destroy'])
+            ->middleware('permission:users.manage')
+            ->name('users.destroy');
+        Route::get('/invitations', [UserController::class, 'invitations'])
+            ->middleware('permission:invitations.manage')
+            ->name('invitations.index');
+        Route::patch('/invitations/{invitation}', [UserController::class, 'updateInvitation'])
+            ->middleware('permission:invitations.manage')
+            ->name('invitations.update');
         Route::post('/invitations/{invitation}/resend', [UserController::class, 'resendInvitation'])
             ->middleware('permission:invitations.manage')
             ->name('invitations.resend');
+        Route::post('/invitations/{invitation}/revoke', [UserController::class, 'revokeInvitation'])
+            ->middleware('permission:invitations.manage')
+            ->name('invitations.revoke');
 
         Route::prefix('teams')->name('teams.')->group(function () {
             Route::get('/', [TeamController::class, 'index'])->name('index');
@@ -135,6 +153,32 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('/{role}', [RoleController::class, 'show'])->name('show');
             Route::patch('/{role}', [RoleController::class, 'update'])->name('update');
             Route::delete('/{role}', [RoleController::class, 'destroy'])->name('destroy');
+        });
+
+        Route::prefix('workspace')->name('workspace-access.')->group(function () {
+            Route::get('/users', [UserController::class, 'index'])->middleware('permission:users.view')->name('users.index');
+            Route::get('/users/{user}', [UserController::class, 'show'])->middleware('permission:users.view')->name('users.show');
+            Route::patch('/users/{user}', [UserController::class, 'update'])->middleware('permission:users.manage')->name('users.update');
+            Route::post('/users/{user}/suspend', [UserController::class, 'suspend'])->middleware('permission:users.manage')->name('users.suspend');
+            Route::post('/users/{user}/reactivate', [UserController::class, 'reactivate'])->middleware('permission:users.manage')->name('users.reactivate');
+            Route::delete('/users/{user}', [UserController::class, 'destroy'])->middleware('permission:users.manage')->name('users.destroy');
+
+            Route::get('/roles', [RoleController::class, 'index'])->middleware('permission:roles.view')->name('roles.index');
+            Route::post('/roles', [RoleController::class, 'store'])->middleware('permission:roles.manage')->name('roles.store');
+            Route::get('/roles/{role}', [RoleController::class, 'show'])->middleware('permission:roles.view')->name('roles.show');
+            Route::patch('/roles/{role}', [RoleController::class, 'update'])->middleware('permission:roles.manage')->name('roles.update');
+            Route::delete('/roles/{role}', [RoleController::class, 'destroy'])->middleware('permission:roles.manage')->name('roles.destroy');
+
+            Route::get('/invitations', [UserController::class, 'invitations'])->middleware('permission:invitations.manage')->name('invitations.index');
+            Route::post('/invitations', [AuthController::class, 'invite'])->middleware(['permission:invitations.manage', 'throttle:invitation-create'])->name('invitations.store');
+            Route::patch('/invitations/{invitation}', [UserController::class, 'updateInvitation'])->middleware('permission:invitations.manage')->name('invitations.update');
+            Route::post('/invitations/{invitation}/resend', [UserController::class, 'resendInvitation'])->middleware('permission:invitations.manage')->name('invitations.resend');
+            Route::post('/invitations/{invitation}/revoke', [UserController::class, 'revokeInvitation'])->middleware('permission:invitations.manage')->name('invitations.revoke');
+        });
+
+        Route::prefix('admin')->name('admin.')->group(function () {
+            Route::get('/users', [UserController::class, 'index'])->middleware('permission:users.view')->name('users.index');
+            Route::get('/workspaces/{workspace}/users', [UserController::class, 'index'])->middleware('permission:users.view')->name('workspaces.users.index');
         });
 
         Route::get('/permissions', [PermissionController::class, 'index'])->name('permissions.index');
