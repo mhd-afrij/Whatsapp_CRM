@@ -50,7 +50,6 @@ class WorkspaceSettingController extends Controller
             'inbox_settings' => ['sometimes', 'array'],
             'contact_settings' => ['sometimes', 'array'],
             'lead_sales_settings' => ['sometimes', 'array'],
-            'integration_settings' => ['sometimes', 'array'],
             'away_message_enabled' => ['sometimes', 'boolean'],
             'away_message' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'away_message_trigger' => ['sometimes', Rule::in(['outside_hours', 'once_per_conversation'])],
@@ -60,7 +59,7 @@ class WorkspaceSettingController extends Controller
             $workspace->only(['name', 'slug', 'business_category', 'country', 'timezone', 'language']),
             $workspace->settings?->only([
                 'business_hours', 'notification_defaults', 'branding', 'default_pipeline_id',
-                'inbox_settings', 'contact_settings', 'lead_sales_settings', 'integration_settings',
+                'inbox_settings', 'contact_settings', 'lead_sales_settings',
                 'away_message_enabled', 'away_message', 'away_message_trigger',
             ]) ?? []
         );
@@ -80,7 +79,7 @@ class WorkspaceSettingController extends Controller
         $settings = $workspace->settings ?? $workspace->settings()->create(['workspace_id' => $workspace->id]);
         $settings->fill($request->only([
             'default_pipeline_id', 'business_hours', 'notification_defaults', 'branding',
-            'inbox_settings', 'contact_settings', 'lead_sales_settings', 'integration_settings',
+            'inbox_settings', 'contact_settings', 'lead_sales_settings',
             'away_message_enabled', 'away_message', 'away_message_trigger',
         ]));
         $settings->save();
@@ -152,12 +151,13 @@ class WorkspaceSettingController extends Controller
     {
         $workspaceId = $request->user()->workspace_id;
 
-        // Transferring ownership is the one action that hands out the
-        // super-administrator role, so it must be reserved for the current
-        // super administrator - an Administrator with workspace.settings.manage
-        // must not be able to promote themselves (or anyone else).
-        if (! $request->user()->isSuperAdmin()) {
-            return $this->error('Only the workspace super administrator can transfer ownership.', null, 403);
+        // Transferring ownership hands out the workspace's top system role, so it
+        // must be reserved for the current owner-tier user (platform Super
+        // Administrator, or the workspace's Owner from self-service signup). An
+        // Administrator with workspace.settings.manage must not be able to promote
+        // themselves (or anyone else).
+        if (! $request->user()->isSuperAdmin() && ! $request->user()->isWorkspaceOwner()) {
+            return $this->error('Only the workspace owner can transfer ownership.', null, 403);
         }
 
         $data = $request->validate([
@@ -166,10 +166,19 @@ class WorkspaceSettingController extends Controller
                 ->where('is_active', true)],
         ]);
 
-        $role = Role::query()
+        // The Owner-role workspaces (self-signup) transfer the Owner role; legacy
+        // workspaces created by seed/invite keep the super-administrator role.
+        $ownerRole = Role::query()
             ->where('workspace_id', $workspaceId)
-            ->where('slug', 'super-administrator')
-            ->firstOrFail();
+            ->where('slug', 'owner')
+            ->first();
+
+        $role = $ownerRole && $request->user()->isWorkspaceOwner()
+            ? $ownerRole
+            : Role::query()
+                ->where('workspace_id', $workspaceId)
+                ->where('slug', 'super-administrator')
+                ->firstOrFail();
 
         $target = User::query()
             ->where('workspace_id', $workspaceId)
@@ -252,7 +261,6 @@ class WorkspaceSettingController extends Controller
             'inbox_settings' => $settings?->inbox_settings ?? [],
             'contact_settings' => $settings?->contact_settings ?? [],
             'lead_sales_settings' => $settings?->lead_sales_settings ?? [],
-            'integration_settings' => $settings?->integration_settings ?? [],
             'away_message_enabled' => (bool) ($settings?->away_message_enabled ?? false),
             'away_message' => $settings?->away_message,
             'away_message_trigger' => $settings?->away_message_trigger ?? 'outside_hours',
@@ -267,7 +275,6 @@ class WorkspaceSettingController extends Controller
                 ->values(),
             'storage' => $this->storageInfo(),
             'security' => $this->securityInfo(),
-            'billing' => ['configured' => false, 'message' => 'Billing is not implemented in this workspace.'],
         ];
     }
 
