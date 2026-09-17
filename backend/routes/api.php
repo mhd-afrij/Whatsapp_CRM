@@ -38,6 +38,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     Route::get('/health', HealthController::class)->name('health');
 
     Route::prefix('auth')->name('auth.')->group(function () {
+        Route::post('/signup', [AuthController::class, 'signup'])
+            ->middleware('throttle:signup')
+            ->name('signup');
         Route::post('/login', [AuthController::class, 'login'])
             ->middleware('throttle:login')
             ->name('login');
@@ -50,11 +53,27 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('/invitations/accept', [AuthController::class, 'acceptInvitation'])
             ->middleware('throttle:invitation-accept')
             ->name('invitations.accept');
+        Route::post('/invitations/{token}/accept', [AuthController::class, 'acceptInvitationFromToken'])
+            ->middleware('throttle:invitation-accept')
+            ->name('invitations.accept-token');
+
+        // Onboarding Step 1 live username availability check (public, rate-limited).
+        Route::get('/username-available', [AuthController::class, 'usernameAvailable'])
+            ->middleware('throttle:username-check')
+            ->name('username-available');
 
         Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
             Route::get('/me', [AuthController::class, 'me'])->name('me');
             Route::patch('/me', [AuthController::class, 'updateMe'])->name('me.update');
+
+            // Onboarding wizard: resumable state + Steps 2-4 (workspace/profile,
+            // WhatsApp number, and completion). Connection itself never happens
+            // here — the wizard reuses the real gateway QR/pairing endpoints.
+            Route::get('/onboarding', [AuthController::class, 'onboardingStatus'])->name('onboarding.status');
+            Route::post('/onboarding/workspace', [AuthController::class, 'onboardingWorkspace'])->name('onboarding.workspace');
+            Route::post('/onboarding/whatsapp', [AuthController::class, 'onboardingWhatsapp'])->name('onboarding.whatsapp');
+            Route::post('/onboarding/complete', [AuthController::class, 'onboardingComplete'])->name('onboarding.complete');
 
             // Permission matrix (docs/07-permission-matrix.md) names this
             // "invitations.manage" — used here instead of a non-existent "users.create".

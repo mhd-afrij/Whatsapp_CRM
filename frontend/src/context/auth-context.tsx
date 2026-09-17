@@ -17,17 +17,29 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
+  username?: string | null;
+  position?: string | null;
   workspace_id?: string;
   is_active?: boolean;
   roles: string[];
   role_keys?: Array<"super_admin" | "admin" | "user">;
   permissions: string[];
+  /** Onboarding wizard stage; "completed" means the CRM is fully available. */
+  onboarding_step?: string | null;
 }
 
 interface LoginResponseData {
   user: AuthUser;
   access_token: string;
   refresh_token?: string;
+}
+
+export interface SignupRequest {
+  name: string;
+  email: string;
+  username: string;
+  password: string;
+  password_confirmation: string;
 }
 
 /** Tolerant view of the envelope: the backend may omit `success` on 2xx. */
@@ -37,7 +49,8 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
+  signup: (payload: SignupRequest) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   can: (permission: string) => boolean;
@@ -80,11 +93,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchCurrentUser();
   }, [fetchCurrentUser]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, rememberMe = false) => {
     try {
       const { data } = await apiClient.post<ApiResponse<LoginResponseData>>("/auth/login", {
         email,
         password,
+        remember_me: rememberMe,
       });
 
       // The Laravel API returns a bare `{data: {...}}` body on success — no
@@ -106,6 +120,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const signup = useCallback(async (payload: SignupRequest) => {
+    try {
+      const { data } = await apiClient.post<ApiResponse<LoginResponseData>>("/auth/signup", payload);
+
+      const envelope = data as AuthEnvelope<LoginResponseData>;
+      if (envelope.success === false || !envelope.data?.access_token) {
+        throw new ApiError(envelope.message ?? "Unable to create your account.", {
+          code: envelope.code ?? null,
+          errors: envelope.errors ?? null,
+        });
+      }
+
+      setToken(envelope.data.access_token);
+      markAuthPresence(true);
+      setUser(envelope.data.user);
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError("Unable to create your account. Please try again.");
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await apiClient.post("/auth/logout");
@@ -118,8 +153,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Mirrors the backend's permission model exactly: RequirePermission
+  // middleware passes when `$user->isSuperAdmin()` regardless of the stored
+  // permission rows, so the UX-layer check must do the same. Without this,
+  // a superadmin whose database predates a newly-seeded permission (e.g.
+  // webhooks.*) is blocked client-side even though the API would allow it.
   const can = useCallback(
-    (permission: string) => user?.permissions?.includes(permission) ?? false,
+    (permission: string) => {
+      if (user?.role_keys?.includes("super_admin")) return true;
+      return user?.permissions?.includes(permission) ?? false;
+    },
     [user]
   );
 
@@ -142,11 +185,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: user !== null,
       isLoading,
       login,
+      signup,
       logout,
       refresh: fetchCurrentUser,
       can,
     }),
-    [user, isLoading, login, logout, fetchCurrentUser, can]
+    [user, isLoading, login, signup, logout, fetchCurrentUser, can]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

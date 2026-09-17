@@ -82,6 +82,15 @@ class RolePermissionSeeder extends Seeder
 
             'dlq.manage' => ['Super Administrator', 'Administrator'],
 
+            // Webhook endpoints: view + send-test are safe read/self-directed
+            // actions (test does a real but throttled signed HTTP round trip to the
+            // endpoint's OWN URL, never touching other workspaces), so Managers can
+            // use them. Mutating an endpoint or rotating its secret is admin-only,
+            // intentionally mirroring dlq.manage.
+            'webhooks.view' => ['Super Administrator', 'Administrator', 'Manager'],
+            'webhooks.test' => ['Super Administrator', 'Administrator', 'Manager'],
+            'webhooks.manage' => ['Super Administrator', 'Administrator'],
+
             // Campaigns module - per docs/07-permission-matrix.md: managers have
             // read-only visibility, only admins compose/send.
             'campaigns.view' => ['Super Administrator', 'Administrator', 'Manager'],
@@ -100,6 +109,11 @@ class RolePermissionSeeder extends Seeder
 
         $roles = [
             'Super Administrator' => 'Full unrestricted access, including role/permission management and irreversible actions.',
+            // Workspace creator role from self-service signup. A distinct name/slug so a
+            // workspace Owner is never treated as the *platform* Super Administrator
+            // (isSuperAdmin() matches on the Super Administrator name/slug only) - new
+            // signups must never obtain platform-level privileges.
+            'Owner' => 'Account owner with full control of the workspace. Created for the user who registers a new workspace.',
             'Administrator' => 'Operational control over the whole workspace; cannot edit roles/permissions or hard-delete conversations.',
             'Manager' => 'Full visibility and management within their team(s); no workspace-admin or role-admin capability.',
             'Agent' => 'Day-to-day operator; manages their own contacts/deals/tasks and replies to assigned/team conversations.',
@@ -127,25 +141,44 @@ class RolePermissionSeeder extends Seeder
 
     public function run(): void
     {
-        $workspaces = Workspace::query()->get();
+        foreach (Workspace::query()->get() as $workspace) {
+            static::seedForWorkspace($workspace);
+        }
+    }
 
-        foreach ($workspaces as $workspace) {
-            foreach (static::roleDefinitions() as $name => $definition) {
-                $role = Role::query()->firstOrCreate(
-                    ['workspace_id' => $workspace->id, 'name' => $name],
-                    [
-                        'slug' => $definition['slug'],
-                        'is_system' => true,
-                        'description' => $definition['description'],
-                    ]
-                );
+    /**
+     * Idempotently seeds the system roles + permission grants for one workspace.
+     * Used both by DatabaseSeeder and AuthController::signup when a new workspace
+     * is created through self-service registration.
+     */
+    public static function seedForWorkspace(Workspace $workspace): void
+    {
+        // Ensure the global permission catalog exists before resolving full-catalog
+        // roles (Super Administrator, Owner). firstOrCreate is idempotent.
+        (new PermissionSeeder)->run();
 
-                $permissionIds = Permission::query()
-                    ->whereIn('name', $definition['permissions'])
-                    ->pluck('id');
+        foreach (static::roleDefinitions() as $name => $definition) {
+            $role = Role::query()->firstOrCreate(
+                ['workspace_id' => $workspace->id, 'name' => $name],
+                [
+                    'slug' => $definition['slug'],
+                    'is_system' => true,
+                    'description' => $definition['description'],
+                ]
+            );
 
-                $role->permissions()->syncWithoutDetaching($permissionIds);
-            }
+            // Super Administrator and Owner both hold the full permission catalog;
+            // the two are distinguished by name/slug only so isSuperAdmin() stays false
+            // for workspace Owners (platform privileges are never granted at signup).
+            $permissionNames = in_array($name, ['Super Administrator', 'Owner'], true)
+                ? Permission::query()->pluck('name')->all()
+                : $definition['permissions'];
+
+            $permissionIds = Permission::query()
+                ->whereIn('name', $permissionNames)
+                ->pluck('id');
+
+            $role->permissions()->syncWithoutDetaching($permissionIds);
         }
     }
 }

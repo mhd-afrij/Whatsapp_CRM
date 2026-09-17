@@ -23,13 +23,13 @@ export default function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<LoginSchemaValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: "", password: "", remember_me: false },
   });
 
   const onSubmit = async (values: LoginSchemaValues) => {
     setFormError(null);
     try {
-      await login(values.email, values.password);
+      await login(values.email, values.password, values.remember_me);
       router.push("/inbox");
     } catch (error) {
       const message =
@@ -94,6 +94,20 @@ export default function LoginPage() {
             )}
           </div>
 
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-sm text-muted">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                {...register("remember_me")}
+              />
+              Remember me
+            </label>
+            <Link href="/forgot-password" className="text-sm font-medium text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+
           {formError && (
             <p className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">{formError}</p>
           )}
@@ -106,14 +120,12 @@ export default function LoginPage() {
             {isSubmitting ? "Signing in..." : "Sign in"}
           </button>
 
-          <div className="space-y-1 text-center">
-            <p className="text-sm">
-              <Link href="/forgot-password" className="font-medium text-primary hover:underline">
-                Forgot your password?
-              </Link>
-            </p>
+          <div className="text-center">
             <p className="text-sm text-muted">
-              Accounts are managed through workspace invitations.
+              Don&apos;t have an account?{" "}
+              <Link href="/signup" className="font-medium text-primary hover:underline">
+                Create Account
+              </Link>
             </p>
           </div>
         </form>

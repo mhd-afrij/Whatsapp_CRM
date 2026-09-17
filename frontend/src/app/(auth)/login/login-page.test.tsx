@@ -58,7 +58,9 @@ describe("LoginPage", () => {
     await user.type(screen.getByLabelText(/^password$/i), "Password123!");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
-    await waitFor(() => expect(login).toHaveBeenCalledWith("agent@example.com", "Password123!"));
+    await waitFor(() =>
+      expect(login).toHaveBeenCalledWith("agent@example.com", "Password123!", false)
+    );
     await waitFor(() => expect(push).toHaveBeenCalledWith("/inbox"));
   });
 
