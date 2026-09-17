@@ -4,7 +4,6 @@ use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Api\V1\AnalyticsSettingController;
 use App\Http\Controllers\Api\V1\AiAssistantController;
 use App\Http\Controllers\Api\V1\AuditLogController;
-use App\Http\Controllers\Api\V1\AutomationRuleController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BusinessHoursController;
 use App\Http\Controllers\Api\V1\CalendarEventController;
@@ -42,6 +41,7 @@ use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TeamController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WebhookEndpointController;
+use App\Http\Controllers\Api\V1\WhatsappAccountController;
 use App\Http\Controllers\Api\V1\WhatsappController;
 use App\Http\Controllers\Api\V1\WorkspaceSettingController;
 use Illuminate\Support\Facades\Route;
@@ -391,11 +391,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::get('/{task}/comments', [TaskController::class, 'comments'])->name('comments.index');
             Route::post('/{task}/comments', [TaskController::class, 'storeComment'])->name('comments.store');
         });
-
-        Route::apiResource('automation-rules', AutomationRuleController::class)
-            ->except(['show'])
-            ->names('automation-rules')
-            ->middleware('permission:workspace.settings.manage');
 
         Route::prefix('notes')->name('notes.')->group(function () {
             Route::get('/', [InternalNoteController::class, 'index'])->name('index');
