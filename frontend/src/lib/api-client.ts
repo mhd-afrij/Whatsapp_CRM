@@ -189,8 +189,11 @@ apiClient.interceptors.response.use(
  * react-query fetchers so callers work with plain domain types instead of
  * the envelope.
  *
- * The Laravel backend returns a bare `{data: ...}` body on success and only
- * sets `success: false` on failures, so a missing flag means success.
+ * The Laravel backend returns `{ success: true, message, data }` on success
+ * (or a bare `{data: ...}` body on endpoints that predate the envelope) and
+ * only sets `success: false` on failures, so a missing flag means success.
+ * `data` may legitimately be `null` for success responses with no payload
+ * (e.g. DELETE endpoints), which is not an error.
  */
 export async function unwrap<T>(promise: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   const { data: body } = await promise;

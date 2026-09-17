@@ -10,6 +10,11 @@ vi.mock('../queues/media-download.queue', () => ({
   enqueueMediaDownload: (...args: unknown[]) => enqueueMediaDownload(...args),
 }));
 
+const notifyNewMessage = vi.fn().mockResolvedValue(true);
+vi.mock('../lib/laravel-client', () => ({
+  notifyNewMessage: (...args: unknown[]) => notifyNewMessage(...args),
+}));
+
 interface FakeConn {
   query: ReturnType<typeof vi.fn>;
   beginTransaction: ReturnType<typeof vi.fn>;
@@ -73,7 +78,7 @@ vi.mock('../lib/mysql', () => ({
     makeFakePool().getConnection().then((conn: FakeConn) => callback(conn)),
 }));
 
-import { handleMessagesUpsert } from './inbound-pipeline';
+import { handleMessagesUpsert, processOneMessage } from './inbound-pipeline';
 import type { BaileysMessagesUpsert } from './baileys-socket';
 
 function textMessage(id: string): BaileysMessagesUpsert {
@@ -85,6 +90,20 @@ function textMessage(id: string): BaileysMessagesUpsert {
         pushName: 'Jane',
         messageTimestamp: Math.floor(Date.now() / 1000),
         message: { conversation: 'hello there' },
+      },
+    ],
+  };
+}
+
+function outboundTextMessage(id: string): BaileysMessagesUpsert {
+  return {
+    type: 'notify',
+    messages: [
+      {
+        key: { id, remoteJid: '2547000000@s.whatsapp.net', fromMe: true },
+        pushName: 'Jane',
+        messageTimestamp: Math.floor(Date.now() / 1000),
+        message: { conversation: 'bye' },
       },
     ],
   };
@@ -106,6 +125,33 @@ describe('inbound pipeline', () => {
       10,
       expect.objectContaining({ message: expect.objectContaining({ body: 'hello there' }) }),
     );
+  });
+
+  it('notifies Laravel of a live inbound message once', async () => {
+    await handleMessagesUpsert(1, textMessage('MSG-1'));
+
+    expect(notifyNewMessage).toHaveBeenCalledTimes(1);
+    expect(notifyNewMessage).toHaveBeenCalledWith({
+      workspaceId: 1,
+      conversationId: 10,
+      messageId: 101,
+      messageType: 'text',
+      preview: 'hello there',
+    });
+  });
+
+  it('never notifies Laravel for outbound messages', async () => {
+    await handleMessagesUpsert(1, outboundTextMessage('MSG-OUT'));
+
+    expect(notifyNewMessage).not.toHaveBeenCalled();
+  });
+
+  it('never notifies Laravel during a history import (live=false)', async () => {
+    const raw = textMessage('MSG-HIST').messages[0];
+    await processOneMessage(1, raw, { live: false });
+
+    expect(emitMessageCreated).not.toHaveBeenCalled();
+    expect(notifyNewMessage).not.toHaveBeenCalled();
   });
 
   it('treats a duplicate whatsapp_message_id as an idempotent no-op, not a crash', async () => {
