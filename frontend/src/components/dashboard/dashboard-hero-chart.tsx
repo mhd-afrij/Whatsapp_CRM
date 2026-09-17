@@ -25,7 +25,7 @@ export function DashboardHeroChart({ data, isLoading, isError }: DashboardHeroCh
   const totals = (data ?? []).reduce((result, point) => ({ won: result.won + (point.won_value ?? 0), lost: result.lost + (point.lost_value ?? 0) }), { won: 0, lost: 0 });
 
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-xs">
+    <section className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
       <div className="flex flex-col gap-3 border-b border-border/60 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Revenue pulse</p>

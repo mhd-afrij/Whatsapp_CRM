@@ -60,7 +60,7 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border bg-surface p-4 shadow-xs">
+    <section className="rounded-2xl border border-border bg-surface p-4 shadow-card transition-colors duration-200 ease-out-soft hover:border-primary/25 motion-reduce:transition-none">
       <h2 className="mb-2 text-sm font-bold text-text">{title}</h2>
       {isLoading ? (
         <div className="h-32 animate-pulse rounded-lg bg-border/60" />
@@ -158,7 +158,8 @@ function DashboardContent() {
 
   return (
     <div className="space-y-4 pb-2">
-      <header className="rounded-xl border border-border bg-surface p-4 shadow-xs">
+      <header className="relative overflow-hidden rounded-2xl border border-border bg-surface p-4 shadow-card animate-rise">
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -214,7 +215,7 @@ function DashboardContent() {
         </div>
       ) : (
         s && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 [&>*:nth-child(2)]:[animation-delay:70ms] [&>*:nth-child(3)]:[animation-delay:140ms] [&>*:nth-child(4)]:[animation-delay:210ms] [&>*:nth-child(5)]:[animation-delay:280ms] [&>*:nth-child(6)]:[animation-delay:350ms]">
             <DashboardKpiCard
               label="Open conversations"
               value={String(s.conversations.open)}

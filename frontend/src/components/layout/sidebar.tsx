@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, ChevronsUpDown, PanelLeftOpen, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronsUpDown, MessageCircle, PanelLeftOpen, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
 import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
@@ -19,7 +19,7 @@ function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
 
   return (
     <div className={cn("relative border-b border-border p-3", collapsed && "px-2")}>
-      <button type="button" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((value) => !value)} title={collapsed ? name : undefined} className={cn("flex w-full items-center gap-2 rounded-lg border border-border bg-bg px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary-soft/20", collapsed && "justify-center px-2")}>
+      <button type="button" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen((value) => !value)} title={collapsed ? name : undefined} className={cn("flex w-full items-center gap-2 rounded-lg border border-border bg-bg px-2.5 py-2 text-left transition-all duration-200 ease-out-soft hover:-translate-y-px hover:border-primary/40 hover:bg-primary-soft/20 hover:shadow-card motion-reduce:transition-none motion-reduce:hover:translate-y-0", collapsed && "justify-center px-2")}>
         {logoUrl ? <img src={logoUrl} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" /> : <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/15 text-[10px] font-bold text-primary">{initials || "WS"}</span>}
         {!collapsed && (
           <>
@@ -29,7 +29,7 @@ function WorkspaceSwitcher({ collapsed }: { collapsed: boolean }) {
         )}
       </button>
       {open && (
-        <div role="menu" className={cn("absolute z-50 mt-2 w-[calc(100%-1.5rem)] overflow-hidden rounded-xl border border-border bg-surface p-1.5 shadow-xl", collapsed ? "left-12 top-1 w-56" : "left-3")}>
+        <div role="menu" className={cn("absolute z-50 mt-2 w-[calc(100%-1.5rem)] overflow-hidden rounded-xl border border-border bg-surface p-1.5 shadow-pop", collapsed ? "left-12 top-1 w-56" : "left-3")}>
           <div className="border-b border-border px-2.5 py-2"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Current workspace</p><p className="truncate text-sm font-semibold text-text">{name}</p></div>
           <button type="button" disabled className="flex w-full cursor-not-allowed rounded-md px-2.5 py-2 text-left text-sm text-muted opacity-60">Switch workspace</button>
           <button type="button" disabled className="flex w-full cursor-not-allowed rounded-md px-2.5 py-2 text-left text-sm text-muted opacity-60">View all workspaces</button>
@@ -70,7 +70,7 @@ function NavigationGroups({ pathname, collapsed, onNavigate }: { pathname: strin
   const renderItem = (item: NavigationItem) => {
     const active = activeHref === item.href;
     const Icon = item.icon;
-    return <Link key={item.href} href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined} title={collapsed ? item.label : undefined} className={cn("flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors", collapsed && "justify-center px-2", active ? "bg-primary-soft text-primary-dark" : "text-muted hover:bg-primary-soft/50 hover:text-text")}><Icon className="h-4 w-4 shrink-0" />{!collapsed && <span className="flex-1 whitespace-nowrap">{item.label}</span>}</Link>;
+    return <Link key={item.href} href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined} title={collapsed ? item.label : undefined} className={cn("relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-200 ease-out-soft motion-reduce:transition-none", collapsed && "justify-center px-2", active ? "bg-primary-soft font-semibold text-primary-dark after:absolute after:left-0 after:top-1/2 after:h-4 after:w-[3px] after:-translate-y-1/2 after:rounded-full after:bg-primary after:content-['']" : "text-muted hover:bg-primary-soft/60 hover:text-text")}><Icon className="h-4 w-4 shrink-0" />{!collapsed && <span className="flex-1 whitespace-nowrap">{item.label}</span>}</Link>;
   };
 
   const renderSection = (section: NavigationSection) => {
@@ -85,8 +85,8 @@ function NavigationGroups({ pathname, collapsed, onNavigate }: { pathname: strin
 }
 
 function SidebarShell({ collapsed, onToggle, mobile = false, children }: { collapsed: boolean; onToggle?: () => void; mobile?: boolean; children: React.ReactNode }) {
-  return <aside className={cn("relative flex h-full flex-col border-r border-border bg-surface", mobile ? "w-64 max-w-[80vw] shadow-lg" : "hidden shrink-0 overflow-hidden md:flex", !mobile && (collapsed ? "w-16" : "w-64"))}>
-    <div className={cn("flex h-16 shrink-0 items-center border-b border-border", collapsed && !mobile ? "justify-center" : "gap-2 px-5")}><span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-primary" />{(!collapsed || mobile) && <span className="text-base font-semibold text-text">CRM WhatsApp</span>}{mobile && onToggle && <button type="button" onClick={onToggle} aria-label="Close navigation menu" className="ml-auto rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text"><X className="h-5 w-5" /></button>}</div>
+  return <aside className={cn("sidebar-surface relative flex h-full flex-col border-r border-border bg-surface", mobile ? "w-64 max-w-[80vw] shadow-lg" : "hidden shrink-0 overflow-hidden md:flex", !mobile && (collapsed ? "w-16" : "w-64"))}>
+    <div className={cn("flex h-16 shrink-0 items-center border-b border-border", collapsed && !mobile ? "justify-center" : "gap-2.5 px-5")}><span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#0b6e4f] to-[#25d366] text-white shadow-sm"><MessageCircle className="size-4" /></span>{(!collapsed || mobile) && <span className="text-base font-semibold tracking-tight text-text">CRM WhatsApp</span>}{mobile && onToggle && <button type="button" onClick={onToggle} aria-label="Close navigation menu" className="ml-auto rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text"><X className="h-5 w-5" /></button>}</div>
     <WorkspaceSwitcher collapsed={collapsed && !mobile} />
     {!mobile && collapsed && <button type="button" onClick={onToggle} aria-label="Expand sidebar" title="Expand sidebar" className="mx-2 mt-2 flex items-center justify-center rounded-md p-2 text-muted transition-colors hover:bg-primary-soft/50 hover:text-text"><PanelLeftOpen className="h-4 w-4" /></button>}
     {children}

@@ -6,6 +6,7 @@ import { Search, X } from "lucide-react";
 import { useGlobalSearch } from "@/hooks/use-search";
 import { SEARCH_CATEGORY_LABELS, type SearchCategory } from "@/lib/search-api";
 import { highlightMatch } from "@/components/search/highlight-match";
+import { cn } from "@/lib/utils";
 
 // Tasks are indexed by the backend but their pages were removed, so task
 // results are not surfaced. Leads are searched on the backend and link to the
@@ -52,6 +53,7 @@ function resultHref(category: SearchCategory, id: number): string {
 export function GlobalSearchBar() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { data, isLoading, isFetching } = useGlobalSearch(query);
@@ -60,6 +62,7 @@ export function GlobalSearchBar() {
     function onClickOutside(e: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
+        setMobileOpen(false);
       }
     }
     document.addEventListener("mousedown", onClickOutside);
@@ -71,94 +74,124 @@ export function GlobalSearchBar() {
   const showDropdown = open && query.trim().length > 0;
 
   return (
-    <div ref={containerRef} className="relative min-w-0 max-w-sm flex-1">
-      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-      <input
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && query.trim()) {
-            router.push(`/search?q=${encodeURIComponent(query.trim())}`);
-            setOpen(false);
-          }
-          if (e.key === "Escape") {
-            setOpen(false);
-          }
-        }}
-        placeholder="Search contacts, conversations, deals…"
-        aria-label="Global search"
-        className="w-full min-w-0 rounded-md border border-border bg-bg py-2 pl-9 pr-8 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
-      />
-      {query && (
-        <button
-          type="button"
-          aria-label="Clear search"
-          onClick={() => {
-            setQuery("");
-            setOpen(false);
-          }}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-text"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      )}
+    <div
+      ref={containerRef}
+      className="relative flex min-w-0 sm:w-[clamp(280px,30vw,420px)] sm:shrink"
+    >
+      <button
+        type="button"
+        aria-label="Search"
+        title="Search"
+        onClick={() => setMobileOpen(true)}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:hidden"
+      >
+        <Search className="h-5 w-5" />
+      </button>
 
-      {showDropdown && (
-        <div className="absolute z-20 mt-1 max-h-[70vh] w-full min-w-[22rem] overflow-y-auto rounded-lg border border-border bg-surface p-2 shadow-xl">
-          {(isLoading || isFetching) && (
-            <div className="space-y-2 p-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-8 animate-pulse rounded bg-border/60" />
-              ))}
+      <div
+        className={cn(
+          "min-w-0 sm:relative sm:flex",
+          mobileOpen ? "absolute inset-x-0 top-1/2 z-30 -translate-y-1/2 px-3" : "hidden sm:flex"
+        )}
+      >
+        <div className="relative w-full">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && query.trim()) {
+                router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+                setOpen(false);
+                setMobileOpen(false);
+              }
+              if (e.key === "Escape") {
+                setOpen(false);
+                setMobileOpen(false);
+              }
+            }}
+            placeholder="Search contacts, conversations, deals…"
+            aria-label="Global search"
+            className="w-full min-w-0 rounded-md border border-border bg-bg py-2 pl-9 pr-8 text-sm text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          {query && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => {
+                setQuery("");
+                setOpen(false);
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-text"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+
+          {showDropdown && (
+            <div className="absolute z-20 mt-1 w-full min-w-[22rem] max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-surface p-2 shadow-xl left-0 right-0">
+              {(isLoading || isFetching) && (
+                <div className="space-y-2 p-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="h-8 animate-pulse rounded bg-border/60" />
+                  ))}
+                </div>
+              )}
+
+              {!isLoading && !hasAnyResults && (
+                <p className="p-3 text-sm text-muted">No results for &ldquo;{query}&rdquo;.</p>
+              )}
+
+              {!isLoading &&
+                CATEGORY_ORDER.filter((cat) => categories[cat] && categories[cat]!.total > 0).map((cat) => {
+                  const result = categories[cat]!;
+                  return (
+                    <div key={cat} className="mb-2 last:mb-0">
+                      <div className="flex items-center justify-between px-2 py-1">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                          {SEARCH_CATEGORY_LABELS[cat]}
+                        </span>
+                        <span className="text-xs text-muted">{result.total}</span>
+                      </div>
+                      <ul>
+                        {result.items.map((item) => (
+                          <li key={item.id}>
+                            <a
+                              href={resultHref(cat, item.id)}
+                              onClick={() => {
+                                setOpen(false);
+                                setMobileOpen(false);
+                              }}
+                              className="block truncate rounded-md px-2 py-1.5 text-sm text-text hover:bg-primary-soft/50"
+                            >
+                              {highlightMatch(resultLabel(cat, item), query)}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                      {result.total > result.items.length && (
+                        <a
+                          href={`/search?q=${encodeURIComponent(query)}&category=${cat}`}
+                          onClick={() => {
+                            setOpen(false);
+                            setMobileOpen(false);
+                          }}
+                          className="mt-1 block px-2 py-1 text-xs font-medium text-primary hover:underline"
+                        >
+                          See all {result.total} {SEARCH_CATEGORY_LABELS[cat].toLowerCase()} results
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
             </div>
           )}
-
-          {!isLoading && !hasAnyResults && (
-            <p className="p-3 text-sm text-muted">No results for &ldquo;{query}&rdquo;.</p>
-          )}
-
-          {!isLoading &&
-            CATEGORY_ORDER.filter((cat) => categories[cat] && categories[cat]!.total > 0).map((cat) => {
-              const result = categories[cat]!;
-              return (
-                <div key={cat} className="mb-2 last:mb-0">
-                  <div className="flex items-center justify-between px-2 py-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted">
-                      {SEARCH_CATEGORY_LABELS[cat]}
-                    </span>
-                    <span className="text-xs text-muted">{result.total}</span>
-                  </div>
-                  <ul>
-                    {result.items.map((item) => (
-                      <li key={item.id}>
-                        <a
-                          href={resultHref(cat, item.id)}
-                          onClick={() => setOpen(false)}
-                          className="block truncate rounded-md px-2 py-1.5 text-sm text-text hover:bg-primary-soft/50"
-                        >
-                          {highlightMatch(resultLabel(cat, item), query)}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                  {result.total > result.items.length && (
-                    <a
-                      href={`/search?q=${encodeURIComponent(query)}&category=${cat}`}
-                      onClick={() => setOpen(false)}
-                      className="mt-1 block px-2 py-1 text-xs font-medium text-primary hover:underline"
-                    >
-                      See all {result.total} {SEARCH_CATEGORY_LABELS[cat].toLowerCase()} results
-                    </a>
-                  )}
-                </div>
-              );
-            })}
         </div>
-      )}
+      </div>
     </div>
   );
 }

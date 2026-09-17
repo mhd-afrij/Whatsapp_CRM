@@ -1,33 +1,93 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, Wifi, WifiOff, Sun, Moon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  Building2,
+  LogOut,
+  Menu,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  Sun,
+  User,
+} from "lucide-react";
 import { useAuth } from "@/context/auth-context";
-import { useSocket } from "@/providers/socket-provider";
 import { useTheme } from "@/context/theme-context";
 import { WhatsappStatusIndicator } from "@/components/layout/whatsapp-status-indicator";
 import { GlobalSearchBar } from "@/components/search/global-search-bar";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { Avatar } from "@/components/ui/avatar";
 import { useMobileSidebar } from "@/components/layout/mobile-sidebar-context";
+import { cn } from "@/lib/utils";
+
+function ProfileMenuItem({
+  icon: Icon,
+  label,
+  onClick,
+  danger = false,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm hover:bg-primary-soft/50",
+        danger ? "text-danger" : "text-text"
+      )}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
+  );
+}
 
 export function Topnav() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, logout } = useAuth();
-  const { isConnected } = useSocket();
   const { theme, toggleTheme } = useTheme();
   const { open, collapsed, toggleCollapsed } = useMobileSidebar();
+
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!profileOpen) return;
+    const onClickOutside = (event: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [profileOpen]);
+
+  const go = (href: string) => {
+    setProfileOpen(false);
+    router.push(href);
+  };
 
   if (pathname?.startsWith("/inbox")) {
     return null;
   }
 
+  const iconButtonClass =
+    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
+
   return (
-    <header className="flex h-16 items-center justify-between gap-2 border-b border-border bg-surface px-3 sm:gap-3 sm:px-4 lg:gap-4 lg:px-6">
+    <header className="topnav-print-hide relative z-10 flex h-16 min-w-0 items-center gap-2 border-b border-border bg-surface px-6 shadow-topnav md:gap-4">
       <button
         type="button"
         onClick={open}
         aria-label="Open navigation menu"
-        className="shrink-0 rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary md:hidden"
+        title="Open navigation menu"
+        className={cn(iconButtonClass, "md:hidden")}
       >
         <Menu className="h-5 w-5" />
       </button>
@@ -37,23 +97,16 @@ export function Topnav() {
         onClick={toggleCollapsed}
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        className="hidden shrink-0 rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary md:inline-flex"
+        className={cn(iconButtonClass, "hidden md:inline-flex")}
       >
         {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
       </button>
 
-      <div className="hidden shrink-0 items-center gap-2 text-sm text-muted lg:flex">
-        {isConnected ? (
-          <Wifi className="h-4 w-4 text-success" />
-        ) : (
-          <WifiOff className="h-4 w-4 text-muted" />
-        )}
-        <span>{isConnected ? "Live" : "Offline"}</span>
-      </div>
-
       <GlobalSearchBar />
 
-      <div className="flex shrink-0 items-center gap-2 sm:gap-3 lg:gap-4">
+      <div className="flex-1" />
+
+      <div className="flex shrink-0 items-center gap-2 md:gap-4">
         <WhatsappStatusIndicator />
 
         <NotificationBell />
@@ -62,28 +115,62 @@ export function Topnav() {
           type="button"
           onClick={toggleTheme}
           aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-          className="flex items-center justify-center rounded-md p-2 text-muted hover:bg-primary-soft/50 hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          title="Toggle theme"
+          className={iconButtonClass}
         >
           {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
         </button>
 
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white">
-            {user?.name?.[0]?.toUpperCase() ?? "?"}
-          </div>
-          <div className="hidden text-sm sm:block">
-            <p className="font-medium text-text">{user?.name ?? "Unknown"}</p>
-            <p className="hidden text-xs text-muted xl:block">{user?.email ?? ""}</p>
-          </div>
+        <div ref={profileRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setProfileOpen((v) => !v)}
+            aria-label="Profile menu"
+            title="Profile"
+            className="flex cursor-pointer items-center gap-2.5 rounded-lg p-1 pr-1.5 hover:bg-primary-soft/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            <Avatar name={user?.name ?? "?"} size="sm" className="h-9 w-9" />
+            <span className="hidden text-left leading-tight lg:block">
+              <span className="block text-sm font-medium text-text">{user?.name ?? "Unknown"}</span>
+              <span className="hidden text-xs text-muted xl:block">{user?.email ?? ""}</span>
+            </span>
+          </button>
+
+          {profileOpen && (
+            <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-border bg-surface py-1.5 shadow-pop">
+              <ProfileMenuItem icon={User} label="Profile" onClick={() => go("/settings/profile")} />
+              <ProfileMenuItem
+                icon={Settings}
+                label="Account Settings"
+                onClick={() => go("/settings/profile")}
+              />
+              <ProfileMenuItem
+                icon={Building2}
+                label="Workspace"
+                onClick={() => go("/settings/workspace")}
+              />
+              <div className="my-1 border-t border-border" />
+              <ProfileMenuItem
+                icon={LogOut}
+                label="Logout"
+                danger
+                onClick={() => {
+                  setProfileOpen(false);
+                  logout();
+                }}
+              />
+            </div>
+          )}
         </div>
 
         <button
           type="button"
           onClick={() => logout()}
-          className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted hover:bg-danger/10 hover:text-danger"
+          aria-label="Logout"
+          title="Logout"
+          className={cn(iconButtonClass, "ml-2 hidden md:inline-flex hover:bg-danger/10 hover:text-danger")}
         >
           <LogOut className="h-4 w-4" />
-          <span className="hidden md:inline">Logout</span>
         </button>
       </div>
     </header>
