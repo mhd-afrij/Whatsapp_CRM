@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AnalyticsController;
+use App\Http\Controllers\Api\V1\AnalyticsSettingController;
 use App\Http\Controllers\Api\V1\AiAssistantController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AutomationRuleController;
@@ -21,11 +22,13 @@ use App\Http\Controllers\Api\V1\MediaController;
 use App\Http\Controllers\Api\V1\MessageTemplateController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\NotificationPreferenceController;
+use App\Http\Controllers\Api\V1\NotificationSettingsController;
 use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\PipelineController;
 use App\Http\Controllers\Api\V1\ReportExportController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\SearchController;
+use App\Http\Controllers\Api\V1\SettingsController;
 use App\Http\Controllers\Api\V1\SlaController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\TeamController;
@@ -109,6 +112,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'store'])->name('store');
             Route::patch('/{id}', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'update'])->name('update');
             Route::delete('/{id}', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'destroy'])->name('destroy');
+            Route::post('/reorder', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'reorder'])->name('reorder');
         });
 
         Route::prefix('whatsapp')->name('whatsapp.')->middleware('permission:whatsapp.connection.manage')->group(function () {
@@ -389,6 +393,35 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::prefix('notification-preferences')->name('notification-preferences.')->group(function () {
             Route::get('/', [NotificationPreferenceController::class, 'index'])->name('index');
             Route::patch('/', [NotificationPreferenceController::class, 'update'])->name('update');
+        });
+
+        // CRM settings modules (Contact Settings, Inbox Settings, Notifications).
+        // Contacts/inbox share the workspace.settings.manage gate; the
+        // notifications settings are personal, so they stay ungated like the
+        // notification-preferences routes above.
+        Route::prefix('settings')->name('settings.')->group(function () {
+            Route::middleware('permission:workspace.settings.manage')->group(function () {
+                Route::get('/contacts', [SettingsController::class, 'contactSettings'])->name('contacts.show');
+                Route::patch('/contacts', [SettingsController::class, 'updateContactSettings'])->name('contacts.update');
+                Route::get('/inbox', [SettingsController::class, 'inboxSettings'])->name('inbox.show');
+                Route::patch('/inbox', [SettingsController::class, 'updateInboxSettings'])->name('inbox.update');
+
+                // Analytics Settings module - workspace-scoped tracking/reporting
+                // configuration consumed by the analytics dashboard. Shares the
+                // workspace.settings.manage gate with the other CRM settings modules.
+                Route::prefix('analytics')->name('analytics-settings.')->group(function () {
+                    Route::get('/', [AnalyticsSettingController::class, 'show'])->name('show');
+                    Route::patch('/', [AnalyticsSettingController::class, 'update'])->name('update');
+                    Route::match(['put', 'post'], '/', [AnalyticsSettingController::class, 'update'])->name('put');
+                    Route::post('/reset', [AnalyticsSettingController::class, 'reset'])->name('reset');
+                });
+            });
+
+            Route::prefix('notifications')->name('notifications-settings.')->group(function () {
+                Route::get('/', [NotificationSettingsController::class, 'index'])->name('index');
+                Route::patch('/', [NotificationSettingsController::class, 'update'])->name('update');
+                Route::patch('/{notificationType}', [NotificationSettingsController::class, 'updateOne'])->name('update-one');
+            });
         });
 
         // Phase 13/14 - Dashboard & Analytics (see docs/08-implementation-roadmap.md and

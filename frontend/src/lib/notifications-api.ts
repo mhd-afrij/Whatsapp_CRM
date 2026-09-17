@@ -90,11 +90,85 @@ export function notificationLinkFor(notification: AppNotification): string | nul
 export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   "conversation.assigned": "Conversation assigned to you",
   "conversation.new_message": "New message on your conversation",
+  "conversation.reassigned": "A conversation you handled was reassigned",
+  "conversation.reopened": "A closed conversation was reopened",
   "task.assigned": "Task assigned",
   "task.reminder": "Task reminder",
   "task.overdue": "Task overdue",
   "task.comment_mention": "Mentioned in a task comment",
   "note.mention": "Mentioned in a note",
+  "lead.assigned": "Lead assigned to you",
+  "lead.status_changed": "A lead you own changed status",
+  "deal.assigned": "Deal assigned to you",
+  "deal.stage_changed": "A deal you own moved stage",
+  "deal.won": "A deal you own was won",
+  "deal.lost": "A deal you own was lost",
   "whatsapp.connection.failed": "WhatsApp connection failed",
   "whatsapp.connection.reauth_required": "WhatsApp re-authentication required",
+  "whatsapp.reconnected": "WhatsApp connection re-established",
+  "whatsapp.qr_required": "WhatsApp QR code needs re-scanning",
+  "import.completed": "A contact import finished",
+  "export.completed": "A contact export finished",
+  "sla.warning": "A conversation is close to breaching SLA",
+  "sla.breached": "A conversation breached SLA",
 };
+
+export interface NotificationCategory {
+  key: string;
+  label: string;
+  types: string[];
+}
+
+export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
+  {
+    key: "conversations",
+    label: "Conversations",
+    types: [
+      "conversation.assigned",
+      "conversation.new_message",
+      "conversation.reassigned",
+      "conversation.reopened",
+    ],
+  },
+  {
+    key: "tasks",
+    label: "Tasks & notes",
+    types: ["task.assigned", "task.reminder", "task.overdue", "task.comment_mention", "note.mention"],
+  },
+  {
+    key: "deals",
+    label: "Deals & leads",
+    types: [
+      "lead.assigned",
+      "lead.status_changed",
+      "deal.assigned",
+      "deal.stage_changed",
+      "deal.won",
+      "deal.lost",
+    ],
+  },
+  {
+    key: "whatsapp",
+    label: "WhatsApp connection",
+    types: [
+      "whatsapp.connection.failed",
+      "whatsapp.connection.reauth_required",
+      "whatsapp.reconnected",
+      "whatsapp.qr_required",
+    ],
+  },
+  {
+    key: "tools",
+    label: "Imports & exports",
+    types: ["import.completed", "export.completed"],
+  },
+  {
+    key: "sla",
+    label: "SLA",
+    types: ["sla.warning", "sla.breached"],
+  },
+];
+
+export function notificationCategoryFor(type: string): string {
+  return NOTIFICATION_CATEGORIES.find((cat) => cat.types.includes(type))?.label ?? "Other";
+}
