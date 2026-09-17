@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SettingsBreadcrumb } from "@/components/settings/settings-breadcrumb";
 import { SettingsPageHeader } from "@/components/settings/settings-page-header";
@@ -15,7 +16,7 @@ export interface SettingsPageProps {
   backHref?: string;
   breadcrumbs: { label: string; href?: string }[];
   tabs: { key: string; label: string }[];
-  tabContent: (active: string) => React.ReactNode;
+  tabContent: (active: string) => ReactNode;
   saving?: boolean;
   dirty?: boolean;
   saveError?: string | null;

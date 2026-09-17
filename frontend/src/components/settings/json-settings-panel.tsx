@@ -10,8 +10,7 @@ import { cn } from "@/lib/utils";
 type JsonField =
   | "inbox_settings"
   | "contact_settings"
-  | "lead_sales_settings"
-  | "integration_settings";
+  | "lead_sales_settings";
 
 export function JsonSettingsPanel({
   field,
