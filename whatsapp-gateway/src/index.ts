@@ -6,8 +6,9 @@ import { closeRedisClient } from './lib/redis';
 import { closeMysqlPool } from './lib/mysql';
 import { createSendMessageWorker, sendMessageQueue } from './queues/send-message.queue';
 import { createMediaDownloadWorker, mediaDownloadQueue } from './queues/media-download.queue';
-import { createSocketServer } from './lib/socket-server';
-import { connectionManager } from './whatsapp/manager-instance';
+import { createSocketServer, closeSocketServer } from './lib/socket-server';
+import { markShuttingDown } from './lib/lifecycle';
+import { connectionRegistry } from './whatsapp/manager-instance';
 
 async function main() {
   const app = createApp();
@@ -45,12 +46,30 @@ async function main() {
 
   // Boot should come up ready to pair or reconnect automatically so the UI
   // can show the QR / live session state without a manual "Connect" click.
-  connectionManager.restoreOnBoot().catch((err) => {
-    logger.error({ err }, 'Failed to initialize WhatsApp session on boot');
+  connectionRegistry.restoreAllOnBoot().catch((err) => {
+    logger.error({ err }, 'Failed to initialize WhatsApp sessions on boot');
   });
 
   let shuttingDown = false;
 
+  /**
+   * Phase 6.6 - ordered graceful shutdown. The order matters:
+   *
+   *  1. mark the process as draining so the internal API stops accepting NEW
+   *     operations (app.ts returns 503 / GATEWAY_SHUTTING_DOWN);
+   *  2. stop the BullMQ workers so no further job starts against a socket that
+   *     is about to be closed (in-flight jobs finish or fail safely);
+   *  3. stop each ConnectionManager - this clears per-account reconnect timers,
+   *     closes that account's socket, and releases its session lock WITHOUT
+   *     deleting credentials (a normal restart must not force a re-pair);
+   *  4. close the Socket.IO namespace so realtime clients disconnect (otherwise
+   *     `server.close()` never completes while they hold connections open);
+   *  5. close the HTTP server;
+   *  6. close the BullMQ queues and the Redis/MySQL clients.
+   *
+   * Each account is stopped independently and its failure only logs a warning,
+   * so one broken session can never block the shutdown of the others.
+   */
   async function shutdown(signal: string) {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -63,22 +82,41 @@ async function main() {
     }, 15_000);
 
     try {
-      await new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()));
+      markShuttingDown();
+
+      const workers = [sendMessageWorker, mediaDownloadWorker];
+      const managers = connectionRegistry.getAll();
+
+      await Promise.allSettled([
+        ...workers.map((worker) =>
+          worker.close().catch((err) => {
+            logger.warn({ err }, 'Failed to close queue worker during shutdown');
+          }),
+        ),
+        // Release all session locks / stop reconnect timers (if held) before
+        // tearing down Redis/MySQL so a peer gateway instance can take over
+        // each account's session cleanly, and so credentials are preserved.
+        ...managers.map((manager) =>
+          manager.stop().catch((err) => {
+            logger.warn({ err }, 'Failed to stop WhatsApp connection during shutdown');
+          }),
+        ),
+      ]);
+
+      await closeSocketServer().catch((err) => {
+        logger.warn({ err }, 'Failed to close Socket.IO server during shutdown');
       });
 
-      // Release the session lock (if held) before tearing down Redis/MySQL so
-      // a peer gateway instance can take over the workspace's session cleanly.
-      await connectionManager.stop().catch((err) => {
-        logger.warn({ err }, 'Failed to stop WhatsApp connection during shutdown');
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
       });
 
-      await sendMessageWorker.close();
-      await sendMessageQueue.close();
-      await mediaDownloadWorker.close();
-      await mediaDownloadQueue.close();
-      await closeRedisClient();
-      await closeMysqlPool();
+      await Promise.allSettled([
+        sendMessageQueue.close(),
+        mediaDownloadQueue.close(),
+        closeRedisClient(),
+        closeMysqlPool(),
+      ]);
 
       clearTimeout(timeout);
       logger.info('Shutdown complete');

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Campaign;
 use App\Models\CampaignMessage;
+use App\Models\WhatsappAccount;
 use App\Services\GatewayClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -51,11 +52,20 @@ class SendCampaignMessageJob implements ShouldQueue
             return;
         }
 
+        // Campaigns are not bound to one connection, so route through the
+        // workspace's primary (active) account - the same default the inbox
+        // "start conversation" flow uses.
+        $accountId = WhatsappAccount::query()
+            ->where('workspace_id', $row->workspace_id)
+            ->where('is_active', true)
+            ->value('id');
+
         try {
             $started = $gateway->startConversation([
                 'workspaceId' => $row->workspace_id,
                 'phoneNumber' => $row->phone_number,
                 'contactId' => $row->contact_id,
+                'accountId' => $accountId,
             ]);
             $conversationId = $started['data']['conversationId'] ?? null;
             if (! $conversationId) {
@@ -72,6 +82,7 @@ class SendCampaignMessageJob implements ShouldQueue
             $result = $gateway->sendMessage([
                 'workspaceId' => $row->workspace_id,
                 'conversationId' => (int) $conversationId,
+                'accountId' => $accountId,
                 'content' => $content,
                 'requestedByUserId' => $campaign->created_by,
                 'idempotencyKey' => "campaign:{$campaign->id}:{$row->id}:{$row->contact_id}",

@@ -1,188 +1,441 @@
 "use client";
 
-import { AlertCircle, AlertTriangle, CheckCircle2, Clock3, Loader2, LogOut, Plus, QrCode, RefreshCw, RotateCcw, Smartphone, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Loader2, MessageSquareText, Plus, RefreshCw, Search } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { RequirePermission } from "@/components/auth/require-permission";
-import { SettingsCard } from "@/components/settings/settings-card";
-import { Toggle } from "@/components/settings/toggle";
-import { SyncStatusCard } from "@/components/whatsapp/sync-status-card";
-import { danger, input, secondary } from "@/components/settings/styles";
-import { useTeams } from "@/hooks/use-admin";
-import { useCreateWorkspaceWhatsappAccount, useDeleteWorkspaceWhatsappAccount, useUpdateWorkspaceWhatsappAccount, useWorkspaceSettings } from "@/hooks/use-workspace-settings";
+import { SettingsBreadcrumb } from "@/components/settings/settings-breadcrumb";
+import { AccountCardSkeleton } from "@/components/whatsapp/account-status-badge";
+import { AccountCard } from "@/components/whatsapp/account-card";
+import { AddAccountDialog } from "@/components/whatsapp/add-account-dialog";
+import { AccountDetailsSheet } from "@/components/whatsapp/account-details-sheet";
+import { ConfirmActionDialog } from "@/components/whatsapp/confirm-action-dialog";
+import { ConnectWhatsAppModal } from "@/components/whatsapp/connect-whatsapp-modal";
+import { ConnectionHealthCard } from "@/components/whatsapp/connection-health-card";
+import { input, primary, secondary } from "@/components/settings/styles";
+import { usePermission } from "@/hooks/use-permission";
+import {
+  useDeleteWorkspaceWhatsappAccount,
+  useUpdateWorkspaceWhatsappAccount,
+  useWorkspaceSettings,
+} from "@/hooks/use-workspace-settings";
+import {
+  useDeleteWhatsappAccount,
+  useDisconnectWhatsappAccount,
+  useSetActiveWhatsappAccount,
+  useUpdateWhatsappAccount,
+  useWhatsappAccounts,
+  whatsappAccountErrorMessage,
+} from "@/hooks/use-whatsapp-accounts";
 import { useWhatsappActions, useWhatsappStatus } from "@/hooks/use-whatsapp-connection";
+import { ApiError } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
+import type { WhatsappAccount } from "@/lib/whatsapp-accounts-api";
+import { useToast } from "@/providers/toast-provider";
 
-const STATUS_LABELS = {
-  idle: "Not connected",
-  connecting: "Connecting",
-  qr_pending: "Awaiting QR scan",
-  connected: "Connected",
-  disconnected: "Disconnected",
-  reconnecting: "Reconnecting",
-  auth_required: "Re-authentication required",
-  error: "Connection error",
-} as const;
+type StatusFilter = "all" | "connected" | "connecting" | "disconnected" | "error";
 
-const STATUS_STYLES = {
-  idle: "bg-muted",
-  connecting: "bg-warning animate-pulse",
-  qr_pending: "bg-warning animate-pulse",
-  connected: "bg-success",
-  disconnected: "bg-danger",
-  reconnecting: "bg-warning animate-pulse",
-  auth_required: "bg-danger",
-  error: "bg-danger",
-} as const;
+const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "connected", label: "Connected" },
+  { key: "connecting", label: "Connecting" },
+  { key: "disconnected", label: "Disconnected" },
+  { key: "error", label: "Error" },
+];
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return "Never";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unknown";
-  return date.toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+const FILTERED_STATUS_GROUPS: Record<Exclude<StatusFilter, "all" | "connected">, readonly string[]> = {
+  connecting: ["connecting", "qr_pending", "reconnecting"],
+  disconnected: ["disconnected"],
+  error: ["error", "auth_required"],
+};
+
+function matchesFilter(account: WhatsappAccount, filter: StatusFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "connected") return account.is_active && account.status === "connected";
+  return FILTERED_STATUS_GROUPS[filter].includes(account.status ?? "");
 }
 
 export default function WorkspaceWhatsappPage() {
   const workspaceQuery = useWorkspaceSettings();
-  const teams = useTeams();
-  const createAccount = useCreateWorkspaceWhatsappAccount();
-  const updateAccount = useUpdateWorkspaceWhatsappAccount();
-  const deleteAccount = useDeleteWorkspaceWhatsappAccount();
-const statusQuery = useWhatsappStatus();
+  const accountsQuery = useWhatsappAccounts();
+  const statusQuery = useWhatsappStatus({ enabled: true });
   const { reconnect, logout, generateQr, checkNow } = useWhatsappActions();
-  const [name, setName] = useState("");
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [actionError, setActionError] = useState(false);
+  const updateAccount = useUpdateWhatsappAccount();
+  const deleteAccount = useDeleteWhatsappAccount();
+  const setActiveAccount = useSetActiveWhatsappAccount();
+  const disconnectAccount = useDisconnectWhatsappAccount();
+  const canManage = usePermission("whatsapp.connection.manage");
+  const { toast } = useToast();
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [connectAccount, setConnectAccount] = useState<WhatsappAccount | null>(null);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<StatusFilter>("all");
+  const [detailsAccount, setDetailsAccount] = useState<WhatsappAccount | null>(null);
+  const [editAccount, setEditAccount] = useState<WhatsappAccount | null>(null);
+  const [editName, setEditName] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<WhatsappAccount | null>(null);
+
   const workspace = workspaceQuery.data;
-  const accounts = [...(workspace?.whatsapp_accounts ?? []), ...(workspace?.detached_whatsapp_accounts ?? [])];
-  const account = accounts.find((item) => item.is_default) ?? accounts[0];
-const status = statusQuery.data?.status ?? "idle";
-  const isGatewayUnavailable = statusQuery.gatewayUnavailable;
-  const isBusy = reconnect.isPending || logout.isPending || generateQr.isPending;
+  const accounts = accountsQuery.data ?? [];
 
-  const runReconnect = async (label: string) => {
-    setActionMessage(null);
-    setActionError(false);
+  // The workspace's single live session's health card still uses the
+  // gateway status endpoint; the active account mirrors that session.
+  const activeAccount = accounts.find((item) => item.is_active) ?? null;
+
+  const visibleAccounts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return accounts.filter((account) => {
+      if (!matchesFilter(account, filter)) return false;
+      if (!query) return true;
+      return [account.name, account.phone_number ?? "", account.assigned_team?.name ?? ""].some((value) =>
+        value.toLowerCase().includes(query)
+      );
+    });
+  }, [accounts, filter, search]);
+
+  const openEdit = (account: WhatsappAccount) => {
+    setEditAccount(account);
+    setEditName(account.name);
+  };
+
+  const submitEdit = async () => {
+    if (!editAccount || !editName.trim()) return;
     try {
-      await reconnect.mutateAsync();
-      setActionMessage(label + " started.");
-    } catch {
-      setActionError(true);
-      setActionMessage(label + " failed. Please try again.");
+      await updateAccount.mutateAsync({ id: editAccount.id, values: { name: editName.trim() } });
+      toast("Account settings updated.", "success");
+      setEditAccount(null);
+    } catch (error) {
+      toast(whatsappAccountErrorMessage(error, "Unable to update account."), "error");
     }
   };
 
-  const runGenerateQr = async () => {
-    setActionMessage(null);
-    setActionError(false);
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
     try {
-      await generateQr.mutateAsync();
-      setActionMessage("New QR code generated.");
-    } catch {
-      setActionError(true);
-      setActionMessage("Unable to generate a new QR code.");
+      await deleteAccount.mutateAsync(deleteTarget.id);
+      toast("WhatsApp account deleted.", "success");
+      setDeleteTarget(null);
+    } catch (error) {
+      toast(whatsappAccountErrorMessage(error, "Unable to delete account."), "error");
     }
   };
 
-  const runLogout = async () => {
-    setActionMessage(null);
-    setActionError(false);
+  // Set Active: every account now runs its own concurrent session,
+  // so activation is purely a routing preference - no disconnect required.
+  const handleSetActive = async (account: WhatsappAccount) => {
     try {
-      await logout.mutateAsync();
-      setActionMessage("Device logged out.");
-    } catch {
-      setActionError(true);
-      setActionMessage("Unable to log out the device.");
+      await setActiveAccount.mutateAsync({ id: account.id });
+      toast(`"${account.name}" is now the active WhatsApp account.`, "success");
+    } catch (error) {
+      toast(whatsappAccountErrorMessage(error, "Unable to set the active account."), "error");
     }
   };
+
+  const handleDisconnect = async (account: WhatsappAccount) => {
+    try {
+      await disconnectAccount.mutateAsync(account.id);
+      toast("WhatsApp account disconnected.", "success");
+    } catch (error) {
+      toast(whatsappAccountErrorMessage(error, "Unable to disconnect the account."), "error");
+    }
+  };
+
+  // Skeletons only on the very first load; refetches keep the current list on
+  // screen (no layout shift, no flicker).
+  const initialLoading = accountsQuery.isPending;
 
   return (
     <RequirePermission permission="whatsapp.connection.manage">
-      <div className="space-y-4">
-<section className="rounded-lg border border-border bg-surface p-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted">Connection Status</p>
-              <div className="mt-2 flex items-center gap-2">
-                <span className={"h-2.5 w-2.5 rounded-full " + (isGatewayUnavailable ? STATUS_STYLES.reconnecting : STATUS_STYLES[status])} />
-                <h2 className="text-lg font-semibold text-text">{isGatewayUnavailable ? "WhatsApp gateway temporarily unavailable" : STATUS_LABELS[status]}</h2>
-              </div>
-            </div>
-            {statusQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted" aria-label="Refreshing connection status" />}
+      <div className="mx-auto max-w-6xl space-y-5">
+        {/* Page header */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <SettingsBreadcrumb
+              items={[
+                { label: "Settings", href: "/settings" },
+                { label: "WhatsApp", href: "/settings/workspace/whatsapp" },
+                { label: "Accounts" },
+              ]}
+            />
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-text">WhatsApp Accounts</h1>
+            <p className="mt-1 text-sm text-muted">
+              Manage WhatsApp connections, sessions, routing and account settings.
+            </p>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              className={secondary}
+              onClick={() => {
+                void accountsQuery.refetch();
+                checkNow.mutate();
+              }}
+              disabled={accountsQuery.isFetching}
+              aria-label="Refresh accounts and connection status"
+            >
+              <RefreshCw className={cn("h-4 w-4", accountsQuery.isFetching && "animate-spin")} aria-hidden="true" />
+              Refresh
+            </button>
+            {canManage && (
+              <button type="button" className={primary} onClick={() => setAddOpen(true)}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Add WhatsApp Account
+              </button>
+            )}
+          </div>
+        </div>
 
-          {isGatewayUnavailable && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+        {accountsQuery.isError ? (
+          <section className="rounded-2xl border border-border bg-surface p-8 text-center">
+            <MessageSquareText className="mx-auto h-8 w-8 text-muted" aria-hidden="true" />
+            <p className="mt-3 font-medium text-text">Unable to load WhatsApp accounts</p>
+            <p className="mt-1 text-sm text-muted">We couldn&apos;t retrieve your WhatsApp account information.</p>
+            <button type="button" className={cn(primary, "mt-4")} onClick={() => void accountsQuery.refetch()}>
+              Retry
+            </button>
+          </section>
+        ) : initialLoading ? (
+          <div className="space-y-5">
+            <div className="h-64 animate-pulse rounded-2xl bg-surface" aria-hidden="true" />
+            {Array.from({ length: 2 }).map((_, index) => (
+              <AccountCardSkeleton key={index} />
+            ))}
+          </div>
+        ) : (
+          <>
+            <ConnectionHealthCard
+              status={statusQuery.data}
+              statusQuery={{
+                isFetching: statusQuery.isFetching,
+                isError: statusQuery.isError,
+                refetch: () => void statusQuery.refetch(),
+                lastCheckedAt: statusQuery.lastCheckedAt,
+              }}
+              activeAccount={
+                activeAccount
+                  ? {
+                      id: activeAccount.id,
+                      whatsapp_session_id: activeAccount.is_active ? (activeAccount.id as unknown as number) : null,
+                      display_name: activeAccount.name,
+                      assigned_team_id: activeAccount.assigned_team_id,
+                      assigned_team: activeAccount.assigned_team,
+                      is_default: activeAccount.is_active,
+                      auto_reply_settings: { enabled: activeAccount.auto_reply_enabled, message: null },
+                      status: activeAccount.status,
+                      phone_number: activeAccount.phone_number,
+                      device_id: activeAccount.device_name,
+                      last_connected_at: activeAccount.last_connected_at,
+                      last_disconnected_at: null,
+                    }
+                  : null
+              }
+              gatewayUnavailable={statusQuery.gatewayUnavailable}
+              actions={{ reconnect, logout, generateQr, checkNow }}
+              canManage={canManage}
+            />
+
+            {/* Accounts section */}
+            <section className="space-y-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <p className="font-medium text-text">WhatsApp gateway is temporarily unavailable.</p>
-                  <p className="mt-0.5 text-sm text-muted">Trying again automatically.</p>
-                  <p className="mt-1 text-xs text-muted">
-                    Last checked: {statusQuery.lastCheckedAt?.toLocaleString() ?? "Not yet"}
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-semibold text-text">WhatsApp Accounts</h2>
+                    <span className="rounded-full bg-bg px-2 py-0.5 text-xs font-medium text-muted">
+                      {accounts.length} {accounts.length === 1 ? "Account" : "Accounts"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted">
+                    Manage connected WhatsApp numbers, team assignments, routing and automation.
                   </p>
                 </div>
               </div>
+
+              {accounts.length > 1 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative min-w-0 flex-1 sm:max-w-xs">
+                    <Search
+                      className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+                      aria-hidden="true"
+                    />
+                    <input
+                      className={cn(input, "pl-9")}
+                      placeholder="Search accounts..."
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      aria-label="Search accounts"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by status">
+                    {STATUS_FILTERS.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => setFilter(option.key)}
+                        aria-pressed={filter === option.key}
+                        className={cn(
+                          "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                          filter === option.key
+                            ? "border-primary bg-primary text-white"
+                            : "border-border bg-bg text-muted hover:border-primary/40 hover:text-text",
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {accounts.length === 0 ? (
+                <section className="rounded-2xl border border-dashed border-border bg-surface p-10 text-center">
+                  <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <MessageSquareText className="h-7 w-7" aria-hidden="true" />
+                  </span>
+                  <p className="mt-4 font-semibold text-text">No WhatsApp accounts yet</p>
+                  <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
+                    Connect a WhatsApp number to start sending and receiving customer messages.
+                  </p>
+                  {canManage && (
+                    <button type="button" className={cn(primary, "mt-5")} onClick={() => setAddOpen(true)}>
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      Connect WhatsApp Account
+                    </button>
+                  )}
+                </section>
+              ) : visibleAccounts.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-border bg-surface p-6 text-center text-sm text-muted">
+                  No accounts match your search or filter.
+                </p>
+              ) : (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {visibleAccounts.map((account) => (
+                    <AccountCard
+                      key={account.id}
+                      account={account}
+                      isActive={account.is_active}
+                      onViewDetails={setDetailsAccount}
+                      onEdit={openEdit}
+                      onAssignTeam={(id, teamId) =>
+                        updateAccount.mutate(
+                          { id, values: { assigned_team_id: teamId } },
+                          {
+                            onSuccess: () => toast("Account settings updated.", "success"),
+                            onError: () => toast("Unable to update account.", "error"),
+                          },
+                        )
+                      }
+                      onConnect={(account) => setConnectAccount(account)}
+                      onDisconnect={(account) => void handleDisconnect(account)}
+                      onSetActive={(account) => void handleSetActive(account)}
+                      onDelete={setDeleteTarget}
+                      updatePending={updateAccount.isPending}
+                      actionPending={setActiveAccount.isPending}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
+
+        {/* The Add wizard handles the full number -> method -> QR/pairing
+            -> success flow (including the connect kickoff) internally. */}
+        <AddAccountDialog open={addOpen} onOpenChange={setAddOpen} />
+
+        <ConnectWhatsAppModal account={connectAccount} onOpenChange={(open) => (open ? undefined : setConnectAccount(null))} />
+
+        <AccountDetailsSheet
+          account={
+            detailsAccount
+              ? {
+                  id: detailsAccount.id,
+                  whatsapp_session_id: detailsAccount.is_active ? detailsAccount.id : null,
+                  display_name: detailsAccount.name,
+                  assigned_team_id: detailsAccount.assigned_team_id,
+                  assigned_team: detailsAccount.assigned_team,
+                  is_default: detailsAccount.is_active,
+                  auto_reply_settings: { enabled: detailsAccount.auto_reply_enabled, message: null },
+                  status: detailsAccount.status,
+                  phone_number: detailsAccount.phone_number,
+                  device_id: detailsAccount.device_name,
+                  last_connected_at: detailsAccount.last_connected_at,
+                  last_disconnected_at: null,
+                }
+              : null
+          }
+          workspaceName={workspace?.name ?? null}
+          onOpenChange={(open) => {
+            if (!open) setDetailsAccount(null);
+          }}
+        />
+
+        {/* Edit-name dialog */}
+        <Dialog
+          open={editAccount !== null}
+          onOpenChange={(open) => {
+            if (!open) setEditAccount(null);
+          }}
+        >
+          <DialogContent showCloseButton className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Account</DialogTitle>
+              <DialogDescription>Rename this WhatsApp account.</DialogDescription>
+            </DialogHeader>
+            <div>
+              <label htmlFor="wa-edit-name" className="mb-1.5 block text-xs font-medium text-muted">
+                Account Display Name *
+              </label>
+              <input
+                id="wa-edit-name"
+                className={input}
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
               <button
                 type="button"
                 className={secondary}
-                disabled={checkNow.isPending}
-                onClick={() => void checkNow.mutate()}
+                onClick={() => setEditAccount(null)}
+                disabled={updateAccount.isPending}
               >
-                <RefreshCw className={`h-4 w-4 ${checkNow.isPending ? "animate-spin" : ""}`} />
-                {checkNow.isPending ? "Checking..." : "Retry now"}
+                Cancel
               </button>
-            </div>
-          )}
+              <button
+                type="button"
+                className={primary}
+                onClick={() => void submitEdit()}
+                disabled={updateAccount.isPending || !editName.trim()}
+              >
+                {updateAccount.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                Save Changes
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-          <div className="mt-5 grid gap-4 border-t border-border pt-4 sm:grid-cols-3">
-            <div><p className="flex items-center gap-2 text-xs font-medium text-muted"><Smartphone className="h-3.5 w-3.5" />Device</p><p className="mt-1 text-sm font-medium text-text">{account?.device_id ?? "Not detected"}</p></div>
-            <div><p className="flex items-center gap-2 text-xs font-medium text-muted"><QrCode className="h-3.5 w-3.5" />Phone</p><p className="mt-1 text-sm font-medium text-text">{statusQuery.data?.phoneNumber ?? account?.phone_number ?? "Not paired"}</p></div>
-            <div><p className="flex items-center gap-2 text-xs font-medium text-muted"><Clock3 className="h-3.5 w-3.5" />Last Connected</p><p className="mt-1 text-sm font-medium text-text">{formatDate(account?.last_connected_at)}</p></div>
-          </div>
-
-          {statusQuery.data?.qrCode && (
-            <div className="mt-4 flex flex-wrap items-center gap-4 rounded-lg border border-border bg-bg p-4">
-              <img src={statusQuery.data.qrCode} alt="Scan this QR code to connect WhatsApp" className="h-40 w-40 rounded-md bg-white p-2" />
-              <div><p className="font-medium text-text">Scan to connect</p><p className="mt-1 text-sm text-muted">Use WhatsApp on your phone to scan this code.</p>{statusQuery.data.qrExpiresAt && <p className="mt-1 text-xs text-muted">QR expires {formatDate(statusQuery.data.qrExpiresAt)}</p>}</div>
-            </div>
-          )}
-          {statusQuery.data?.sync !== undefined && <div className="mt-4"><SyncStatusCard sync={statusQuery.data.sync} /></div>}
-
-          <div className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4">
-            <button type="button" className={secondary} disabled={isBusy} onClick={() => void runReconnect("Reconnect")}><RefreshCw className="h-4 w-4" />Reconnect</button>
-            <button type="button" className={secondary} disabled={isBusy} onClick={() => void runGenerateQr()}><QrCode className="h-4 w-4" />Generate New QR</button>
-            <button type="button" className={secondary} disabled={isBusy} onClick={() => void runReconnect("Restart service")}><RotateCcw className="h-4 w-4" />Restart Service</button>
-            <button type="button" className={danger} disabled={isBusy} onClick={() => void runLogout()}><LogOut className="h-4 w-4" />Logout Device</button>
-          </div>
-          {actionMessage && <p className={"mt-3 flex items-center gap-2 text-sm " + (actionError ? "text-danger" : "text-success")}>{actionError ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}{actionMessage}</p>}
-        </section>
-
-        <SettingsCard title="WhatsApp Accounts" description="Connected numbers, QR connection, status, team assignment, auto reply, and disconnect controls.">
-          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-            <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="Account display name" />
-            <button className={secondary} type="button" disabled={!name || createAccount.isPending} onClick={() => createAccount.mutate({ display_name: name }, { onSuccess: () => setName("") })}><Plus className="h-4 w-4" />Create Account Slot</button>
-          </div>
-          <div className="mt-5 space-y-3">
-            {accounts.length === 0 && <p className="rounded-lg border border-dashed border-border bg-bg p-4 text-sm text-muted">No WhatsApp accounts yet.</p>}
-            {accounts.map((item, index) => (
-              <div key={String(item.id ?? "pending") + "-" + String(item.whatsapp_session_id ?? index)} className="rounded-lg border border-border bg-bg p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div><h3 className="font-semibold text-text">{item.display_name}</h3><p className="text-xs text-muted">{item.phone_number ?? "Not paired"} - {item.status ?? "slot only"}</p></div>
-                  <div className="flex items-center gap-2">{item.is_default && <span className="rounded-full bg-primary/10 px-2 py-1 text-xs text-primary">Default</span>}{item.id && <button type="button" className={danger} disabled={deleteAccount.isPending} onClick={() => deleteAccount.mutate(item.id!)}><Trash2 className="h-4 w-4" />Delete</button>}</div>
-                </div>
-                {item.id && <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto_auto]">
-                  <select className={input} value={item.assigned_team_id ?? ""} onChange={(e) => updateAccount.mutate({ id: item.id!, values: { assigned_team_id: e.target.value ? Number(e.target.value) : null } })}>
-                    <option value="">No assigned team</option>
-                    {teams.data?.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
-                  </select>
-                  <button type="button" className={secondary} onClick={() => updateAccount.mutate({ id: item.id!, values: { is_default: true } })}>Set Default</button>
-                  <Toggle label="Auto reply" checked={Boolean(item.auto_reply_settings?.enabled)} onChange={(enabled) => updateAccount.mutate({ id: item.id!, values: { auto_reply_settings: { ...item.auto_reply_settings, enabled } } })} />
-                </div>}
-              </div>
-            ))}
-          </div>
-        </SettingsCard>
+        {/* Delete confirmation */}
+        <ConfirmActionDialog
+          open={deleteTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setDeleteTarget(null);
+          }}
+          title={`Delete ${deleteTarget?.name ?? "WhatsApp account"}?`}
+          description={`"${deleteTarget?.name ?? "This account"}" will be removed from this workspace. If it is currently connected, the gateway session is logged out first.`}
+          confirmLabel="Delete Account"
+          pending={deleteAccount.isPending}
+          onConfirm={() => void confirmDelete()}
+        />
       </div>
     </RequirePermission>
   );
 }
-

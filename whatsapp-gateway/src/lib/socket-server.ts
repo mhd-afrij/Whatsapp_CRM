@@ -302,3 +302,40 @@ export function emitConversationsReset(workspaceId: number, payload: Record<stri
 export function getSocketServer(): SocketIOServer | null {
   return io;
 }
+
+/**
+ * Phase 6.6 step 7 - closes the /gateway Socket.IO namespace and its clients.
+ *
+ * Must run BEFORE `httpServer.close()`: `server.close()` only fires its
+ * callback once every open connection has ended, and Socket.IO clients hold
+ * long-lived connections open indefinitely. Closing the namespace first
+ * disconnects them (the browser reconnects to a peer instance / after restart)
+ * so the HTTP server can actually finish draining instead of hanging until the
+ * shutdown timeout.
+ */
+export async function closeSocketServer(): Promise<void> {
+  if (!io) {
+    return;
+  }
+
+  const server = io;
+  io = null;
+
+  // Grab the adapter's pub client BEFORE closing - Server.close() tears the
+  // namespaces down, and the duplicate() client used for pub/sub is not the
+  // same instance that closeRedisClient() manages.
+  const adapter = server.of('/gateway').adapter as {
+    pubClient?: { quit?: () => Promise<unknown> };
+  } | null;
+  const pubClient = adapter?.pubClient;
+
+  await new Promise<void>((resolve) => {
+    server.close(() => resolve());
+  });
+
+  if (pubClient && typeof pubClient.quit === 'function') {
+    await pubClient.quit().catch((err) => {
+      logger.warn({ err }, 'Failed to close Socket.IO Redis adapter client');
+    });
+  }
+}

@@ -3,7 +3,9 @@ import { getQueueConnectionOptions } from './connection';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { getStorageClient } from '../lib/storage';
-import { connectionManager } from '../whatsapp/manager-instance';
+import { connectionRegistry, connectionManager } from '../whatsapp/manager-instance';
+import { AccountContextError } from '../whatsapp/account-context';
+import type { ConnectionManager } from '../whatsapp/connection-manager';
 import { DispatchRepository } from '../whatsapp/dispatch-repository';
 import { MessageRepository, isDuplicateEntryError } from '../whatsapp/message-repository';
 import {
@@ -18,6 +20,7 @@ export const SEND_MESSAGE_QUEUE_NAME = 'send-message';
 export interface SendMessageJobData {
   dispatchId: number;
   workspaceId: number;
+  accountId: number | null;
   conversationId: number;
   waJid: string;
   content: string | null;
@@ -62,6 +65,88 @@ function isConnectionFailure(err: unknown): boolean {
 }
 
 /**
+ * Resolves the Baileys manager a send job must execute against
+ * (Phase 5.5 - queue isolation).
+ *
+ * Queue model (Phase 5.6): BOTH queues are SHARED BullMQ queues carrying
+ * immutable per-job routing data (`accountId` + `workspaceId` are set at
+ * enqueue time by the send route after ownership enforcement and are never
+ * re-resolved from `is_active` or any "current account" here). One shared
+ * queue is deliberately preferred over thousands of per-account queues;
+ * isolation comes from this strict resolution instead:
+ *
+ *  - an explicit accountId must resolve to a manager in the registry that
+ *    really belongs to that account - never to another account, and never
+ *    silently to the legacy singleton (the pre-hardening bug);
+ *  - the persisted conversation's owning account must still agree with the
+ *    job - a job enqueued for A whose conversation now points at B fails
+ *    safely instead of sending through either;
+ *  - a null accountId is the controlled legacy path (pre-multi-account
+ *    conversations) and routes to the legacy workspace manager with a
+ *    deprecation warning.
+ */
+export function resolveSendManager(
+  job: Pick<Job<SendMessageJobData>, 'data'>,
+  conversationAccountId: number | null,
+): { manager: ConnectionManager; reason: string | null } {
+  const { workspaceId, accountId } = job.data;
+
+  if (accountId !== null) {
+    if (conversationAccountId !== null && conversationAccountId !== accountId) {
+      throw new AccountContextError(
+        'ACCOUNT_OWNERSHIP_MISMATCH',
+        `Send job is routed for account ${accountId} but the conversation is owned by account ${conversationAccountId}`,
+        { workspaceId, conversationId: job.data.conversationId, accountId, conversationAccountId },
+      );
+    }
+    const manager = connectionRegistry.get(workspaceId, accountId);
+    if (!manager) {
+      // Never fall back to another socket: an unknown/absent manager means
+      // the account's session is not running in this gateway process.
+      throw new AccountContextError(
+        'ACCOUNT_NOT_CONNECTED',
+        `No active WhatsApp session for account ${accountId}; message not sent`,
+        { workspaceId, accountId, conversationId: job.data.conversationId },
+      );
+    }
+    const managerAccountId = manager.getSnapshot().accountId;
+    if (managerAccountId !== accountId) {
+      throw new AccountContextError(
+        'ACCOUNT_NOT_FOUND',
+        'Resolved manager does not belong to the requested account',
+        { workspaceId, accountId, managerAccountId },
+      );
+    }
+    return { manager, reason: null };
+  }
+
+  if (conversationAccountId !== null) {
+    // Legacy conversation with no explicit account in the job, but the row
+    // now has an owner - resolve through the owner instead of the singleton.
+    const manager = connectionRegistry.get(workspaceId, conversationAccountId);
+    if (manager) {
+      return { manager, reason: null };
+    }
+    throw new AccountContextError(
+      'ACCOUNT_NOT_CONNECTED',
+      `Conversation is owned by account ${conversationAccountId} whose session is not running; message not sent`,
+      { workspaceId, conversationId: job.data.conversationId, accountId: conversationAccountId },
+    );
+  }
+
+  logger.warn(
+    {
+      event: 'legacy_account_fallback',
+      dispatchId: job.data.dispatchId,
+      conversationId: job.data.conversationId,
+      workspaceId,
+    },
+    'Send job without accountId for a legacy unowned conversation; routing through the legacy workspace manager (deprecated)',
+  );
+  return { manager: connectionManager, reason: 'legacy_account_fallback' };
+}
+
+/**
  * Claims a pending/failed-retry dispatch row, sends via the live Baileys
  * socket wrapper, persists the resulting message row + status, and emits
  * message.created. Transient failures are surfaced by throwing (BullMQ
@@ -71,10 +156,11 @@ function isConnectionFailure(err: unknown): boolean {
  */
 export async function processSendMessage(
   job: Job<SendMessageJobData>,
-): Promise<{ whatsappMessageId: string }> {
+): Promise<{ whatsappMessageId: string | null }> {
   const {
     dispatchId,
     workspaceId,
+    accountId,
     conversationId,
     waJid,
     content,
@@ -85,6 +171,57 @@ export async function processSendMessage(
     mediaSizeBytes,
     mediaChecksumSha256,
   } = job.data;
+
+  // Phase 5.5: resolve the sending account STRICTLY from the job + the
+  // persisted conversation owner (never from is_active or any ambient
+  // "current account"). An ownership mismatch or a missing session fails
+  // safely with a structured reason instead of sending through another
+  // account's socket.
+  const conversation = await messageRepository.getConversationAccount(conversationId, workspaceId);
+  const conversationAccountId = conversation?.whatsappAccountId ?? null;
+  let sendManager: ConnectionManager;
+  try {
+    const resolved = resolveSendManager(job, conversationAccountId);
+    sendManager = resolved.manager;
+  } catch (err) {
+    // Poisoned routing must not consume BullMQ retries: mark the dispatch
+    // terminally failed with a structured reason and stop the job now.
+    const code = err instanceof AccountContextError ? err.code : 'ACCOUNT_NOT_CONNECTED';
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error(
+      { dispatchId, workspaceId, accountId, conversationId, conversationAccountId, code },
+      'Send job rejected by account-ownership validation',
+    );
+    await dispatchRepository.markFailed(dispatchId).catch(() => undefined);
+    await messageRepository
+      .recordProcessingFailure(
+        workspaceId,
+        'send',
+        message,
+        { waJid, attemptsMade: job.attemptsMade ?? 0, permanent: true, reason: code },
+        { dispatchQueueId: dispatchId, conversationId },
+      )
+      .catch(() => undefined);
+    await messageRepository
+      .findMessageByWhatsappId(workspaceId, `queued:${dispatchId}`)
+      .then(async (row) => {
+        if (!row || row.status === 'failed') {
+          return;
+        }
+        await messageRepository.updateMessageStatus(row.id, 'failed');
+        emitMessageUpdated(workspaceId, conversationId, {
+          messageId: row.id,
+          changes: { status: 'failed' },
+        });
+      })
+      .catch(() => undefined);
+    emitMessageFailed(workspaceId, conversationId, job.data.requestedByUserId ?? null, {
+      conversationId,
+      errorMessage: message,
+      attempts: job.attemptsMade ?? 0,
+    });
+    return { whatsappMessageId: null };
+  }
 
   await dispatchRepository.markProcessing(dispatchId);
 
@@ -123,7 +260,7 @@ export async function processSendMessage(
       messageType,
       repliedToWhatsappMessageId: replyToWhatsappMessageId ?? null,
       status: 'queued',
-    });
+    }, accountId);
     if (!inserted) {
       throw new Error('Failed to persist queued outbound message row');
     }
@@ -181,14 +318,17 @@ export async function processSendMessage(
   });
 
   let result: { id: string | null | undefined };
+  // sendManager was resolved strictly at the top of this processor
+  // (resolveSendManager) - account jobs can never silently fall back to the
+  // legacy workspace singleton.
   try {
-    result = await connectionManager.sendContent(waJid, sendContent, replyToWhatsappMessageId ?? null);
+    result = await sendManager.sendContent(waJid, sendContent, replyToWhatsappMessageId ?? null);
   } catch (err) {
     // A session that reports 'connected' but times out queries is a zombie - refresh
     // it now so the BullMQ retry (next attempt) runs against a live connection.
     if (isConnectionFailure(err)) {
-      logger.warn({ err, waJid }, 'Send failed with a connection error; refreshing WhatsApp connection');
-      connectionManager.requestConnectionRefresh();
+      logger.warn({ err, waJid, accountId }, 'Send failed with a connection error; refreshing WhatsApp connection');
+      sendManager.requestConnectionRefresh();
     }
     throw err;
   }

@@ -23,7 +23,7 @@ class Conversation extends Model
     use BelongsToWorkspace, HasFactory;
 
     protected $fillable = [
-        'workspace_id', 'whatsapp_contact_id', 'contact_id', 'status', 'priority', 'assigned_user_id',
+        'workspace_id', 'whatsapp_account_id', 'whatsapp_contact_id', 'contact_id', 'status', 'priority', 'assigned_user_id',
         'assigned_team_id', 'last_message_at', 'last_message_preview', 'unread_count',
         'closed_at', 'closed_by', 'archived_at', 'pinned_at', 'muted_until', 'starred_at',
     ];
@@ -31,6 +31,7 @@ class Conversation extends Model
     protected function casts(): array
     {
         return [
+            'whatsapp_account_id' => 'integer',
             'last_message_at' => 'datetime',
             'closed_at' => 'datetime',
             'archived_at' => 'datetime',
@@ -49,6 +50,11 @@ class Conversation extends Model
     public function whatsappContact(): BelongsTo
     {
         return $this->belongsTo(WhatsappContact::class);
+    }
+
+    public function whatsappAccount(): BelongsTo
+    {
+        return $this->belongsTo(WhatsappAccount::class, 'whatsapp_account_id');
     }
 
     public function contact(): BelongsTo

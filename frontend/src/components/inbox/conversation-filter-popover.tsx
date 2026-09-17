@@ -27,6 +27,7 @@ import {
 import type { AdvancedFilters } from "@/hooks/use-conversation-filters";
 import { useUsers } from "@/hooks/use-users";
 import { useLabelList } from "@/hooks/use-labels";
+import { useWhatsappAccounts } from "@/hooks/use-whatsapp-accounts";
 import { Input } from "@/components/ui/input";
 
 interface ConversationFilterPopoverProps {
@@ -54,6 +55,7 @@ export function ConversationFilterPopover({
   const [open, setOpen] = useState(false);
   const { data: users } = useUsers();
   const { data: labels } = useLabelList();
+  const { data: whatsappAccounts } = useWhatsappAccounts({ enabled: true });
 
   const handleFilterChange = (key: keyof AdvancedFilters, value: string | null | undefined) => {
     onFiltersChange({
@@ -70,29 +72,28 @@ export function ConversationFilterPopover({
       </PopoverTrigger>
       <PopoverContent className="w-64 p-0" align="start">
         <div className="space-y-4 p-4">
-          {/* Agent Filter */}
+          {/* WhatsApp Account Filter */}
           <div className="space-y-2">
-            <Label className="text-xs font-medium">Agent</Label>
-            <Command>
-              <CommandInput placeholder="Search agents..." />
-              <CommandList>
-                <CommandEmpty>No agents found.</CommandEmpty>
-                <CommandGroup>
-                  {users?.map((user) => (
-                    <CommandItem
-                      key={user.id}
-                      value={String(user.id)}
-                      onSelect={(value) => handleFilterChange("agent", value)}
-                    >
-                      {user.name}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
+            <Label className="text-xs font-medium">WhatsApp Account</Label>
+            <Select
+              value={String(filters.whatsappAccountId || "")}
+              onValueChange={(value) => handleFilterChange("whatsappAccountId", value || undefined)}
+            >
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue placeholder="All accounts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All accounts</SelectItem>
+                {whatsappAccounts?.map((account) => (
+                  <SelectItem key={account.id} value={String(account.id)}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Status Filter */}
+          {/* Agent Filter */}
           <div className="space-y-2">
             <Label className="text-xs font-medium">Status</Label>
             <Select

@@ -12,6 +12,7 @@ vi.mock('bullmq', () => ({
 
 const {
   sendContent,
+  registryGet,
   markProcessing,
   markSent,
   markFailed,
@@ -22,8 +23,10 @@ const {
   setOutboundWhatsappId,
   findMessageMediaByMessageId,
   insertMessageMedia,
+  getConversationAccount,
 } = vi.hoisted(() => ({
   sendContent: vi.fn(),
+  registryGet: vi.fn(),
   markProcessing: vi.fn().mockResolvedValue(undefined),
   markSent: vi.fn().mockResolvedValue(undefined),
   markFailed: vi.fn().mockResolvedValue(undefined),
@@ -34,10 +37,14 @@ const {
   setOutboundWhatsappId: vi.fn().mockResolvedValue(undefined),
   findMessageMediaByMessageId: vi.fn().mockResolvedValue(null),
   insertMessageMedia: vi.fn().mockResolvedValue(undefined),
+  getConversationAccount: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../whatsapp/manager-instance', () => ({
-  connectionManager: { sendContent: (...args: unknown[]) => sendContent(...args) },
+  connectionManager: { sendContent: (...args: unknown[]) => sendContent(...args), getSnapshot: () => ({ accountId: null }) },
+  connectionRegistry: {
+    get: (...args: unknown[]) => registryGet(...args),
+  },
 }));
 
 vi.mock('../whatsapp/dispatch-repository', () => ({
@@ -61,6 +68,7 @@ vi.mock('../whatsapp/message-repository', async () => {
         setOutboundWhatsappId,
         findMessageMediaByMessageId,
         insertMessageMedia,
+        getConversationAccount,
       };
     }),
   };
@@ -89,6 +97,7 @@ describe('send-message queue processor', () => {
   const baseData: SendMessageJobData = {
     dispatchId: 1,
     workspaceId: 1,
+    accountId: null,
     conversationId: 10,
     waJid: '2547000000@s.whatsapp.net',
     content: 'hi',
@@ -106,6 +115,7 @@ describe('send-message queue processor', () => {
       1,
       10,
       expect.objectContaining({ status: 'queued', whatsappMessageId: 'queued:1' }),
+      null,
     );
     expect(setOutboundWhatsappId).toHaveBeenCalledWith(55, 'WA-1');
     expect(updateMessageStatus).toHaveBeenCalledWith(55, 'sent');
@@ -250,5 +260,90 @@ describe('send-message queue processor', () => {
     expect(markFailed).not.toHaveBeenCalled();
     expect(emitMessageFailed).not.toHaveBeenCalled();
     expect(recordProcessingFailure).not.toHaveBeenCalled();
+  });
+
+  // ------------------------------------------------------------------
+  // Phase 5.5 - queue account isolation (shared queue, immutable routing)
+  // ------------------------------------------------------------------
+
+  describe('account isolation', () => {
+    it('sends through the registry manager of the job account (interleaved A/B jobs each hit their own socket)', async () => {
+      const managerA = { sendContent: vi.fn().mockResolvedValue({ id: 'WA-A' }), getSnapshot: () => ({ accountId: 11 }) };
+      const managerB = { sendContent: vi.fn().mockResolvedValue({ id: 'WA-B' }), getSnapshot: () => ({ accountId: 12 }) };
+      registryGet.mockImplementation((_ws: number, accountId: number) =>
+        accountId === 11 ? managerA : accountId === 12 ? managerB : undefined,
+      );
+      insertOutboundMessage.mockResolvedValue({ messageId: 100 });
+      getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: null });
+
+      const jobA = makeJob({ ...baseData, accountId: 11, content: 'from A' });
+      const jobB = makeJob({ ...baseData, accountId: 12, content: 'from B' });
+
+      // Interleaved execution: both jobs processed concurrently.
+      const [resultA, resultB] = await Promise.all([processSendMessage(jobA), processSendMessage(jobB)]);
+
+      expect(resultA).toEqual({ whatsappMessageId: 'WA-A' });
+      expect(resultB).toEqual({ whatsappMessageId: 'WA-B' });
+      expect(managerA.sendContent).toHaveBeenCalledTimes(1);
+      expect(managerB.sendContent).toHaveBeenCalledTimes(1);
+      // The legacy singleton must never be used when an explicit account is set.
+      expect(sendContent).not.toHaveBeenCalled();
+      // Registry lookups must carry the job's own workspace.
+      expect(registryGet).toHaveBeenCalledWith(1, 11);
+      expect(registryGet).toHaveBeenCalledWith(1, 12);
+    });
+
+    it('rejects a job whose accountId conflicts with the persisted conversation owner (fails safely, no send)', async () => {
+      // Job claims account 11 but the conversation is owned by 12.
+      getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: 12 });
+      findMessageByWhatsappId.mockResolvedValue(null);
+
+      const result = await processSendMessage(makeJob({ ...baseData, accountId: 11 }));
+
+      expect(result).toEqual({ whatsappMessageId: null });
+      expect(markFailed).toHaveBeenCalledWith(1);
+      expect(recordProcessingFailure).toHaveBeenCalledWith(
+        1,
+        'send',
+        expect.stringContaining('owned by account 12'),
+        expect.objectContaining({ permanent: true, reason: 'ACCOUNT_OWNERSHIP_MISMATCH' }),
+        { dispatchQueueId: 1, conversationId: 10 },
+      );
+      // No send may have happened through ANY manager.
+      expect(sendContent).not.toHaveBeenCalled();
+      expect(registryGet).not.toHaveBeenCalled();
+    });
+
+    it('fails safely (never sends via the legacy singleton) when the job account has no running session', async () => {
+      getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: 11 });
+      registryGet.mockReturnValue(undefined); // account session not in this process
+      findMessageByWhatsappId.mockResolvedValue(null);
+
+      const result = await processSendMessage(makeJob({ ...baseData, accountId: 11 }));
+
+      expect(result).toEqual({ whatsappMessageId: null });
+      expect(recordProcessingFailure).toHaveBeenCalledWith(
+        1,
+        'send',
+        expect.anything(),
+        expect.objectContaining({ permanent: true, reason: 'ACCOUNT_NOT_CONNECTED' }),
+        expect.anything(),
+      );
+      expect(sendContent).not.toHaveBeenCalled();
+    });
+
+    it('routes a legacy null-account job to the owner account when the conversation now has one', async () => {
+      const managerA = { sendContent: vi.fn().mockResolvedValue({ id: 'WA-A2' }), getSnapshot: () => ({ accountId: 11 }) };
+      registryGet.mockReturnValue(managerA);
+      insertOutboundMessage.mockResolvedValue({ messageId: 101 });
+      // Pre-multi-account job: accountId null, but the conversation row has an owner now.
+      getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: 11 });
+
+      const result = await processSendMessage(makeJob(baseData));
+
+      expect(result).toEqual({ whatsappMessageId: 'WA-A2' });
+      expect(managerA.sendContent).toHaveBeenCalledTimes(1);
+      expect(sendContent).not.toHaveBeenCalled();
+    });
   });
 });

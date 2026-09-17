@@ -137,6 +137,25 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('/reconnect', [WhatsappController::class, 'reconnect'])->name('reconnect');
             Route::post('/reset-data', [WhatsappController::class, 'resetData'])->name('reset-data');
             Route::get('/connection-history', [WhatsappController::class, 'connectionHistory'])->name('connection-history');
+
+            // Managed WhatsApp connections (backend-owned bookkeeping around the
+            // gateway's per-account Baileys sessions). All workspace scoping is
+            // enforced by the WorkspaceScope global scope + the service layer;
+            // workspace_id is never accepted from the client.
+            Route::prefix('accounts')->name('accounts.')->group(function () {
+                Route::get('/', [WhatsappAccountController::class, 'index'])->name('index');
+                Route::post('/', [WhatsappAccountController::class, 'store'])->name('store');
+                Route::get('/{account}', [WhatsappAccountController::class, 'show'])->name('show');
+                Route::patch('/{account}', [WhatsappAccountController::class, 'update'])->name('update');
+                Route::delete('/{account}', [WhatsappAccountController::class, 'destroy'])->name('destroy');
+                Route::post('/{account}/connect', [WhatsappAccountController::class, 'connect'])->name('connect');
+                Route::get('/{account}/connection-status', [WhatsappAccountController::class, 'connectionStatus'])->name('connection-status');
+                Route::post('/{account}/reconnect', [WhatsappAccountController::class, 'reconnect'])->name('reconnect');
+                Route::post('/{account}/disconnect', [WhatsappAccountController::class, 'disconnect'])->name('disconnect');
+                Route::post('/{account}/qr', [WhatsappAccountController::class, 'qr'])->name('qr');
+                Route::post('/{account}/set-active', [WhatsappAccountController::class, 'setActive'])->name('set-active');
+                Route::post('/{account}/set-active-force', [WhatsappAccountController::class, 'setActiveForce'])->name('set-active-force');
+            });
         });
 
         Route::prefix('presence')->name('presence.')->group(function () {

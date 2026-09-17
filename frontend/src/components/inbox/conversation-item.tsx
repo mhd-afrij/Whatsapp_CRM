@@ -6,6 +6,7 @@ import {
   Download,
   Lock,
   Mail,
+  MessageSquareText,
   MoreVertical,
   Pin,
   Trash2,
@@ -67,6 +68,9 @@ export function ConversationItem({
     contact?.phone_number ||
     `Conversation #${conversation.id}`;
 
+  const whatsappAccount = conversation.whatsapp_account;
+  const accountName = whatsappAccount?.name;
+
   const isOnline = conversation.whatsapp_contact?.is_online === true;
   const hasUnread = conversation.unread_count > 0;
   const isPinned = Boolean(conversation.pinned_at);
@@ -105,9 +109,17 @@ export function ConversationItem({
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <p className="font-semibold text-text truncate">{name}</p>
-          <span className="text-xs text-muted flex-shrink-0 whitespace-nowrap ml-2">
-            {lastMessageTime ? formatTime(lastMessageTime) : ""}
-          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {accountName && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                <MessageSquareText className="h-3 w-3" aria-hidden="true" />
+                {accountName}
+              </span>
+            )}
+            <span className="text-xs text-muted flex-shrink-0 whitespace-nowrap ml-2">
+              {lastMessageTime ? formatTime(lastMessageTime) : ""}
+            </span>
+          </div>
         </div>
         <p className="text-sm text-muted truncate">
           {conversation.last_message_preview || "(No messages yet)"}

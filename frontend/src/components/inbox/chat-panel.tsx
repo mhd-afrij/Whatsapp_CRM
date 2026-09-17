@@ -2513,7 +2513,7 @@ export function ChatPanel({
         )}
       </ChatHeader>
 
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {showAiSummary && (
           <div className="shrink-0 border-b border-border bg-accent/5 px-4 py-2.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
