@@ -10,7 +10,13 @@ import { logger } from '../lib/logger';
 import { getStorageClient } from '../lib/storage';
 import { execute, query, transaction } from '../lib/mysql';
 import { normalizePhoneToJid } from '../whatsapp/jid';
-import { connectionManager } from '../whatsapp/manager-instance';
+import { connectionManager, connectionRegistry, PairingCodeError } from '../whatsapp/manager-instance';
+import {
+  AccountContextError,
+  resolveConversationAccountContext,
+  type WhatsAppAccountContext,
+} from '../whatsapp/account-context';
+import type { ConnectionManager } from '../whatsapp/connection-manager';
 import { SessionRepository } from '../whatsapp/session-repository';
 import { DispatchRepository } from '../whatsapp/dispatch-repository';
 import { MessageRepository } from '../whatsapp/message-repository';
@@ -42,6 +48,7 @@ const messageRepository = new MessageRepository();
 const sendMessageBodySchema = z.object({
   conversationId: z.coerce.number().int().positive(),
   workspaceId: z.coerce.number().int().positive(),
+  accountId: z.coerce.number().int().positive().nullish(),
   content: z.string().nullish(),
   mediaRef: z.string().nullish(),
   mediaMimeType: z.string().nullish(),
@@ -54,6 +61,73 @@ const sendMessageBodySchema = z.object({
 });
 
 const tokenHeaderSchema = z.string().min(1);
+
+/** Reads an optional accountId from the request (body, then query). */
+function accountIdOf(req: Request): number | null {
+  const raw = (req.body?.accountId ?? req.query?.accountId) as unknown;
+  const parsed = z.coerce.number().int().positive().nullish().safeParse(raw);
+  return parsed.success ? (parsed.data ?? null) : null;
+}
+
+/**
+ * Resolves the ConnectionManager to route an ACCOUNT-LEVEL request against
+ * (status/connect/pairing/disconnect/reconnect/logout/reset-data): the
+ * account's manager when an accountId is supplied, else the legacy workspace
+ * singleton. The account's manager is created on first touch so a
+ * connect/pairing call for a brand-new account works without a prior /status
+ * call.
+ *
+ * The legacy fallback is a controlled compatibility path (Phase 5.3): every
+ * use emits a structured deprecation warning so the remaining unscoped
+ * callers stay observable. Conversation-scoped operations do NOT go through
+ * this helper - they resolve ownership via resolveConversationAccountContext.
+ */
+function managerFor(workspaceId: number, req: Request): ConnectionManager {
+  const accountId = accountIdOf(req);
+  if (accountId) {
+    return connectionRegistry.getOrCreate(workspaceId, accountId);
+  }
+  logger.warn(
+    { event: 'legacy_account_fallback', path: req.path, method: req.method, workspaceId },
+    'Internal WhatsApp request without accountId routed through the legacy workspace manager (deprecated)',
+  );
+  return connectionManager;
+}
+
+/** Maps AccountContextError onto the internal API's JSON error contract. */
+function respondAccountContextError(res: Response, err: unknown): boolean {
+  if (err instanceof AccountContextError) {
+    res.status(err.httpStatus).json({
+      success: false,
+      message: err.message,
+      data: { code: err.code, ...err.details },
+    });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Resolves the conversation-owning account for a conversation-scoped
+ * operation (Phase 5.4): loads the conversation's whatsapp_account_id,
+ * rejects caller-supplied accountIds that conflict with the owner, and
+ * returns the typed execution context for the owning account.
+ */
+async function conversationContext(
+  workspaceId: number,
+  conversationId: number,
+  req: Request,
+  operation: string,
+  options: { requireConnected?: boolean } = {},
+): Promise<WhatsAppAccountContext> {
+  return resolveConversationAccountContext({
+    conversationId,
+    workspaceId,
+    requestedAccountId: accountIdOf(req),
+    operation,
+    ...options,
+  });
+}
 
 function tokensMatch(provided: string, expected: string): boolean {
   const providedBuf = Buffer.from(provided);
@@ -106,49 +180,109 @@ export function createInternalWhatsappRouter(): Router {
   const router = Router();
   router.use(requireInternalToken);
 
-  router.get('/status', async (_req: Request, res: Response) => {
-    const snapshot = connectionManager.getSnapshot();
+  router.get('/status', async (req: Request, res: Response) => {
+    const manager = managerFor(env.WHATSAPP_WORKSPACE_ID, req);
+    const snapshot = manager.getSnapshot();
     const workspaceId = snapshot.workspaceId ?? env.WHATSAPP_WORKSPACE_ID;
     // Best-effort: getSyncSnapshot never throws (returns null on DB failure), so
     // a checkpoint hiccup can't take the connection-status page down.
-    const sync = await getSyncSnapshot(workspaceId);
+    const sync = await getSyncSnapshot(workspaceId, snapshot.accountId);
     res.status(200).json({ success: true, message: 'OK', data: { ...snapshot, sync } });
   });
 
-  router.post('/connect', async (_req: Request, res: Response) => {
+  router.post('/connect', async (req: Request, res: Response) => {
     try {
-      await connectionManager.startFreshPairing();
-      res.status(200).json({ success: true, message: 'QR pairing initiated', data: connectionManager.getSnapshot() });
+      const manager = managerFor(env.WHATSAPP_WORKSPACE_ID, req);
+      await manager.startFreshPairing();
+      res.status(200).json({ success: true, message: 'QR pairing initiated', data: manager.getSnapshot() });
     } catch (err) {
       logger.error({ err }, 'Failed to start WhatsApp connection');
       res.status(500).json({ success: false, message: 'Failed to start connection', data: null });
     }
   });
 
-  router.post('/disconnect', async (_req: Request, res: Response) => {
+  /**
+   * POST /internal/whatsapp/pairing-code
+   * Requests a REAL WhatsApp device pairing code from the live Baileys
+   * session (Baileys requestPairingCode - the same mechanism WhatsApp
+   * Web's "Link with phone number" uses). The body carries the E.164 phone
+   * number the code is requested for. The returned code is generated by
+   * WhatsApp's servers and relayed verbatim - never fabricated here.
+   */
+  const pairingCodeBodySchema = z.object({
+    phoneNumber: z
+      .string()
+      .trim()
+      .regex(/^\+?[0-9]{7,15}$/, 'phoneNumber must be an international number with 7-15 digits'),
+  });
+
+  router.post('/pairing-code', async (req: Request, res: Response) => {
+    const parsed = pairingCodeBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid request body', data: parsed.error.issues });
+      return;
+    }
+
+    // Normalize to bare E.164 digits (Baileys jid-encodes the number itself;
+    // a leading + or local-format zero would produce an invalid companion jid).
+    const raw = parsed.data.phoneNumber;
+    const digits = raw.replace(/[^0-9]/g, '');
+    const normalized = digits.startsWith(env.WHATSAPP_COUNTRY_CODE)
+      ? digits
+      : normalizePhoneToJid(raw, env.WHATSAPP_COUNTRY_CODE).split('@')[0];
+
     try {
-      await connectionManager.stop();
-      res.status(200).json({ success: true, message: 'Disconnected', data: connectionManager.getSnapshot() });
+      const manager = managerFor(env.WHATSAPP_WORKSPACE_ID, req);
+      const { pairingCode, expiresAt } = await manager.requestPairingCode(normalized);
+      logger.info({ phoneNumber: normalized }, 'WhatsApp pairing code requested');
+      res.status(200).json({
+        success: true,
+        message: 'Pairing code requested',
+        data: {
+          ...manager.getSnapshot(),
+          pairingCode,
+          expiresAt,
+          phoneNumber: normalized,
+        },
+      });
+    } catch (err) {
+      if (err instanceof PairingCodeError) {
+        logger.warn({ err, code: err.code }, 'Pairing-code request refused');
+        res.status(409).json({ success: false, message: err.message, data: { code: err.code } });
+        return;
+      }
+      logger.error({ err }, 'Failed to request WhatsApp pairing code');
+      res.status(500).json({ success: false, message: 'Failed to request pairing code', data: null });
+    }
+  });
+
+  router.post('/disconnect', async (req: Request, res: Response) => {
+    try {
+      const manager = managerFor(env.WHATSAPP_WORKSPACE_ID, req);
+      await manager.stop();
+      res.status(200).json({ success: true, message: 'Disconnected', data: manager.getSnapshot() });
     } catch (err) {
       logger.error({ err }, 'Failed to disconnect WhatsApp session');
       res.status(500).json({ success: false, message: 'Failed to disconnect', data: null });
     }
   });
 
-  router.post('/reconnect', async (_req: Request, res: Response) => {
+  router.post('/reconnect', async (req: Request, res: Response) => {
     try {
-      await connectionManager.reconnect();
-      res.status(200).json({ success: true, message: 'Reconnection initiated', data: connectionManager.getSnapshot() });
+      const manager = managerFor(env.WHATSAPP_WORKSPACE_ID, req);
+      await manager.reconnect();
+      res.status(200).json({ success: true, message: 'Reconnection initiated', data: manager.getSnapshot() });
     } catch (err) {
       logger.error({ err }, 'Failed to reconnect WhatsApp session');
       res.status(500).json({ success: false, message: 'Failed to reconnect', data: null });
     }
   });
 
-  router.post('/logout', async (_req: Request, res: Response) => {
+  router.post('/logout', async (req: Request, res: Response) => {
     try {
-      await connectionManager.logout();
-      res.status(200).json({ success: true, message: 'Logged out; re-authentication required', data: connectionManager.getSnapshot() });
+      const manager = managerFor(env.WHATSAPP_WORKSPACE_ID, req);
+      await manager.logout();
+      res.status(200).json({ success: true, message: 'Logged out; re-authentication required', data: manager.getSnapshot() });
     } catch (err) {
       logger.error({ err }, 'Failed to log out WhatsApp session');
       res.status(500).json({ success: false, message: 'Failed to log out', data: null });
@@ -168,6 +302,7 @@ export function createInternalWhatsappRouter(): Router {
    */
   const resetDataBodySchema = z.object({
     workspaceId: z.coerce.number().int().positive(),
+    accountId: z.coerce.number().int().positive().nullish(),
   });
 
   router.post('/reset-data', async (req: Request, res: Response) => {
@@ -178,9 +313,10 @@ export function createInternalWhatsappRouter(): Router {
     }
 
     const { workspaceId } = parsed.data;
+    const manager = managerFor(workspaceId, req);
 
     try {
-      await connectionManager.logout();
+      await manager.logout();
 
       const deleted = await transaction(async (conn) => {
         const [counts] = (await conn.query(
@@ -221,12 +357,12 @@ export function createInternalWhatsappRouter(): Router {
 
       // The checkpoint row was purged in the transaction above; also drop any
       // in-process run state so the next pairing starts a clean sync run.
-      await clearWorkspaceRun(workspaceId);
+      await clearWorkspaceRun(workspaceId, accountIdOf(req));
 
       res.status(200).json({
         success: true,
         message: 'WhatsApp data cleared and session logged out',
-        data: { ...deleted, session: connectionManager.getSnapshot() },
+        data: { ...deleted, session: manager.getSnapshot() },
       });
     } catch (err) {
       logger.error({ err, workspaceId }, 'Failed to reset WhatsApp data');
@@ -239,7 +375,7 @@ export function createInternalWhatsappRouter(): Router {
     const limit = limitQuery.success ? limitQuery.data : 50;
 
     try {
-      const session = await repository.getOrCreateSession(env.WHATSAPP_WORKSPACE_ID);
+      const session = await repository.getOrCreateSession(env.WHATSAPP_WORKSPACE_ID, accountIdOf(req));
       const events = await repository.listConnectionEvents(session.id, limit);
       res.status(200).json({ success: true, message: 'OK', data: events });
     } catch (err) {
@@ -272,6 +408,13 @@ export function createInternalWhatsappRouter(): Router {
     let dispatchId: number | null = null;
 
     try {
+      // Phase 5.4 - conversation ownership enforcement. The conversation's
+      // own whatsapp_account_id decides which account delivers the message;
+      // a caller-supplied accountId is accepted only when it matches the
+      // owner, and a conflict is rejected instead of routed through the
+      // wrong account.
+      const accountContext = await conversationContext(workspaceId, conversationId, req, 'send');
+
       const existing = await dispatchRepository.findByIdempotencyKey(workspaceId, idempotencyKey);
       if (existing) {
         res.status(200).json({
@@ -309,6 +452,7 @@ export function createInternalWhatsappRouter(): Router {
       const job = await sendMessageQueue.add('send', {
         dispatchId: dispatchRow.id,
         workspaceId,
+        accountId: accountContext.accountId,
         conversationId,
         waJid,
         content: content ?? null,
@@ -331,6 +475,9 @@ export function createInternalWhatsappRouter(): Router {
         data: { dispatchId: dispatchRow.id, status: 'pending', bullmqJobId: job.id ?? null },
       });
     } catch (err) {
+      if (respondAccountContextError(res, err)) {
+        return;
+      }
       if (dispatchId !== null) {
         await dispatchRepository.markFailed(dispatchId).catch((markErr) => {
           logger.error({ err: markErr, dispatchId }, 'Failed to mark outbound dispatch as failed');
@@ -344,6 +491,7 @@ export function createInternalWhatsappRouter(): Router {
 
   const startConversationBodySchema = z.object({
     workspaceId: z.coerce.number().int().positive(),
+    accountId: z.coerce.number().int().positive().nullish(),
     phoneNumber: z.string().min(1),
     contactId: z.coerce.number().int().positive().nullish(),
   });
@@ -361,7 +509,11 @@ export function createInternalWhatsappRouter(): Router {
       const waJid = normalizePhoneToJid(phoneNumber, env.WHATSAPP_COUNTRY_CODE);
 
       const whatsappContact = await messageRepository.findOrCreateWhatsappContact(workspaceId, waJid, null);
-      const conversation = await messageRepository.findOrCreateConversation(workspaceId, whatsappContact.id);
+      const conversation = await messageRepository.findOrCreateConversation(
+        workspaceId,
+        whatsappContact.id,
+        accountIdOf(req),
+      );
 
       if (contactId && conversation.created) {
         await execute(
@@ -559,11 +711,18 @@ export function createInternalWhatsappRouter(): Router {
     const { conversationId, workspaceId, waJid, isTyping, userId, name } = parsed.data;
 
     try {
+      // Phase 5.4: typing is tied to the conversation's owning account -
+      // resolve it from the conversation row (never from is_active or a
+      // global "current account"), and refuse when that session is offline.
+      const accountContext = await conversationContext(workspaceId, conversationId, req, 'typing', {
+        requireConnected: true,
+      });
+
       // Send presence update to WhatsApp
       if (isTyping) {
-        await connectionManager.sendPresenceUpdate('composing', waJid);
+        await accountContext.manager.sendPresenceUpdate('composing', waJid);
       } else {
-        await connectionManager.sendPresenceUpdate('available', waJid);
+        await accountContext.manager.sendPresenceUpdate('available', waJid);
       }
 
       // Broadcast typing event to frontend
@@ -576,6 +735,9 @@ export function createInternalWhatsappRouter(): Router {
 
       res.status(200).json({ success: true, message: 'Typing indicator sent', data: null });
     } catch (err) {
+      if (respondAccountContextError(res, err)) {
+        return;
+      }
       logger.error({ err }, 'Failed to send typing indicator');
       res.status(500).json({ success: false, message: 'Failed to send typing indicator', data: null });
     }
@@ -603,6 +765,13 @@ export function createInternalWhatsappRouter(): Router {
     const { conversationId, workspaceId, waJid, whatsappMessageId, userId } = parsed.data;
 
     try {
+      // Phase 5.4: resolve the revoke through the conversation's owning
+      // account (connected check included) so a revoke can never be issued
+      // from another account's socket.
+      const accountContext = await conversationContext(workspaceId, conversationId, req, 'revoke', {
+        requireConnected: true,
+      });
+
       // Send revoke to WhatsApp via Baileys. Resolve the conversation's
       // canonical outbound jid (LID-preferred, same as messages/send) so a
       // revoke targets the same identity the original message was addressed
@@ -610,7 +779,7 @@ export function createInternalWhatsappRouter(): Router {
       const resolvedJid =
         (await messageRepository.getConversationJid(conversationId, workspaceId)) ?? waJid;
       const jid = resolvedJid.includes('@') ? resolvedJid : `${resolvedJid}@s.whatsapp.net`;
-      await connectionManager.sendContent(jid, {
+      await accountContext.manager.sendContent(jid, {
         protocolMessage: {
           type: 0, // REVOKE
           key: {
@@ -638,6 +807,9 @@ export function createInternalWhatsappRouter(): Router {
 
       res.status(200).json({ success: true, message: 'Message revoked', data: null });
     } catch (err) {
+      if (respondAccountContextError(res, err)) {
+        return;
+      }
       logger.error({ err }, 'Failed to revoke message');
       res.status(500).json({ success: false, message: 'Failed to revoke message', data: null });
     }
@@ -668,6 +840,13 @@ export function createInternalWhatsappRouter(): Router {
     const { conversationId, workspaceId, waJid, whatsappMessageId, emoji, remove, userId, name } = parsed.data;
 
     try {
+      // Phase 5.4: the reaction must be sent by the conversation's owning
+      // account; resolve it (connected check included) before touching the
+      // socket so a reaction can never cross accounts.
+      const accountContext = await conversationContext(workspaceId, conversationId, req, 'reaction', {
+        requireConnected: true,
+      });
+
       // Send reaction to WhatsApp via Baileys. Resolve the conversation's
       // canonical outbound jid (LID-preferred, same as messages/send) so the
       // reaction is addressed to the same identity as the message it targets.
@@ -677,7 +856,7 @@ export function createInternalWhatsappRouter(): Router {
       
       if (remove) {
         // Remove reaction by sending empty emoji
-        await connectionManager.sendContent(jid, {
+        await accountContext.manager.sendContent(jid, {
           react: {
             text: '',
             key: {
@@ -689,7 +868,7 @@ export function createInternalWhatsappRouter(): Router {
         });
       } else {
         // Add reaction
-        await connectionManager.sendContent(jid, {
+        await accountContext.manager.sendContent(jid, {
           react: {
             text: emoji,
             key: {
@@ -732,6 +911,9 @@ export function createInternalWhatsappRouter(): Router {
 
       res.status(200).json({ success: true, message: 'Reaction sent', data: null });
     } catch (err) {
+      if (respondAccountContextError(res, err)) {
+        return;
+      }
       logger.error({ err }, 'Failed to send reaction');
       res.status(500).json({ success: false, message: 'Failed to send reaction', data: null });
     }
@@ -1078,6 +1260,7 @@ export function createInternalWhatsappRouter(): Router {
 
   const forwardBodySchema = z.object({
     workspaceId: z.coerce.number().int().positive(),
+    accountId: z.coerce.number().int().positive().nullish(),
     sourceMessageId: z.coerce.number().int().positive(),
     requestedByUserId: z.coerce.number().int().positive().nullish(),
   });
@@ -1102,6 +1285,15 @@ export function createInternalWhatsappRouter(): Router {
     const { workspaceId, sourceMessageId, requestedByUserId } = parsed.data;
 
     try {
+      // Phase 5.4 - forwarding: the source message may belong to a different
+      // account than the target conversation; that is legitimate. The
+      // outbound operation MUST use the TARGET conversation's owning account
+      // (resolved here, connected check included) - never the caller's
+      // accountId and never the source message's account.
+      const accountContext = await conversationContext(workspaceId, conversationId.data, req, 'forward', {
+        requireConnected: true,
+      });
+
       const targetJid = await messageRepository.getConversationJid(conversationId.data, workspaceId);
       if (!targetJid) {
         res.status(404).json({ success: false, message: 'Target conversation not found', data: null });
@@ -1143,7 +1335,7 @@ export function createInternalWhatsappRouter(): Router {
         return;
       }
 
-      const sendResult = await connectionManager.sendContent(targetJid, sendContent);
+      const sendResult = await accountContext.manager.sendContent(targetJid, sendContent);
       const whatsappMessageId = sendResult.id;
       if (!whatsappMessageId) {
         throw new Error('Baileys did not return a message id for the forward');
@@ -1154,7 +1346,7 @@ export function createInternalWhatsappRouter(): Router {
         body: source.body,
         messageType,
         status: 'sent',
-      });
+      }, accountContext.accountId);
       if (!inserted) {
         throw new Error('Failed to persist forwarded message row');
       }
@@ -1188,6 +1380,9 @@ export function createInternalWhatsappRouter(): Router {
         data: { messageId: inserted.messageId, whatsappMessageId, requestedByUserId: requestedByUserId ?? null },
       });
     } catch (err) {
+      if (respondAccountContextError(res, err)) {
+        return;
+      }
       logger.error({ err, conversationId: conversationId.data }, 'Failed to forward message');
       res.status(500).json({ success: false, message: 'Failed to forward message', data: null });
     }

@@ -26,6 +26,7 @@ export const leadSchema = z.object({
   source: z.enum(["whatsapp", "manual", "import", "other"]),
   stage: z.enum(["new", "contacted", "qualified", "disqualified", "converted"]),
   notes: z.string().max(2000).optional().or(z.literal("")),
+  follow_up_date: z.string().optional().or(z.literal("")),
 });
 
 export type LeadSchemaValues = z.infer<typeof leadSchema>;
@@ -60,9 +61,61 @@ export type TaskSchemaValues = z.infer<typeof taskSchema>;
 export const loginSchema = z.object({
   email: z.string().min(1, "Email is required").email("Enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
+  remember_me: z.boolean().optional(),
 });
 
 export type LoginSchemaValues = z.infer<typeof loginSchema>;
+
+export const signupSchema = z
+  .object({
+    name: z.string().min(1, "Please enter your full name").max(255),
+    email: z.string().min(1, "Email is required").email("Enter a valid email address"),
+    username: z
+      .string()
+      .trim()
+      .min(3, "Username must be at least 3 characters")
+      .max(30, "Username must be at most 30 characters")
+      .regex(/^[a-zA-Z0-9_]+$/, "Use only letters, numbers and underscores"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    password_confirmation: z.string().min(1, "Please confirm your password"),
+  })
+  .refine((data) => data.password === data.password_confirmation, {
+    message: "Passwords do not match",
+    path: ["password_confirmation"],
+  });
+
+export type SignupSchemaValues = z.infer<typeof signupSchema>;
+
+/**
+ * Onboarding Step 2: workspace identity. `workspace_name` renames the
+ * provisional "{name}'s Workspace" created at signup; `position` is
+ * free-text metadata; `whatsapp_display_name` is shown in the gateway as the
+ * linked device name.
+ */
+export const onboardingWorkspaceSchema = z.object({
+  workspace_name: z.string().trim().min(1, "Workspace name is required").max(150),
+  position: z.string().trim().min(1, "Position is required").max(120),
+  whatsapp_display_name: z.string().trim().min(1, "WhatsApp display name is required").max(120),
+});
+
+export type OnboardingWorkspaceSchemaValues = z.infer<typeof onboardingWorkspaceSchema>;
+
+/**
+ * Onboarding Step 3: the real WhatsApp number. `country` is the display name
+ * (e.g. "Sri Lanka"), `country_code` the dialing code without "+", and
+ * `mobile_number` the national part. The backend normalizes the full number
+ * to E.164 and stores it on both the workspace and the account slot.
+ */
+export const onboardingWhatsappSchema = z.object({
+  country: z.string().min(1, "Select a country"),
+  country_code: z.string().regex(/^[0-9]{1,4}$/, "Enter a valid country code"),
+  mobile_number: z
+    .string()
+    .trim()
+    .regex(/^[0-9][0-9 ]{5,19}$/, "Enter a valid mobile number"),
+});
+
+export type OnboardingWhatsappSchemaValues = z.infer<typeof onboardingWhatsappSchema>;
 
 export const forgotPasswordSchema = z.object({
   email: z.string().min(1, "Email is required").email("Enter a valid email address"),

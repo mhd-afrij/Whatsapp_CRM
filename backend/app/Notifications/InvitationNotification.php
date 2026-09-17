@@ -21,11 +21,16 @@ class InvitationNotification extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         $frontendUrl = rtrim(config('app.frontend_url', 'http://localhost:3000'), '/');
-        $url = sprintf('%s/accept-invitation?token=%s', $frontendUrl, $this->invitation->token);
+        $token = $this->invitation->inviteUrlToken();
+        $url = sprintf('%s/accept-invitation?token=%s', $frontendUrl, $token);
+        $workspace = $this->invitation->workspace?->name ?? 'this workspace';
+        $inviter = $this->invitation->inviter?->name ?? 'A workspace administrator';
+        $role = $this->invitation->role?->name ?? 'a workspace role';
 
         return (new MailMessage)
-            ->subject('You have been invited to join a workspace')
-            ->line('You have been invited to join a workspace on the WhatsApp CRM.')
+            ->subject("You're invited to join {$workspace}")
+            ->line("{$inviter} invited you to join {$workspace} as {$role}.")
+            ->when((bool) $this->invitation->message, fn (MailMessage $mail) => $mail->line($this->invitation->message))
             ->action('Accept Invitation', $url)
             ->line('This invitation link will expire on '.$this->invitation->expires_at->toDayDateTimeString().'.');
     }

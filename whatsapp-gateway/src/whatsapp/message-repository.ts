@@ -267,6 +267,7 @@ export class MessageRepository {
   async findOrCreateConversation(
     workspaceId: number,
     whatsappContactId: number,
+    accountId: number | null = null,
   ): Promise<{ id: number; created: boolean }> {
     const [rows] = await query<RowDataPacket[]>(
       'SELECT id FROM conversations WHERE workspace_id = ? AND whatsapp_contact_id = ? LIMIT 1',
@@ -278,11 +279,34 @@ export class MessageRepository {
 
     const result = await execute(
       `INSERT INTO conversations
-         (workspace_id, whatsapp_contact_id, status, unread_count, created_at, updated_at)
-       VALUES (?, ?, 'open', 0, NOW(), NOW())`,
-      [workspaceId, whatsappContactId],
+         (workspace_id, whatsapp_contact_id, whatsapp_account_id, status, unread_count, created_at, updated_at)
+       VALUES (?, ?, ?, 'open', 0, NOW(), NOW())`,
+      [workspaceId, whatsappContactId, accountId],
     );
     return { id: result.insertId, created: true };
+  }
+
+  /**
+   * Returns the owning WhatsApp account of a conversation (Phase 5.4).
+   * `whatsapp_account_id` is the authoritative owner used to route every
+   * account-scoped operation; null for conversations created before
+   * multi-account support (legacy rows).
+   */
+  async getConversationAccount(
+    conversationId: number,
+    workspaceId: number,
+  ): Promise<{ id: number; whatsappAccountId: number | null } | null> {
+    const [rows] = await query<RowDataPacket[]>(
+      'SELECT id, whatsapp_account_id FROM conversations WHERE id = ? AND workspace_id = ? LIMIT 1',
+      [conversationId, workspaceId],
+    );
+    if (rows.length === 0) {
+      return null;
+    }
+    return {
+      id: rows[0].id as number,
+      whatsappAccountId: (rows[0].whatsapp_account_id as number | null) ?? null,
+    };
   }
 
   /**
@@ -307,6 +331,7 @@ export class MessageRepository {
     conversationId: number,
     normalized: NormalizedInboundMessage,
     opts: { incrementUnread?: boolean } = {},
+    accountId: number | null = null,
   ): Promise<{ messageId: number } | null> {
     const incrementUnread = opts.incrementUnread ?? true;
     return transaction(async (conn: PoolConnection) => {
@@ -321,12 +346,13 @@ export class MessageRepository {
 
       const [result] = await conn.query<ResultSetHeader>(
         `INSERT INTO messages
-           (workspace_id, conversation_id, whatsapp_message_id, direction, sender_type,
+           (workspace_id, conversation_id, whatsapp_account_id, whatsapp_message_id, direction, sender_type,
             message_type, body, status, replied_to_message_id, sent_at, created_at, updated_at)
-        VALUES (?, ?, ?, 'inbound', 'contact', ?, ?, 'sent', ?, ?, NOW(), NOW())`,
+        VALUES (?, ?, ?, ?, ?, 'inbound', 'contact', ?, ?, 'sent', ?, ?, NOW(), NOW())`,
         [
           workspaceId,
           conversationId,
+          accountId,
           normalized.whatsappMessageId,
           normalized.messageType,
           normalized.body,
@@ -367,6 +393,7 @@ export class MessageRepository {
       status?: MessageStatus;
       sentAt?: Date;
     },
+    accountId: number | null = null,
   ): Promise<{ messageId: number } | null> {
     return transaction(async (conn: PoolConnection) => {
       let repliedToId: number | null = null;
@@ -383,12 +410,13 @@ export class MessageRepository {
       const sentAt = params.sentAt ?? new Date();
       const [result] = await conn.query<ResultSetHeader>(
         `INSERT INTO messages
-           (workspace_id, conversation_id, whatsapp_message_id, direction, sender_type,
+           (workspace_id, conversation_id, whatsapp_account_id, whatsapp_message_id, direction, sender_type,
             message_type, body, status, replied_to_message_id, sent_at, created_at, updated_at)
-        VALUES (?, ?, ?, 'outbound', 'user', ?, ?, ?, ?, ?, NOW(), NOW())`,
+        VALUES (?, ?, ?, ?, ?, 'outbound', 'user', ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
           workspaceId,
           conversationId,
+          accountId,
           params.whatsappMessageId,
           messageType,
           params.body,

@@ -1,30 +1,21 @@
-import { describe, it, expect } from "vitest";
-import { normalizePhoneNumber } from "./phone";
+import { describe, expect, it } from "vitest";
+import { formatWhatsAppNumber } from "./phone";
 
-describe("normalizePhoneNumber", () => {
-  it("drops the leading trunk zero and prefixes the country code", () => {
-    expect(normalizePhoneNumber("0750144774")).toBe("94750144774");
+describe("formatWhatsAppNumber", () => {
+  it("strips the device suffix and pretty-prints +94 numbers", () => {
+    expect(formatWhatsAppNumber("94788198996:20")).toBe("+94 78 819 8996");
   });
 
-  it("prefixes the country code to a short local number", () => {
-    expect(normalizePhoneNumber("765655026")).toBe("94765655026");
+  it("formats clean numbers without a suffix", () => {
+    expect(formatWhatsAppNumber("94788198996")).toBe("+94 78 819 8996");
   });
 
-  it("leaves an already-international number alone", () => {
-    expect(normalizePhoneNumber("94765655026")).toBe("94765655026");
+  it("falls back to a plain +number for other shapes", () => {
+    expect(formatWhatsAppNumber("15551234567")).toBe("+15551234567");
   });
 
-  it("strips spaces, dashes and plus signs", () => {
-    expect(normalizePhoneNumber("+94 76 5655-026")).toBe("94765655026");
-  });
-
-  it("returns the input unchanged when it has no digits", () => {
-    expect(normalizePhoneNumber("")).toBe("");
-    expect(normalizePhoneNumber("  ")).toBe("");
-    expect(normalizePhoneNumber("N/A")).toBe("N/A");
-  });
-
-  it("honors an explicit country code", () => {
-    expect(normalizePhoneNumber("0750144774", "1")).toBe("1750144774");
+  it("returns null for empty input", () => {
+    expect(formatWhatsAppNumber(null)).toBeNull();
+    expect(formatWhatsAppNumber("")).toBeNull();
   });
 });

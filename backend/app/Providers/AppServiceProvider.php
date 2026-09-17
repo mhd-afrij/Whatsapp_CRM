@@ -93,5 +93,17 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('ai-draft', function (Request $request) {
             return Limit::perMinute(15)->by(optional($request->user())->id ?: $request->ip());
         });
+
+        // Self-service signup — aggressively rate-limit per IP + email to slow
+        // abuse; 3 per minute is generous for a manual form submission.
+        RateLimiter::for('signup', function (Request $request) {
+            return Limit::perMinute(3)->by($request->ip());
+        });
+
+        // Onboarding username availability (public, no auth) — per IP, generous enough
+        // for a keystroke-debounced check while still blocking enumeration loops.
+        RateLimiter::for('username-check', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip());
+        });
     }
 }

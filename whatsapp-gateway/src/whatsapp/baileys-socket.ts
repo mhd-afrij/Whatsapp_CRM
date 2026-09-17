@@ -26,6 +26,15 @@ export interface IBaileysSocket {
   readonly user?: Contact;
   end(error: Error | undefined): void;
   logout(): Promise<void>;
+  /**
+   * Baileys' real device-linking mechanism (verified against the installed
+   * @whiskeysockets/baileys 6.7.24, lib/Socket/socket.js): sends the
+   * link_code_companion_reg IQ over the live noise socket and returns the
+   * 8-char pairing code the user enters under WhatsApp -> Linked Devices.
+   * Only valid while the socket is open and still UNREGISTERED (no creds.me);
+   * the socket must be waiting for a QR/pairing, not already paired.
+   */
+  requestPairingCode(phoneNumber: string): Promise<string>;
   sendMessage(
     jid: string,
     content: { text: string } | Record<string, unknown>,
@@ -81,6 +90,14 @@ export interface BaileysConnectionUpdate {
   lastDisconnect?: {
     error?: unknown;
   };
+}
+
+/** Baileys' `connection.update` `receivedPendingNotifications` companion flag - part of the pairing handshake telemetry. */
+export interface BaileysPairingContext {
+  /** The phone number (E.164 digits) the pairing code was requested for. */
+  phoneNumber: string;
+  /** The 8-char pairing code returned by the real Baileys requestPairingCode. */
+  pairingCode: string;
 }
 
 export interface AuthStateBundle {

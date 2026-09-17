@@ -110,7 +110,7 @@ class MediaController extends Controller
         $this->authorize('view', $conversation);
 
         try {
-            return $this->gateway->mediaContent($media->id, $conversation->workspace_id);
+            return $this->gateway->mediaContent($media->id, $conversation->workspace_id, $conversation->whatsapp_account_id);
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
         }
@@ -138,7 +138,7 @@ class MediaController extends Controller
         $this->authorize('view', $conversation);
 
         try {
-            $result = $this->gateway->mediaUrl($media->id, $conversation->workspace_id);
+            $result = $this->gateway->mediaUrl($media->id, $conversation->workspace_id, $conversation->whatsapp_account_id);
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
         }

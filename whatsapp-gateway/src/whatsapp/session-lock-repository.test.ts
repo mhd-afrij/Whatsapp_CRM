@@ -63,6 +63,7 @@ describe('SessionLockRepository', () => {
       expect(String(sql)).toContain('INSERT INTO workspace_sync_assignments');
       expect(executeMock.mock.calls[0][1]).toEqual([
         1,
+        null,
         'gw-a',
         expect.any(Date),
         expect.any(Date),

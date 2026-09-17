@@ -29,7 +29,7 @@ class WhatsappConnectionTest extends TestCase
         $admin = $this->userWithRole('Administrator');
 
         Http::fake([
-            '*/internal/whatsapp/status' => Http::response([
+            '*internal/whatsapp/status*' => Http::response([
                 'success' => true,
                 'message' => 'OK',
                 'data' => ['workspaceId' => 1, 'status' => 'connected', 'qrCode' => null, 'qrExpiresAt' => null, 'phoneNumber' => '15551234567'],
@@ -52,7 +52,7 @@ class WhatsappConnectionTest extends TestCase
         $admin = $this->userWithRole('Administrator');
 
         Http::fake([
-            '*/internal/whatsapp/status' => Http::response([
+            '*internal/whatsapp/status*' => Http::response([
                 'success' => true,
                 'message' => 'OK',
                 'data' => ['status' => 'qr_pending', 'qrCode' => 'data:image/png;base64,abc', 'qrExpiresAt' => '2026-07-31T10:01:00Z'],
@@ -235,7 +235,7 @@ class WhatsappConnectionTest extends TestCase
         $admin = $this->userWithRole('Administrator');
 
         Http::fake([
-            '*/internal/whatsapp/status' => Http::response(null, 500),
+            '*internal/whatsapp/status*' => Http::response(null, 500),
         ]);
 
         $this->asUser($admin)->getJson('/api/v1/whatsapp/status')

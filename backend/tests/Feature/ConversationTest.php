@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Conversation;
 use App\Models\User;
+use App\Models\WhatsappAccount;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -399,6 +400,31 @@ class ConversationTest extends TestCase
 
         $this->assertCount(1, $data);
         $this->assertSame('urgent', $data[0]['priority']);
+    }
+
+    public function test_can_filter_conversations_by_whatsapp_account(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $accountA = WhatsappAccount::factory()->create(['workspace_id' => $agent->workspace_id]);
+        $accountB = WhatsappAccount::factory()->create(['workspace_id' => $agent->workspace_id]);
+        Conversation::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'assigned_user_id' => $agent->id,
+            'whatsapp_account_id' => $accountA->id,
+        ]);
+        Conversation::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'assigned_user_id' => $agent->id,
+            'whatsapp_account_id' => $accountB->id,
+        ]);
+
+        $response = $this->asUser($agent)->getJson("/api/v1/conversations?whatsapp_account_id={$accountA->id}")->assertOk();
+        $data = $response->json('data');
+
+        $this->assertCount(1, $data);
+        $this->assertSame($accountA->id, $data[0]['whatsapp_account_id']);
+        $this->assertSame($accountA->name, $data[0]['whatsapp_account']['name']);
     }
 
     public function test_marking_a_conversation_unread_calls_the_gateway(): void

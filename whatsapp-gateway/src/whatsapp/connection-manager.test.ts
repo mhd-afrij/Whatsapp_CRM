@@ -52,6 +52,7 @@ function makeFakeSocket(): FakeSocketHandle {
     },
     end: vi.fn(),
     logout: vi.fn().mockResolvedValue(undefined),
+    requestPairingCode: vi.fn().mockResolvedValue('AB12CD34'),
     sendMessage: vi.fn().mockResolvedValue({ key: { id: 'ABC123' } }),
     sendPresenceUpdate: vi.fn().mockResolvedValue(undefined),
   };
@@ -141,9 +142,12 @@ describe('ConnectionManager', () => {
 
     expect(manager.getStatus()).toBe('auth_required');
     expect(repository.deleteCredentials).toHaveBeenCalledWith(1);
-    expect(repository.recordConnectionEvent).toHaveBeenCalledWith(1, 1, 'logged_out', {
-      statusCode: 401,
-    });
+    expect(repository.recordConnectionEvent).toHaveBeenCalledWith(
+      1,
+      1,
+      'logged_out',
+      expect.objectContaining({ statusCode: 401, classification: 'logged_out' }),
+    );
     expect(repository.updateStatus).toHaveBeenCalledWith(
       1,
       'logged_out',
@@ -159,9 +163,12 @@ describe('ConnectionManager', () => {
 
     expect(manager.getStatus()).toBe('auth_required');
     expect(repository.deleteCredentials).toHaveBeenCalledWith(1);
-    expect(repository.recordConnectionEvent).toHaveBeenCalledWith(1, 1, 'bad_session', {
-      statusCode: 500,
-    });
+    expect(repository.recordConnectionEvent).toHaveBeenCalledWith(
+      1,
+      1,
+      'bad_session',
+      expect.objectContaining({ statusCode: 500, classification: 'bad_session' }),
+    );
     expect(repository.updateStatus).toHaveBeenCalledWith(
       1,
       'logged_out',
@@ -192,7 +199,7 @@ describe('ConnectionManager', () => {
     // The short (250ms) post-restart-required timer should fire and re-run start(),
     // which records a fresh 'connecting' event.
     await vi.advanceTimersByTimeAsync(300);
-    expect(repository.recordConnectionEvent).toHaveBeenCalledWith(1, 1, 'connecting');
+    expect(repository.recordConnectionEvent).toHaveBeenCalledWith(1, 1, 'connecting', { accountId: null });
   });
 
   it('schedules a reconnect with backoff on a transient disconnect', async () => {
@@ -256,5 +263,81 @@ describe('ConnectionManager', () => {
     expect(repository.deleteCredentials).toHaveBeenCalledWith(1);
     expect(repository.getOrCreateSession).toHaveBeenCalledTimes(3);
     expect(manager.getStatus()).toBe('connecting');
+  });
+
+  // ------------------------------------------------------------------
+  // Pairing-code linking (Baileys requestPairingCode - real device linking)
+  // ------------------------------------------------------------------
+
+  describe('pairing code linking', () => {
+    it('returns the real Baileys pairing code once the socket is pairing-ready', async () => {
+      (fakeSocket.socket.requestPairingCode as ReturnType<typeof vi.fn>).mockResolvedValue('AB12CD34');
+      await fakeSocket.triggerConnectionUpdate({ qr: 'raw-qr-payload' });
+      await vi.waitFor(() => {
+        expect(manager.getStatus()).toBe('qr_pending');
+      });
+
+      const result = await manager.requestPairingCode('15551234567');
+
+      expect(result.pairingCode).toBe('AB12CD34');
+      expect(result.expiresAt).toBeTruthy();
+      expect(fakeSocket.socket.requestPairingCode).toHaveBeenCalledWith('15551234567');
+      expect(manager.getSnapshot().pairingCode).toBe('AB12CD34');
+      expect(manager.getSnapshot().pairingCodePhoneNumber).toBe('15551234567');
+      expect(repository.recordConnectionEvent).toHaveBeenCalledWith(
+        1,
+        1,
+        'connecting',
+        expect.objectContaining({ method: 'pairing_code' }),
+      );
+    });
+
+    it('waits for the pairing session to become ready before requesting the code', async () => {
+      (fakeSocket.socket.requestPairingCode as ReturnType<typeof vi.fn>).mockResolvedValue('ZZ99XX88');
+
+      // Status is still 'connecting' here: the request may only hit Baileys
+      // once the first QR lands (the real handshake-ready signal).
+      const pending = manager.requestPairingCode('15551234567');
+      await fakeSocket.triggerConnectionUpdate({ qr: 'raw-qr-payload' });
+
+      await expect(pending).resolves.toEqual(expect.objectContaining({ pairingCode: 'ZZ99XX88' }));
+    });
+
+    it('times out when the socket never becomes pairing-ready', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+      const pending = manager.requestPairingCode('15551234567');
+      const assertion = expect(pending).rejects.toMatchObject({ code: 'SOCKET_READY_TIMEOUT' });
+      await vi.advanceTimersByTimeAsync(16_000);
+      await assertion;
+    });
+
+    it('refuses to link an already-registered session after restarting pairing', async () => {
+      // Mark the live socket's auth state as registered (creds.me set), as it
+      // would be for a previously-paired session. The socket factory always
+      // returns the same fake, so even after the manager's internal
+      // startFreshPairing() the probe still sees a registered session => the
+      // manager must refuse rather than hand out a meaningless code.
+      (fakeSocket.socket as unknown as { authState: unknown }).authState = {
+        creds: { me: { id: '15551234567@s.whatsapp.net' } },
+      };
+
+      await expect(manager.requestPairingCode('15551234567')).rejects.toMatchObject({
+        code: 'ALREADY_LINKED',
+      });
+      expect(fakeSocket.socket.requestPairingCode).not.toHaveBeenCalled();
+      expect(repository.deleteCredentials).toHaveBeenCalled();
+    });
+
+    it('clears a live pairing code once the connection opens', async () => {
+      await fakeSocket.triggerConnectionUpdate({ qr: 'raw-qr-payload' });
+      await manager.requestPairingCode('15551234567');
+      expect(manager.getSnapshot().pairingCode).toBe('AB12CD34');
+
+      await fakeSocket.triggerConnectionUpdate({ connection: 'open' });
+
+      expect(manager.getSnapshot().pairingCode).toBeNull();
+      expect(manager.getStatus()).toBe('connected');
+    });
   });
 });
