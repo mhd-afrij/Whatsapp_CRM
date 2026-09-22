@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\AnalyticsSetting;
 use App\Models\Conversation;
 use App\Models\Deal;
+use App\Models\Lead;
+use App\Models\LeadStatus;
 use App\Models\Message;
 use App\Models\Task;
 use App\Models\User;
@@ -130,6 +132,9 @@ class ReportService
             'metrics' => $this->metrics($current, $previous),
             'weekly_revenue' => $this->weeklyRevenue($current['deals_by_day'], $settings),
             'deal_outcomes' => $current['deal_outcomes'],
+            'leads' => $current['leads'],
+            'conversation_analytics' => $current['conversation_analytics'],
+            'trend' => $this->excludeWeekends($current['daily_series'], $preferences, $settings->timezone),
             'task_completion' => $current['tasks'],
             'response_speed' => $current['response_speed'],
             'leaderboard' => $current['leaderboard'],
@@ -175,6 +180,8 @@ class ReportService
             'metrics' => $this->metrics($current, $previous),
             'weekly_revenue' => $this->weeklyRevenue($current['deals_by_day'], $settings),
             'deal_outcomes' => $current['deal_outcomes'],
+            'leads' => $current['leads'],
+            'conversation_analytics' => $current['conversation_analytics'],
             'task_completion' => $current['tasks'],
             'response_speed' => $current['response_speed'],
             'leaderboard' => $current['leaderboard'],
@@ -197,6 +204,7 @@ class ReportService
             && $snapshot['won_count'] == 0
             && $snapshot['lost_count'] == 0
             && ($snapshot['tasks']['total'] ?? 0) == 0
+            && ($snapshot['leads']['total_created'] ?? 0) == 0
             && $snapshot['avg_response_minutes'] === null;
     }
 
@@ -212,6 +220,9 @@ class ReportService
             'lost_count' => $this->countMetric($current['lost_count'], $prev('lost_count'), true),
             'win_rate' => $this->rateMetric($current['win_rate'], $prev('win_rate')),
             'avg_response_minutes' => $this->metric($current['avg_response_minutes'], $prev('avg_response_minutes'), true),
+            'leads_created' => $this->countMetric($current['leads']['total_created'], $prev('leads')['total_created'] ?? null, false),
+            'leads_converted' => $this->countMetric($current['leads']['converted'], $prev('leads')['converted'] ?? null, false),
+            'lead_conversion_rate' => $this->rateMetric($current['leads']['conversion_rate'], $prev('leads')['conversion_rate'] ?? null),
             'task_completion_rate' => $this->rateMetric($current['tasks']['rate_percent'], $prev('tasks')['rate_percent'] ?? null),
         ];
     }
@@ -306,6 +317,8 @@ class ReportService
 
         $tasks = $this->taskStats($from, $to, $workspaceId, $agentUserId, $accountId);
 
+        $leadData = $this->leadData($from, $to, $workspaceId, $agentUserId, $accountId);
+
         $response = null;
         if ($full) {
             $response = $this->responseWalk($from, $to, $workspaceId, $agentUserId, $accountId);
@@ -319,6 +332,8 @@ class ReportService
             'lost_count' => $lostCount,
             'win_rate' => $wonCount + $lostCount > 0 ? round(($wonCount / ($wonCount + $lostCount)) * 100, 2) : null,
             'avg_response_minutes' => $response ? $response['avg_response_minutes'] : null,
+            'leads' => $leadData,
+            'conversation_analytics' => $full ? $this->conversationAnalytics($from, $to, $workspaceId, $agentUserId, $accountId) : null,
             'tasks' => $tasks,
             'deals_by_day' => $full ? $dealData['by_day'] : [],
             'deal_outcomes' => $this->dealOutcomes($wonCount, $wonValue, $lostCount, $lostValue, $dealData['open']['count'], $dealData['open']['value']),
@@ -428,6 +443,138 @@ class ReportService
         });
     }
 
+    // ── Leads ──────────────────────────────────────────────────────────────
+
+    /**
+     * Lead analytics for one period (aggregate counts + status distributions).
+     *
+     * - total_created / converted: leads whose created_at / converted_at fall in the
+     *   period (workspace + agent + account scoped).
+     * - conversion_rate: converted / created for the period - documented to the user
+     *   as "leads converted vs leads created in this period", since conversion usually
+     *   lags creation (a tooltip on the KPI explains this).
+     * - created_by_status: leads created in the period grouped by their lead status
+     *   (dynamic: built from the workspace's real LeadStatus rows, colours included).
+     * - current_by_status / total_current: snapshot of ALL current leads by status -
+     *   the donut's distribution, NOT period-scoped (its center shows total_current).
+     */
+    private function leadData(Carbon $from, Carbon $to, int $workspaceId, ?int $agentUserId, ?int $accountId): array
+    {
+        $created = Lead::query()->whereBetween('created_at', [$from, $to]);
+        $this->scopeAgent($created, $agentUserId, 'owner_user_id');
+        $this->scopeAccountToLead($created, $workspaceId, $accountId);
+
+        $converted = Lead::query()->whereBetween('converted_at', [$from, $to]);
+        $this->scopeAgent($converted, $agentUserId, 'owner_user_id');
+        $this->scopeAccountToLead($converted, $workspaceId, $accountId);
+
+        $totalCreated = (clone $created)->count();
+        $convertedCount = (clone $converted)->count();
+
+        $statuses = LeadStatus::query()
+            ->where('workspace_id', $workspaceId)
+            ->orderBy('sort_order')
+            ->get(['slug', 'name', 'color', 'type'])
+            ->keyBy('slug');
+
+        $createdByStatus = (clone $created)
+            ->whereNotNull('stage')
+            ->selectRaw('stage, count(*) as cnt')
+            ->groupBy('stage')
+            ->pluck('cnt', 'stage');
+
+        $current = Lead::query()->whereNotNull('stage');
+        $this->scopeAgent($current, $agentUserId, 'owner_user_id');
+        $this->scopeAccountToLead($current, $workspaceId, $accountId);
+
+        $currentByStatus = (clone $current)
+            ->selectRaw('stage, count(*) as cnt')
+            ->groupBy('stage')
+            ->pluck('cnt', 'stage');
+
+        $slice = function (array $counts) use ($statuses): array {
+            return $statuses
+                ->map(fn ($status) => [
+                    'slug' => $status->slug,
+                    'name' => $status->name,
+                    'color' => $status->color,
+                    'type' => $status->type,
+                    'count' => (int) ($counts[$status->slug] ?? 0),
+                ])
+                ->values()
+                ->all();
+        };
+
+        return [
+            'total_created' => $totalCreated,
+            'converted' => $convertedCount,
+            'conversion_rate' => $totalCreated > 0 ? round(($convertedCount / $totalCreated) * 100, 2) : null,
+            'created_by_status' => $slice($createdByStatus->all()),
+            'current_by_status' => $slice($currentByStatus->all()),
+            'total_current' => (int) $currentByStatus->sum(),
+        ];
+    }
+
+    private function scopeAccountToLead(Builder $query, int $workspaceId, ?int $accountId): void
+    {
+        if ($accountId === null) {
+            return;
+        }
+
+        // A lead belongs to an account when any conversation for its contact ran on
+        // that account (same attribution rule the deal sections use).
+        $query->whereExists(function ($q) use ($workspaceId, $accountId) {
+            $q->selectRaw('1')
+                ->from('conversations')
+                ->whereColumn('conversations.contact_id', 'leads.contact_id')
+                ->where('conversations.workspace_id', $workspaceId)
+                ->where('conversations.whatsapp_account_id', $accountId)
+                ->whereNotNull('conversations.contact_id');
+        });
+    }
+
+    // ── Conversation analytics ─────────────────────────────────────────────
+
+    /**
+     * Conversation-driven analytics for the period: messages sent/received and the
+     * conversation status distribution (open / pending / closed). Message rows are
+     * gateway-owned but readable; both queries are workspace-scoped by the global scope.
+     */
+    private function conversationAnalytics(Carbon $from, Carbon $to, int $workspaceId, ?int $agentUserId, ?int $accountId): array
+    {
+        $messages = Message::query()
+            ->whereBetween('sent_at', [$from, $to])
+            ->whereNotNull('direction')
+            ->when($accountId, fn (Builder $q) => $q->where('whatsapp_account_id', $accountId))
+            ->when($agentUserId, fn (Builder $q) => $q->whereHas('conversation', fn (Builder $c) => $c->where('assigned_user_id', $agentUserId)))
+            ->selectRaw('direction, count(*) as cnt')
+            ->groupBy('direction')
+            ->pluck('cnt', 'direction');
+
+        $statuses = Conversation::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->whereNotNull('status')
+            ->when($agentUserId, fn (Builder $q) => $q->where('assigned_user_id', $agentUserId))
+            ->when($accountId, fn (Builder $q) => $q->where('whatsapp_account_id', $accountId))
+            ->selectRaw('status, count(*) as cnt')
+            ->groupBy('status')
+            ->pluck('cnt', 'status');
+
+        $labels = ['open' => 'Open', 'pending' => 'Pending', 'closed' => 'Closed'];
+
+        return [
+            'by_status' => collect($labels)->map(fn ($label, $status) => [
+                'status' => $status,
+                'label' => $label,
+                'count' => (int) ($statuses[$status] ?? 0),
+            ])->values()->all(),
+            'conversations_in_period' => (int) $statuses->sum(),
+            'messages_sent' => (int) ($messages['outbound'] ?? 0),
+            'messages_received' => (int) ($messages['inbound'] ?? 0),
+            'total_messages' => (int) $messages->sum(),
+        ];
+    }
+
     // ── Response-time walk ─────────────────────────────────────────────────
 
     /**
@@ -535,14 +682,18 @@ class ReportService
     {
         $total = count($response['samples']) + (int) $response['no_reply_count'];
 
+        $samples = $response['samples'];
+        sort($samples);
+        $count = count($samples);
+
         $buckets = [];
         foreach (self::RESPONSE_BUCKETS as $key => $bucket) {
-            $count = (int) $response['buckets'][$key];
+            $countForBucket = (int) $response['buckets'][$key];
             $buckets[] = [
                 'key' => $key,
                 'label' => $bucket['label'],
-                'count' => $count,
-                'percentage' => $total > 0 ? round(($count / $total) * 100, 1) : 0.0,
+                'count' => $countForBucket,
+                'percentage' => $total > 0 ? round(($countForBucket / $total) * 100, 1) : 0.0,
             ];
         }
         $buckets[] = [
@@ -554,6 +705,8 @@ class ReportService
 
         return [
             'avg_response_minutes' => $response['avg_response_minutes'],
+            'fastest_response_minutes' => $count > 0 ? round($samples[0], 2) : null,
+            'median_response_minutes' => $count > 0 ? round($samples[intdiv($count, 2)], 2) : null,
             'sample_size' => count($response['samples']),
             'no_reply_count' => (int) $response['no_reply_count'],
             'buckets' => $buckets,
@@ -654,6 +807,24 @@ class ReportService
             ->groupBy('day')
             ->pluck('cnt', 'day');
 
+        $leadsCreatedByDay = Lead::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->when($agentUserId, fn (Builder $q) => $q->where('owner_user_id', $agentUserId));
+        $this->scopeAccountToLead($leadsCreatedByDay, $workspaceId, $accountId);
+        $leadsCreatedByDay = (clone $leadsCreatedByDay)
+            ->selectRaw('DATE(created_at) as day, count(*) as cnt')
+            ->groupBy('day')
+            ->pluck('cnt', 'day');
+
+        $leadsConvertedByDay = Lead::query()
+            ->whereBetween('converted_at', [$from, $to])
+            ->when($agentUserId, fn (Builder $q) => $q->where('owner_user_id', $agentUserId));
+        $this->scopeAccountToLead($leadsConvertedByDay, $workspaceId, $accountId);
+        $leadsConvertedByDay = (clone $leadsConvertedByDay)
+            ->selectRaw('DATE(converted_at) as day, count(*) as cnt')
+            ->groupBy('day')
+            ->pluck('cnt', 'day');
+
         $series = [];
         foreach (CarbonPeriod::create($from, '1 day', $to) as $date) {
             $day = $date->toDateString();
@@ -663,6 +834,8 @@ class ReportService
             $series[] = [
                 'date' => $day,
                 'conversations' => (int) ($conversationByDay[$day] ?? 0),
+                'leads' => (int) ($leadsCreatedByDay[$day] ?? 0),
+                'converted' => (int) ($leadsConvertedByDay[$day] ?? 0),
                 'avg_response_minutes' => count($responseMinutes) > 0 ? round(array_sum($responseMinutes) / count($responseMinutes), 2) : null,
                 'won_count' => (int) ($dealDay['won']['count'] ?? 0),
                 'won_value' => (float) ($dealDay['won']['value'] ?? 0),

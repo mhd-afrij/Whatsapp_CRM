@@ -51,6 +51,7 @@ function NavigationGroups({ pathname, collapsed, onNavigate }: { pathname: strin
   const canViewCampaigns = usePermission("campaigns.view");
   const canManageWorkspace = usePermission("workspace.settings.manage");
   const canManageWhatsapp = usePermission("whatsapp.connection.manage");
+  const canViewReports = usePermission("reports.view");
   const permissions: Record<string, boolean> = {
     "dashboard.view_workspace": canViewDashboard,
     "conversations.view": canViewInbox,
@@ -61,11 +62,12 @@ function NavigationGroups({ pathname, collapsed, onNavigate }: { pathname: strin
     "campaigns.view": canViewCampaigns,
     "workspace.settings.manage": canManageWorkspace,
     "whatsapp.connection.manage": canManageWhatsapp,
+    "reports.view": canViewReports,
   };
   const sections = NAVIGATION_SECTIONS.map((section) => ({ ...section, items: section.items.filter((item) => !item.permission || permissions[item.permission]) })).filter((section) => section.items.length > 0);
   const allItems = sections.flatMap((section) => section.items);
   const activeHref = allItems.filter((item) => pathname === item.href || pathname.startsWith(item.href + "/")).sort((a, b) => b.href.length - a.href.length)[0]?.href;
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ main: true, automation: true, channels: true, administration: true });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ main: true, reports: true, automation: true, channels: true, administration: true });
 
   const renderItem = (item: NavigationItem) => {
     const active = activeHref === item.href;

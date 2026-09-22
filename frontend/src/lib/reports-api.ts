@@ -27,6 +27,8 @@ export interface ReportMetric {
 export interface DailyBreakdownRow {
   date: string;
   conversations: number;
+  leads: number;
+  converted: number;
   avg_response_minutes: number | null;
   won_count: number;
   won_value: number;
@@ -61,6 +63,31 @@ export interface LeaderboardAgent {
   avg_response_minutes: number | null;
 }
 
+export interface LeadStatusSlice {
+  slug: string;
+  name: string;
+  color: string;
+  type: string;
+  count: number;
+}
+
+export interface LeadsBlock {
+  total_created: number;
+  converted: number;
+  conversion_rate: number | null;
+  created_by_status: LeadStatusSlice[];
+  current_by_status: LeadStatusSlice[];
+  total_current: number;
+}
+
+export interface ConversationAnalytics {
+  by_status: Array<{ status: string; label: string; count: number }>;
+  conversations_in_period: number;
+  messages_sent: number;
+  messages_received: number;
+  total_messages: number;
+}
+
 export interface ReportOverview {
   tracked: boolean;
   unavailable_reason?: string;
@@ -76,6 +103,9 @@ export interface ReportOverview {
     lost_count: ReportMetric;
     win_rate: ReportMetric;
     avg_response_minutes: ReportMetric;
+    leads_created: ReportMetric;
+    leads_converted: ReportMetric;
+    lead_conversion_rate: ReportMetric;
     task_completion_rate: ReportMetric;
   };
   weekly_revenue: Array<{ week_start: string; won: number; lost: number }>;
@@ -85,6 +115,9 @@ export interface ReportOverview {
     lost: { count: number; value: number; pct: number };
     open: { count: number; value: number; pct: number };
   };
+  leads: LeadsBlock;
+  conversation_analytics: ConversationAnalytics;
+  trend: DailyBreakdownRow[];
   task_completion: {
     total: number;
     completed: number;
@@ -94,6 +127,8 @@ export interface ReportOverview {
   };
   response_speed: {
     avg_response_minutes: number | null;
+    fastest_response_minutes: number | null;
+    median_response_minutes: number | null;
     sample_size: number;
     no_reply_count: number;
     buckets: ResponseBucket[];

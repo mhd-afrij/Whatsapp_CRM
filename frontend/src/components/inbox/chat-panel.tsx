@@ -78,7 +78,6 @@ import { useAuth } from "@/context/auth-context";
 import { MediaPreview } from "./media-preview";
 import { MessageReactions } from "./message-reactions";
 import { TemplatePicker, parseSlashCommand } from "./template-picker";
-import { LabelPicker } from "@/components/labels/label-picker";
 import { TypingIndicator } from "./typing-indicator";
 import { Avatar } from "@/components/ui/avatar";
 import { useToast } from "@/providers/toast-provider";
@@ -87,7 +86,6 @@ import { useContact } from "@/hooks/use-contacts";
 import { formatDisplayPhone } from "@/lib/phone";
 import { PRIORITY_OPTIONS } from "@/components/inbox/priority-selector";
 import { formatInboxDateSeparator, formatInboxTime, isSameInboxDay } from "@/lib/time-format";
-import { useMessageSearch } from "@/hooks/use-message-search";
 import { MessageStatusTick } from "./message/message-status-tick";
 
 const NEAR_BOTTOM_THRESHOLD_PX = 80;
@@ -1749,7 +1747,7 @@ export function Composer({
         </div>
       )}
 
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex min-w-0 items-center gap-2">
         {canCreateNote && (
           <button
             type="button"
@@ -1872,7 +1870,7 @@ export function Composer({
             }}
             rows={1}
             placeholder={isNoteMode ? "Write an internal note..." : "Type a message"}
-            className="min-h-[36px] max-h-[100px] w-full min-w-0 resize-none overflow-y-auto rounded-lg border border-border bg-surface dark:bg-[#2a3942] dark:border-transparent px-3 py-1.5 pr-8 text-[13.5px] text-text placeholder:text-muted leading-normal outline-none transition focus:border-accent focus:ring-1 focus:ring-accent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="min-h-[40px] max-h-[100px] w-full min-w-0 resize-none overflow-y-auto rounded-lg border border-border bg-surface dark:bg-[#2a3942] dark:border-transparent px-3 py-2 pr-8 text-[13.5px] text-text placeholder:text-muted leading-normal outline-none transition focus:border-accent focus:ring-1 focus:ring-accent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
         </div>
 
@@ -2029,34 +2027,18 @@ export function ChatHeader({
   conversation,
   contact,
   children,
-  onSearch,
   onOpenContactInfo,
-  onCall,
   actionMenu,
   onTogglePin,
   isPinned,
-  showLabels,
-  setShowLabels,
-  labelPopoverRef,
-  canManageLabels,
-  showAiSummary,
-  setShowAiSummary,
 }: {
   conversation: ReturnType<typeof useConversation>["data"];
   contact?: ReturnType<typeof useContact>["data"];
   children?: ReactNode;
-  onSearch: () => void;
   onOpenContactInfo?: () => void;
-  onCall: () => void;
   actionMenu?: ReactNode;
   onTogglePin?: () => void;
   isPinned?: boolean;
-  showLabels?: boolean;
-  setShowLabels?: (val: boolean | ((prev: boolean) => boolean)) => void;
-  labelPopoverRef?: RefObject<HTMLDivElement | null>;
-  canManageLabels?: boolean;
-  showAiSummary?: boolean;
-  setShowAiSummary?: (val: boolean | ((prev: boolean) => boolean)) => void;
 }) {
   const online = conversation?.whatsapp_contact?.is_online === true;
   const name = contactLabel(conversation, contact);
@@ -2072,51 +2054,18 @@ export function ChatHeader({
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        {children && <div className="flex items-center gap-2">{children}</div>}
+        {children && <div className="flex min-w-0 items-center gap-2">{children}</div>}
       </div>
 
       <div className="flex shrink-0 items-center justify-end gap-2">
-        <HeaderIconButton icon={Phone} label="Call customer" onClick={onCall} />
-        <HeaderIconButton icon={Search} label="Search Conversation" onClick={onSearch} />
-
         {onTogglePin && (
           <HeaderIconButton
             icon={isPinned ? Pin : PinOff}
             label={isPinned ? "Unpin conversation" : "Pin conversation"}
             onClick={onTogglePin}
             active={isPinned}
+            hideOnSmall
             className={cn(isPinned && "text-primary")}
-          />
-        )}
-
-        {setShowLabels && labelPopoverRef && (
-          <div className="relative" ref={labelPopoverRef}>
-            <HeaderIconButton
-              icon={Tag}
-              label="Manage Tags"
-              onClick={() => setShowLabels((v) => !v)}
-              active={showLabels}
-              badge={conversation?.labels?.length ?? 0}
-            />
-            {showLabels && (
-              <div className="absolute right-0 top-full z-40 mt-2 w-72 rounded-xl border border-border bg-surface p-3 shadow-2xl">
-                <LabelPicker
-                  entity="conversations"
-                  entityId={conversation?.id ?? 0}
-                  currentLabels={conversation?.labels}
-                  canEdit={Boolean(canManageLabels)}
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        {setShowAiSummary && (
-          <HeaderIconButton
-            icon={Sparkles}
-            label="AI Actions"
-            onClick={() => setShowAiSummary((v) => !v)}
-            active={showAiSummary}
           />
         )}
 
@@ -2179,7 +2128,6 @@ export function ChatPanel({
   const canChangePriority = usePermission("conversations.change_priority");
   const canAssign = usePermission("conversations.assign");
   const canCreateNote = usePermission("notes.create");
-  const canManageLabels = usePermission("conversations.reply");
   const createDealMutation = useCreateDeal();
   const { data: pipelines } = useDealPipelines();
   const { data: users } = useUsers();
@@ -2188,27 +2136,11 @@ export function ChatPanel({
   const suppressAutoReadUntil = useRef(0);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [isAtTop, setIsAtTop] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showAiSummary, setShowAiSummary] = useState(false);
-  const [showLabels, setShowLabels] = useState(false);
-  const labelPopoverRef = useRef<HTMLDivElement>(null);
-  const { data: searchResults } = useMessageSearch(conversationId, searchQuery);
   const scrollRef = useRef<HTMLDivElement>(null);
   const readMarker = useRef<number | null>(null);
   const [trackedConversationId, setTrackedConversationId] = useState<number | null>(null);
   const pendingScrollHeight = useRef<number | null>(null);
   const pendingOlderLoad = useRef(false);
-
-  const handleCallCustomer = () => {
-    const rawNumber = contact?.phone_number ?? conversation?.whatsapp_contact?.phone_number;
-    const formatted = formatDisplayPhone(rawNumber);
-    if (!rawNumber) {
-      toast("No phone number available to call.", "error");
-      return;
-    }
-    toast(`Calling ${contactLabel(conversation, contact)}… (${formatted || rawNumber})`);
-  };
 
   const handleCreateDeal = () => {
     const linkedContact = contact || conversation?.contact;
@@ -2246,17 +2178,6 @@ export function ChatPanel({
       new CustomEvent(COMPOSER_NOTE_MODE_EVENT, { detail: { conversationId } })
     );
   };
-
-  useEffect(() => {
-    if (!showLabels) return;
-    const listener = (event: MouseEvent) => {
-      if (labelPopoverRef.current && !labelPopoverRef.current.contains(event.target as Node)) {
-        setShowLabels(false);
-      }
-    };
-    document.addEventListener("mousedown", listener);
-    return () => document.removeEventListener("mousedown", listener);
-  }, [showLabels]);
 
   const handleReact = useCallback(
     async (messageId: number, emoji: string, remove: boolean) => {
@@ -2457,17 +2378,9 @@ export function ChatPanel({
       <ChatHeader
         conversation={conversation}
         contact={contact}
-        onSearch={() => setShowSearch((v) => !v)}
         onOpenContactInfo={onOpenContactInfo}
-        onCall={handleCallCustomer}
         onTogglePin={() => (conversation?.pinned_at ? unpin.mutate() : pin.mutate())}
         isPinned={Boolean(conversation?.pinned_at)}
-        showLabels={showLabels}
-        setShowLabels={setShowLabels}
-        labelPopoverRef={labelPopoverRef}
-        canManageLabels={canManageLabels}
-        showAiSummary={showAiSummary}
-        setShowAiSummary={setShowAiSummary}
         actionMenu={
           <ActionMenu
             status={conversation?.status ?? "open"}
@@ -2523,89 +2436,6 @@ export function ChatPanel({
       </ChatHeader>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {showAiSummary && (
-          <div className="shrink-0 border-b border-border bg-accent/5 px-4 py-2.5">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-accent-muted">
-                <Sparkles className="h-3.5 w-3.5" />
-                AI summary
-              </span>
-              <span className="text-xs text-text">
-                Customer is interested and likely needs a quotation with follow-up confirmation.
-              </span>
-              <span className="rounded-md bg-surface/70 px-2 py-0.5 text-[11px] text-muted">
-                Positive
-              </span>
-              <span className="rounded-md bg-surface/70 px-2 py-0.5 text-[11px] text-muted">
-                Score 82
-              </span>
-              <span className="rounded-md bg-surface/70 px-2 py-0.5 text-[11px] text-warning">
-                Next: Quote
-              </span>
-            </div>
-          </div>
-        )}
-        {showSearch && (
-          <div className="shrink-0 border-b border-border bg-surface px-3 py-2">
-            <div className="flex items-center gap-2">
-              <Search className="h-4 w-4 shrink-0 text-muted" />
-              <input
-                autoFocus
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setShowSearch(false);
-                    setSearchQuery("");
-                  }
-                }}
-                placeholder="Search in conversation…"
-                className="min-w-0 flex-1 bg-transparent text-sm text-text placeholder:text-muted focus:outline-none"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => { setSearchQuery(""); }}
-                  className="text-muted hover:text-text"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => { setShowSearch(false); setSearchQuery(""); }}
-                className="text-muted hover:text-text"
-                aria-label="Close search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            {searchResults && searchResults.data.length > 0 && (
-              <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-border bg-bg">
-                {searchResults.data.map((msg) => (
-                  <button
-                    key={msg.id}
-                    type="button"
-                    onClick={() => {
-                      handleJumpToMessage(msg.id);
-                      setShowSearch(false);
-                      setSearchQuery("");
-                    }}
-                    className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-primary-soft/40"
-                  >
-                    <span className="shrink-0 text-[10px] text-muted">
-                      {msg.sent_at ? formatInboxTime(msg.sent_at, workspace?.timezone) : ""}
-                    </span>
-                    <span className="min-w-0 truncate text-text">{msg.body ?? `[${msg.message_type}]`}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {searchQuery.trim() && searchResults && searchResults.data.length === 0 && (
-              <p className="mt-2 text-center text-xs text-muted">No messages found.</p>
-            )}
-          </div>
-        )}
         <MessageList scrollRef={scrollRef} onScroll={handleScroll}>
           {isAtTop && hasOlderMessages && (
             <div className="sticky top-0 z-10 mb-4 flex justify-center">

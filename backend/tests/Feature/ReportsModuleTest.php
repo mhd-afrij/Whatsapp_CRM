@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Deal;
+use App\Models\Lead;
+use App\Models\LeadStatus;
 use App\Models\Pipeline;
 use App\Models\PipelineStage;
 use App\Models\ReportExport;
@@ -199,6 +201,8 @@ class ReportsModuleTest extends TestCase
 
         $speed = $data['response_speed'];
         $this->assertSame(10.0, $speed['avg_response_minutes']);
+        $this->assertSame(10.0, $speed['fastest_response_minutes']);
+        $this->assertSame(10.0, $speed['median_response_minutes']);
         $this->assertSame(1, $speed['sample_size']);
         $this->assertSame(0, $speed['no_reply_count']);
 
@@ -252,6 +256,69 @@ class ReportsModuleTest extends TestCase
         $this->assertSame(1.0, $data['metrics']['conversations']['value']);
         $this->assertSame(1, $data['metrics']['won_count']['value']);
         $this->assertSame(0, $data['metrics']['lost_count']['value']);
+    }
+
+    // ── Lead + conversation analytics ──────────────────────────────────────
+
+    public function test_lead_analytics_match_seeded_fixtures(): void
+    {
+        $this->seedRbac();
+        $manager = $this->userWithRole('Manager');
+        $workspaceId = $manager->workspace_id;
+
+        LeadStatus::seedDefaults($workspaceId);
+
+        // 2 qualified + 1 new lead created today; 1 lead converted today.
+        Lead::factory()->count(2)->create(['workspace_id' => $workspaceId, 'stage' => 'qualified', 'owner_user_id' => $manager->id]);
+        Lead::factory()->create(['workspace_id' => $workspaceId, 'stage' => 'new', 'owner_user_id' => $manager->id]);
+        Lead::factory()->create(['workspace_id' => $workspaceId, 'stage' => 'converted', 'converted_at' => now(), 'owner_user_id' => $manager->id]);
+
+        $data = $this->asUser($manager)->getJson('/api/v1/reports/overview')->assertOk()->json('data');
+
+        $this->assertSame(4, $data['metrics']['leads_created']['value']);
+        $this->assertSame(1, $data['metrics']['leads_converted']['value']);
+        $this->assertSame(25.0, $data['metrics']['lead_conversion_rate']['value']);
+
+        $this->assertSame(4, $data['leads']['total_created']);
+        $this->assertSame(1, $data['leads']['converted']);
+        $this->assertSame(4, $data['leads']['total_current']);
+
+        $created = collect($data['leads']['created_by_status']);
+        $this->assertSame(2, $created->firstWhere('slug', 'qualified')['count']);
+        $this->assertSame(1, $created->firstWhere('slug', 'new')['count']);
+        $this->assertSame(1, $created->firstWhere('slug', 'converted')['count']);
+
+        $current = collect($data['leads']['current_by_status']);
+        $this->assertSame(2, $current->firstWhere('slug', 'qualified')['count']);
+
+        $lastDay = collect($data['trend'])->last();
+        $this->assertSame(4, $lastDay['leads']);
+        $this->assertSame(1, $lastDay['converted']);
+    }
+
+    public function test_conversation_analytics_counts_messages_by_direction_and_status(): void
+    {
+        $this->seedRbac();
+        $manager = $this->userWithRole('Manager');
+        $workspaceId = $manager->workspace_id;
+
+        $open = Conversation::factory()->create(['workspace_id' => $workspaceId, 'status' => 'open']);
+        $closed = Conversation::factory()->create(['workspace_id' => $workspaceId, 'status' => 'closed']);
+
+        $this->insertMessage($open, ['direction' => 'inbound', 'sent_at' => now()->subMinutes(5)]);
+        $this->insertMessage($open, ['direction' => 'outbound', 'sender_type' => 'user', 'sent_at' => now()->subMinutes(4)]);
+        $this->insertMessage($open, ['direction' => 'inbound', 'sent_at' => now()->subMinutes(3)]);
+        $this->insertMessage($closed, ['direction' => 'outbound', 'sender_type' => 'user', 'sent_at' => now()->subMinutes(2)]);
+
+        $data = $this->asUser($manager)->getJson('/api/v1/reports/overview')->assertOk()->json('data');
+
+        $analytics = $data['conversation_analytics'];
+        $this->assertSame(2, $analytics['conversations_in_period']);
+        $this->assertSame(2, $analytics['messages_received']);
+        $this->assertSame(2, $analytics['messages_sent']);
+        $this->assertSame(4, $analytics['total_messages']);
+        $this->assertSame(1, collect($analytics['by_status'])->firstWhere('status', 'open')['count']);
+        $this->assertSame(1, collect($analytics['by_status'])->firstWhere('status', 'closed')['count']);
     }
 
     // ── Report preferences / settings ──────────────────────────────────────

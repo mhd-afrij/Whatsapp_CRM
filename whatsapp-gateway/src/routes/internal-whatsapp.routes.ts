@@ -678,6 +678,10 @@ export function createInternalWhatsappRouter(): Router {
       const access = await resolveMediaAccess(media.storage_path);
 
       res.setHeader('Content-Type', media.mime_type);
+      if (access.kind === 'buffer') {
+        res.send(access.buffer);
+        return;
+      }
       const stream = createReadStream(access.filePath);
       stream.on('error', (err) => {
         logger.error({ err, mediaId: mediaId.data }, 'Failed to read local media file');

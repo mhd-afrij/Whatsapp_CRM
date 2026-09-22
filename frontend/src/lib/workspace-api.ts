@@ -67,6 +67,7 @@ export interface UpdateWorkspaceSettingsValues {
   timezone?: string;
   language?: string;
   logo?: File;
+  remove_logo?: boolean;
   business_hours?: Record<string, unknown>;
   default_pipeline_id?: number | null;
   notification_defaults?: Record<string, unknown>;

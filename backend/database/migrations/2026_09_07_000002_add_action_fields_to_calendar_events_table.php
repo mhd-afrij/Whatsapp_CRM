@@ -9,7 +9,14 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('calendar_events', function (Blueprint $table) {
-            $table->foreignId('lead_id')->nullable()->after('workspace_id')->constrained('leads')->nullOnDelete();
+            // lead_id is also added (after contact_id) by the later
+            // add_event_details_to_calendar_events_table migration, which was
+            // applied to existing databases before this file. Guard so the
+            // migration runs identically on fresh and half-migrated schemas
+            // instead of failing with a duplicate column.
+            if (! Schema::hasColumn('calendar_events', 'lead_id')) {
+                $table->foreignId('lead_id')->nullable()->after('workspace_id')->constrained('leads')->nullOnDelete();
+            }
             $table->foreignId('created_by')->nullable()->after('lead_id')->constrained('users')->nullOnDelete();
             $table->dateTimeTz('reminder_at', 3)->nullable()->after('kind');
             $table->dateTimeTz('reminder_sent_at', 3)->nullable()->after('reminder_at');

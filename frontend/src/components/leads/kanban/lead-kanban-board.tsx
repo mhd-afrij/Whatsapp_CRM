@@ -53,7 +53,9 @@ function SortableKanbanCard({
       ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
-        transition: transition ?? "transform 220ms cubic-bezier(0.2, 0, 0, 1)",
+        transition: isDragging
+          ? undefined
+          : transition ?? "transform 220ms cubic-bezier(0.2, 0, 0, 1)",
       }}
       {...attributes}
       {...listeners}

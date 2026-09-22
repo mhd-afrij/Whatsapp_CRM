@@ -14,7 +14,7 @@ import { shortDate } from "@/lib/report-format";
 import type { ReportExportRecord, ReportExportType } from "@/lib/reports-api";
 import { useToast } from "@/providers/toast-provider";
 
-const EXPORT_BUTTONS: Array<{ type: ReportExportType; label: string; description: string; icon: React.ComponentType<{ className?: string }>; pdf?: boolean }> = [
+export const EXPORT_BUTTONS: Array<{ type: ReportExportType; label: string; description: string; icon: React.ComponentType<{ className?: string }>; pdf?: boolean }> = [
   { type: "daily_metrics", label: "Daily metrics", description: "CSV", icon: FileSpreadsheet },
   { type: "agent_summary", label: "Agent summary", description: "CSV", icon: FileSpreadsheet },
   { type: "full_pdf", label: "Full report", description: "PDF", icon: FileText, pdf: true },

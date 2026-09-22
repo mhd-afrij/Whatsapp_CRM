@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@azure/storage-blob": "^12.33.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "@whiskeysockets/baileys": "^6.7.9",
     "bullmq": "^5.28.2",

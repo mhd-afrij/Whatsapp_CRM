@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   Building2,
   Info,
+  Trash2,
   Upload,
 } from "lucide-react";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -15,6 +16,7 @@ import { SettingsSkeleton, SettingsErrorState } from "@/components/settings/sett
 import { Toggle } from "@/components/settings/toggle";
 import { WorkspaceSettingsGate } from "@/components/settings/workspace-settings-gate";
 import { input, secondary } from "@/components/settings/styles";
+import { ConfirmActionDialog } from "@/components/whatsapp/confirm-action-dialog";
 import {
   useUpdateWorkspaceSettings,
   useWorkspaceSettings,
@@ -202,6 +204,7 @@ function GeneralForm() {
   const pipelines = usePipelines();
   const [activeTab, setActiveTab] = useState<TabKey>("general");
   const [logo, setLogo] = useState<File | null>(null);
+  const [confirmRemoveLogo, setConfirmRemoveLogo] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [msgKind, setMsgKind] = useState<"ok" | "err">("ok");
 
@@ -334,6 +337,19 @@ function GeneralForm() {
     }
   };
 
+  const removeLogo = async () => {
+    setMsg(null);
+    try {
+      await update.mutateAsync({ remove_logo: true });
+      setConfirmRemoveLogo(false);
+      setMsgKind("ok");
+      setMsg("Logo removed.");
+    } catch (err) {
+      setMsgKind("err");
+      setMsg(err instanceof ApiError ? err.message : "Unable to remove logo.");
+    }
+  };
+
   const busy = update.isPending;
 
   if (workspaceQuery.isLoading) {
@@ -445,38 +461,58 @@ function GeneralForm() {
           </Field>
         </div>
 
-        <div className="mt-5 grid gap-3 border-t border-border pt-5 md:grid-cols-[auto_1fr_auto]">
-          {settings.logo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={settings.logo_url}
-              alt="Workspace logo"
-              className="h-14 w-14 rounded-lg border border-border object-cover"
-            />
-          ) : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-border">
-              <Building2 className="h-5 w-5 text-muted" />
-            </div>
-          )}
-          <label className={cn(input, "flex cursor-pointer items-center gap-2")}>
-            <Upload className="h-4 w-4" />
-            {logo?.name ?? "Choose workspace logo (PNG or JPG, max 2 MB)"}
-            <input
-              type="file"
-              className="sr-only"
-              accept="image/*"
-              onChange={(e) => setLogo(e.target.files?.[0] ?? null)}
-            />
-          </label>
-          <button
-            type="button"
-            className={secondary}
-            disabled={!logo || busy}
-            onClick={() => void uploadLogo()}
-          >
-            Upload
-          </button>
-        </div>
+        <Field label="Workspace logo" htmlFor="ws-logo">
+          <div className="flex flex-wrap items-center gap-3">
+            {settings.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={settings.logo_url}
+                alt="Workspace logo"
+                className="h-14 w-14 rounded-lg border border-border object-cover"
+              />
+            ) : (
+              <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-border">
+                <Building2 className="h-5 w-5 text-muted" />
+              </div>
+            )}
+            <label className={cn(input, "flex max-w-xs cursor-pointer items-center gap-2")}>
+              <Upload className="h-4 w-4 shrink-0" />
+              <span className="truncate">
+                {logo?.name ?? (settings.logo_url ? "Change logo" : "Choose workspace logo")}
+              </span>
+              <input
+                type="file"
+                className="sr-only"
+                accept="image/*"
+                onChange={(e) => setLogo(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            {settings.logo_url && (
+              <button
+                type="button"
+                className={cn(secondary, "w-auto border-danger/30 text-danger hover:bg-danger/10")}
+                disabled={busy}
+                onClick={() => setConfirmRemoveLogo(true)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove
+              </button>
+            )}
+            {logo && (
+              <button
+                type="button"
+                className={secondary}
+                disabled={busy}
+                onClick={() => void uploadLogo()}
+              >
+                {busy ? "Uploading…" : "Upload"}
+              </button>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-muted">
+            PNG or JPG, max 2 MB. Uploading replaces the current logo.
+          </p>
+        </Field>
 
         <div className="mt-4 flex items-center gap-3">
           <SaveButton pending={busy} onClick={() => void save()} />
@@ -721,6 +757,18 @@ function GeneralForm() {
       />
 
       {tabContent[activeTab]}
+
+      <ConfirmActionDialog
+        open={confirmRemoveLogo}
+        onOpenChange={(open) => {
+          if (!open && !busy) setConfirmRemoveLogo(false);
+        }}
+        title="Remove workspace logo"
+        description="This permanently deletes the current logo. You can upload a new one afterward."
+        confirmLabel="Remove logo"
+        pending={busy}
+        onConfirm={() => void removeLogo()}
+      />
     </div>
   );
 }

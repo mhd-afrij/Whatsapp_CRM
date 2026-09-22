@@ -4,7 +4,6 @@ import { useMemo, useRef, useState, useCallback, type ReactNode } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   BriefcaseBusiness,
   Check,
   CheckSquare,
@@ -12,13 +11,11 @@ import {
   ChevronRight,
   History,
   MessageSquare,
-  Package,
   Pencil,
   Phone,
   Plus,
   StickyNote,
   Tag,
-  UserCheck,
   UserRound,
   X,
 } from "lucide-react";
@@ -28,7 +25,6 @@ import { useConversation, useConversationActions } from "@/hooks/use-conversatio
 import { useUsers } from "@/hooks/use-users";
 import { useContact } from "@/hooks/use-contacts";
 import { useCreateNote, useNoteList } from "@/hooks/use-notes";
-import { useTaskList } from "@/hooks/use-tasks";
 import {
   useCreateDeal,
   useDealList,
@@ -39,13 +35,15 @@ import {
   useUpdateDeal,
 } from "@/hooks/use-deals";
 import { useCreateLead } from "@/hooks/use-leads";
-import { updateWhatsappContact } from "@/lib/contacts-api";
+import { updateContact, updateWhatsappContact } from "@/lib/contacts-api";
 import type { LeadSummary } from "@/lib/contacts-api";
 import { LabelPicker } from "@/components/labels/label-picker";
 import { Avatar } from "@/components/ui/avatar";
+import { PhoneNumberInput } from "@/components/contacts/phone-number-input";
 import { useToast } from "@/providers/toast-provider";
 import { ApiError } from "@/lib/api-client";
-import { formatDisplayPhone } from "@/lib/phone";
+import { formatDisplayPhone, normalizePhoneNumber } from "@/lib/phone";
+import { defaultCountry, detectCountryFromNumber } from "@/lib/countries";
 
 /* -------------------------------------------------------------------------- */
 /*  Reusable primitives                                                        */
@@ -199,7 +197,6 @@ function CustomerDetailsCard({
   email,
   location,
   customerId,
-  createdAt,
   whatsappContactId,
   rawPhoneNumber,
   onSaved,
@@ -209,7 +206,6 @@ function CustomerDetailsCard({
   email: string | null;
   location: string | null;
   customerId: number | string | null;
-  createdAt: string | null;
   whatsappContactId: number | null;
   rawPhoneNumber: string | null;
   onSaved?: () => void;
@@ -218,24 +214,82 @@ function CustomerDetailsCard({
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftPhone, setDraftPhone] = useState("");
+  const [dialCode, setDialCode] = useState(defaultCountry().dial);
+  const [draftEmail, setDraftEmail] = useState("");
+  const [draftLocation, setDraftLocation] = useState("");
+  const [errors, setErrors] = useState<{ name?: string; phone?: string; email?: string }>({});
   const [saving, setSaving] = useState(false);
 
+  // Stored numbers arrive as E.164 (or a WA JID fallback); split the dialing
+  // code out so the input holds the national part and the dropdown the code.
+  const phoneSplit = detectCountryFromNumber(rawPhoneNumber ?? "");
+  const originalDial = phoneSplit?.country.dial ?? defaultCountry().dial;
+  const originalNational = phoneSplit?.national ?? rawPhoneNumber ?? "";
+
   const startEdit = () => {
+    setDialCode(originalDial);
+    setDraftPhone(originalNational);
     setDraftName(name === "Unknown contact" ? "" : name);
-    setDraftPhone(rawPhoneNumber ?? "");
+    setDraftEmail(email ?? "");
+    setDraftLocation(location ?? "");
+    setErrors({});
     setEditing(true);
   };
 
+  const normalizedPhone = draftPhone.trim() && normalizePhoneNumber(draftPhone, dialCode);
+
+  const nameError = draftName.trim() ? undefined : "Name is required.";
+  const phoneError = draftPhone.trim()
+    ? !/^[0-9+\s().-]+$/.test(draftPhone.trim())
+      ? "Enter numbers only."
+      : (normalizedPhone?.length ?? 0) < 8
+        ? "Number is too short."
+        : undefined
+    : undefined;
+  const emailError =
+    draftEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draftEmail.trim())
+      ? "Enter a valid email."
+      : undefined;
+
+  const hasChanges =
+    draftName.trim() !== name ||
+    draftEmail.trim() !== (email ?? "") ||
+    draftLocation.trim() !== (location ?? "") ||
+    draftPhone.trim() !== originalNational ||
+    dialCode !== originalDial;
+
+  const cancel = () => {
+    setEditing(false);
+    setErrors({});
+  };
+
   const save = async () => {
-    if (!whatsappContactId) return;
+    const nextErrors = { name: nameError, phone: phoneError, email: emailError };
+    setErrors(nextErrors);
+    if (nextErrors.name || nextErrors.phone || nextErrors.email) return;
+
     setSaving(true);
     try {
-      await updateWhatsappContact(whatsappContactId, {
-        name: draftName.trim() || null,
-        phone: draftPhone.replace(/[^\d+]/g, "") || null,
-      });
+      const calls: Promise<unknown>[] = [];
+      if (whatsappContactId) {
+        calls.push(
+          updateWhatsappContact(whatsappContactId, {
+            name: draftName.trim(),
+            phone: draftPhone.trim() ? normalizedPhone : null,
+          })
+        );
+      }
+      if (customerId && (draftEmail.trim() || draftLocation.trim())) {
+        calls.push(
+          updateContact(Number(customerId), {
+            email: draftEmail.trim() || null,
+            address: draftLocation.trim() || null,
+          })
+        );
+      }
+      await Promise.all(calls);
       setEditing(false);
-      toast("Customer details saved.", "success");
+      toast("Customer details updated.", "success");
       onSaved?.();
     } catch (err) {
       toast(err instanceof ApiError ? err.message : "Unable to save customer details.", "error");
@@ -245,7 +299,7 @@ function CustomerDetailsCard({
   };
 
   const editInputClass =
-    "w-full rounded-lg border border-border bg-bg px-2.5 py-1.5 text-xs text-text outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 disabled:opacity-50";
+    "h-10 w-full rounded-lg border border-border bg-bg px-2.5 text-xs text-text outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 disabled:opacity-50";
 
   return (
     <CollapsibleSection
@@ -267,42 +321,92 @@ function CustomerDetailsCard({
       }
     >
       {editing ? (
-        <div className="space-y-2.5 pt-2">
-          <label className="block space-y-1">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted">Name</span>
+        <div
+          className="space-y-2.5 pt-2"
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && !saving) {
+              e.preventDefault();
+              cancel();
+            }
+          }}
+        >
+          <div className="space-y-1">
+            <label htmlFor="cd-name" className="block text-[10px] font-medium uppercase tracking-wide text-muted">
+              Name
+            </label>
             <input
+              id="cd-name"
+              autoFocus
               value={draftName}
               onChange={(e) => setDraftName(e.target.value)}
               maxLength={191}
               placeholder="Customer name"
-              className={editInputClass}
+              aria-invalid={Boolean(errors.name)}
+              className={cn(editInputClass, errors.name && "border-danger focus:border-danger focus:ring-danger/20")}
             />
-          </label>
-          <label className="block space-y-1">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted">Phone</span>
-            <input
+            {errors.name && <p className="text-[10px] text-danger">{errors.name}</p>}
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="cd-phone" className="block text-[10px] font-medium uppercase tracking-wide text-muted">
+              Phone
+            </label>
+            <PhoneNumberInput
+              id="cd-phone"
               value={draftPhone}
-              onChange={(e) => setDraftPhone(e.target.value)}
-              inputMode="tel"
-              placeholder="Customer number"
+              dialCode={dialCode}
+              onDialCodeChange={setDialCode}
+              onChange={setDraftPhone}
+              hasError={Boolean(errors.phone)}
+            />
+            {errors.phone && <p className="text-[10px] text-danger">{errors.phone}</p>}
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="cd-email" className="block text-[10px] font-medium uppercase tracking-wide text-muted">
+              Email
+            </label>
+            <input
+              id="cd-email"
+              type="email"
+              value={draftEmail}
+              onChange={(e) => setDraftEmail(e.target.value)}
+              placeholder="customer@example.com"
+              aria-invalid={Boolean(errors.email)}
+              className={cn(editInputClass, errors.email && "border-danger focus:border-danger focus:ring-danger/20")}
+            />
+            {errors.email && <p className="text-[10px] text-danger">{errors.email}</p>}
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="cd-location" className="block text-[10px] font-medium uppercase tracking-wide text-muted">
+              Location
+            </label>
+            <input
+              id="cd-location"
+              value={draftLocation}
+              onChange={(e) => setDraftLocation(e.target.value)}
+              maxLength={255}
+              placeholder="City, address..."
               className={editInputClass}
             />
-          </label>
+          </div>
+
           <div className="flex gap-2 pt-1">
             <button
               type="button"
               onClick={save}
-              disabled={saving}
-              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-bold text-accent-text transition hover:bg-accent/90 disabled:opacity-50"
+              disabled={saving || !hasChanges}
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[11px] font-bold text-accent-text transition hover:bg-accent/90 disabled:opacity-50"
             >
               <Check className="h-3 w-3" />
               {saving ? "Saving…" : "Save"}
             </button>
             <button
               type="button"
-              onClick={() => setEditing(false)}
+              onClick={cancel}
               disabled={saving}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-bg px-3 py-1.5 text-[11px] font-semibold text-text transition hover:bg-border disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-bg px-3 py-2 text-[11px] font-semibold text-text transition hover:bg-border disabled:opacity-50"
             >
               <X className="h-3 w-3" />
               Cancel
@@ -316,11 +420,6 @@ function CustomerDetailsCard({
             <DetailRow label="Phone" value={formatDisplayPhone(rawPhoneNumber ?? phoneNumber)} mono />
             <DetailRow label="Email" value={email} />
             <DetailRow label="Location" value={location} />
-            <DetailRow label="Customer ID" value={customerId ? `#${customerId}` : null} mono />
-            <DetailRow
-              label="Created"
-              value={createdAt ? new Date(createdAt).toLocaleDateString() : null}
-            />
           </dl>
           {!customerId && whatsappContactId && (
             <button
@@ -328,7 +427,7 @@ function CustomerDetailsCard({
               onClick={startEdit}
               className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-accent/40 bg-accent/5 px-3 py-2 text-[11px] font-bold text-accent transition hover:bg-accent/10"
             >
-<Pencil className="h-3 w-3" />
+              <Pencil className="h-3 w-3" />
               Save customer details
             </button>
           )}
@@ -841,119 +940,6 @@ function ConversationHistory({
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Section 7 — Orders / Sales                                                */
-/* -------------------------------------------------------------------------- */
-
-function OrdersCard() {
-  return (
-    <CollapsibleSection title="Orders" icon={Package} defaultOpen={false}>
-      <div className="rounded-lg border border-dashed border-border bg-bg p-4 text-center">
-        <Package className="mx-auto h-6 w-6 text-muted" />
-        <p className="mt-2 text-[11px] text-muted">No orders yet</p>
-        <p className="mt-0.5 text-[10px] text-muted">
-          Orders will appear here once linked to this contact.
-        </p>
-      </div>
-    </CollapsibleSection>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Section 8 — Activity Timeline                                             */
-/* -------------------------------------------------------------------------- */
-
-function ActivityTimeline({
-  notes,
-  tasks,
-  labels,
-  assignedName,
-}: {
-  notes: Array<{ id: number; created_at: string; author?: { name?: string | null } | null }>;
-  tasks: Array<{ id: number; title: string; status: string; created_at: string }>;
-  labels: Array<{ id: number; name: string }>;
-  assignedName: string;
-}) {
-  const activities = useMemo(() => {
-    const items: Array<{
-      id: string;
-      icon: typeof CheckSquare;
-      text: string;
-      time: string;
-      color: string;
-    }> = [];
-
-    if (assignedName !== "Unassigned") {
-      items.push({
-        id: "assign",
-        icon: UserCheck,
-        text: `Assigned to ${assignedName}`,
-        time: "",
-        color: "text-info",
-      });
-    }
-
-    labels.forEach((label) => {
-      items.push({
-        id: `label-${label.id}`,
-        icon: Tag,
-        text: `Label "${label.name}" added`,
-        time: "",
-        color: "text-accent",
-      });
-    });
-
-    notes.slice(0, 3).forEach((note) => {
-      items.push({
-        id: `note-${note.id}`,
-        icon: StickyNote,
-        text: `Note added by ${note.author?.name ?? "Unknown"}`,
-        time: new Date(note.created_at).toLocaleDateString(),
-        color: "text-warning",
-      });
-    });
-
-    tasks.slice(0, 3).forEach((task) => {
-      items.push({
-        id: `task-${task.id}`,
-        icon: CheckSquare,
-        text: `Task: ${task.title}`,
-        time: new Date(task.created_at).toLocaleDateString(),
-        color: "text-purple-400",
-      });
-    });
-
-    return items.slice(0, 8);
-  }, [notes, tasks, labels, assignedName]);
-
-  if (activities.length === 0) {
-    return (
-      <CollapsibleSection title="Activity" icon={Activity} defaultOpen={false}>
-        <p className="py-2 text-center text-[11px] text-muted">No activity recorded</p>
-      </CollapsibleSection>
-    );
-  }
-
-  return (
-    <CollapsibleSection title="Activity" icon={Activity} defaultOpen={false}>
-      <div className="relative space-y-2 pl-3">
-        <div className="absolute left-[7px] top-1 bottom-1 w-px bg-bg" />
-        {activities.map((item) => (
-          <div key={item.id} className="relative flex items-start gap-2.5">
-            <div className="absolute left-0 top-0.5 h-[15px] w-[15px] rounded-full border-2 border-border bg-bg">
-              <item.icon className={cn("mx-auto mt-[2px] h-2.5 w-2.5", item.color)} />
-            </div>
-            <div className="min-w-0 flex-1 pl-1">
-              <p className="text-[11px] text-text">{item.text}</p>
-              {item.time && <p className="text-[10px] text-muted">{item.time}</p>}
-            </div>
-          </div>
-        ))}
-      </div>
-    </CollapsibleSection>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /*  Loading skeleton                                                           */
 /* -------------------------------------------------------------------------- */
 
@@ -1035,7 +1021,6 @@ export function CustomerProfile({
   const whatsappContactId = conversation?.whatsapp_contact?.id ?? null;
   const { data: contact } = useContact(contactId ?? 0);
   const { data: notes } = useNoteList({ conversation_id: conversationId });
-  const { data: tasks } = useTaskList({ conversation_id: conversationId, per_page: 10 });
   const createNote = useCreateNote({ conversation_id: conversationId });
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1114,7 +1099,6 @@ export function CustomerProfile({
   }
 
   const noteItems = notes ?? [];
-  const taskItems = tasks?.data ?? [];
 
   return (
     <aside className="flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden bg-surface transition-[width,transform,opacity] duration-300 ease-out">
@@ -1136,9 +1120,8 @@ export function CustomerProfile({
             rawPhoneNumber={phoneNumber}
             whatsappContactId={whatsappContactId}
             email={contact?.email ?? null}
-            location={null}
+            location={contact?.address ?? null}
             customerId={contactId}
-            createdAt={contact?.created_at ?? null}
             onSaved={handleDetailsSaved}
           />
 
@@ -1171,15 +1154,6 @@ export function CustomerProfile({
             lastMessagePreview={conversation.last_message_preview}
             status={conversation.status}
             unreadCount={conversation.unread_count}
-          />
-
-          <OrdersCard />
-
-          <ActivityTimeline
-            notes={noteItems}
-            tasks={taskItems}
-            labels={conversation.labels ?? []}
-            assignedName={assignedName}
           />
 
           {contactId && (
