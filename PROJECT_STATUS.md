@@ -27,9 +27,9 @@ is verified by the corresponding test suite; full details in `FINAL_REPORT.md` �
 - **Phone/jid normalization (gateway).** `jid.ts` now handles explicit `+`/`00` international
   prefixes, trunk-zero numbers, and numbers already carrying the country code before applying
   the CC default. New tests.
-- **Storage-provider routing (gateway).** `getStorageProviderName()` (`s3` when `S3_BUCKET` is
-  set, else `local`) replaced the hardcoded `azure_blob` default in message-media persistence and
-  the media-download queue.
+- **Storage-provider routing (gateway).** `getStorageProviderName()` (now always `local` after
+  the S3/MinIO removal) replaced the hardcoded `azure_blob` default in message-media persistence
+  and the media-download queue.
 - **Frontend/backend contract alignment.** Danger page no longer exposes a non-existent
   `DELETE /workspace` endpoint (only Transfer Ownership + Disable), report-conversation sends
   `reason`, the signup page was removed (accounts arrive only via workspace invitations),
@@ -108,8 +108,8 @@ Repository-wide audit, full suite re-run, and final documentation pass. Full det
      future `.env.<variant>` is covered by default.
   - `backend/.env` and `frontend/.env.local` (the only two env files that exist on disk;
     `whatsapp-gateway/.env` was never created) were manually inspected — every value is an
-    obvious local-dev placeholder (empty DB password, `MAIL_MAILER=log`, localhost URLs, local
-    MinIO endpoint). Nothing resembling a real production credential found.
+    obvious local-dev placeholder (empty DB password, `MAIL_MAILER=log`, localhost URLs). Nothing
+    resembling a real production credential found.
 - **README.md refresh**: was still describing Phase 0-1 state (`php artisan migrate # once
   migrations exist (Phase 2)`, no seed step, no gateway/frontend test commands, no backup/restore
   mention, "Phase 0-1 of ~20" status line). Rewrote the Quick Start / per-service setup sections
@@ -236,9 +236,9 @@ This was **actually run** against the local MySQL reachable in this environment 
   state behind.
 
 What's deliberately **not** scripted, documented instead per the task's own instruction:
-- **MinIO/S3 bucket contents** (message attachments, report exports) need their own backup path
-  in production — e.g. `mc mirror` (MinIO client) to a secondary bucket/region, or the cloud
-  provider's native bucket replication/versioning. Out of scope for a MySQL-focused script.
+- **Gateway media files** (message attachments) and report exports need their own backup path
+  in production (the gateway's media-storage directory / Azure-backed exports). Out of scope for
+  a MySQL-focused script.
 - **.env secrets** (`APP_KEY`, `DB_PASSWORD`, `WHATSAPP_GATEWAY_TOKEN`,
   `CREDENTIALS_ENCRYPTION_KEY`, mail/SMTP credentials, etc.) should never land in a backup
   artifact written to shared/long-lived storage — manage and back those up via a dedicated
@@ -809,9 +809,9 @@ wrapper.
   (`workspace_settings.session_timeout_minutes`, `password_policy` JSON, `data_retention_days`,
   etc.), which was out of scope per this phase's "don't invent columns" instruction.
 - Workspace logo upload uses the local/public Laravel disk (`Storage::disk('public')`), not the
-  gateway's MinIO bucket used for WhatsApp media (`MediaController`/`GatewayClient`) — those are
+  gateway's media storage used for WhatsApp media (`MediaController`/`GatewayClient`) — those are
   two separate storage paths by design (workspace logos are a small Laravel-native asset, chat
-  media is proxied through the gateway's signed-URL flow) — not consolidated in this pass.
+  media is proxied through the gateway) — not consolidated in this pass.
 
 ## Phase 16 — Full UI/UX Polish Pass (next steps)
 
@@ -1708,9 +1708,9 @@ on contacts/conversations/leads/deals) is still deferred — the `labels`/`*_lab
 
 ### Phase 6 — Gateway media hardening (`whatsapp-gateway/`)
 
-What already existed from Phase 5 and was verified, not rebuilt: an S3-compatible client
-(`src/lib/storage.ts`, `@aws-sdk/client-s3`, falls back to local disk if `S3_BUCKET` is unset),
-Zod-validated `S3_*`/`MEDIA_*` env vars, MIME allow-list + max-size validation
+What already existed from Phase 5 and was verified, not rebuilt: local-disk storage
+(`src/lib/storage.ts`; the optional S3/MinIO client was removed in a later pass),
+Zod-validated `MEDIA_*` env vars, MIME allow-list + max-size validation
 (`validateMedia()` in `src/queues/media-download.queue.ts`), sha256 checksum computed and
 stored in `message_media.checksum_sha256`, storage KEY stored in `message_media.storage_path`
 (never a raw URL), and BullMQ retry (4 attempts, exponential backoff) on transient download
@@ -1721,17 +1721,17 @@ What this pass added:
   writes a `message_processing_failures` row with `error_context.permanent: true` and
   `attemptsMade` only once BullMQ's retry budget is exhausted, so "still retrying" is no longer
   indistinguishable from "gave up" — see `src/queues/media-download.queue.ts`.
-- **Signed media access** (`src/lib/media-access.ts`, `resolveMediaAccess()`): resolves a
-  `message_media.storage_path` key to a short-lived (5 min) S3 pre-signed GET URL via
-  `@aws-sdk/s3-request-presigner` (S3/MinIO mode), or a local file path in local-disk dev mode.
-  Exposed at `GET /internal/whatsapp/media/:mediaId/url` (internal-gateway-token protected,
+- **Media access** (`src/lib/media-access.ts`, `resolveMediaAccess()`): resolves a
+  `message_media.storage_path` key to a file path on the gateway's local disk (the S3
+  pre-signed URL mode was removed in a later pass).
+  Exposed via `GET /internal/whatsapp/media/:mediaId/content` (internal-gateway-token protected,
   never reachable by the frontend directly).
-- **Backend proxy**: `MediaController::url()` (new) + route
-  `GET /api/v1/conversations/{conversation}/messages/{message}/media/{media}/url`, gated by
+- **Backend proxy**: `MediaController::content()` + route
+  `GET /api/v1/conversations/{conversation}/messages/{message}/media/{media}/content`, gated by
   `conversations.view`, verifies the media belongs to the given message/conversation and the
   conversation belongs to the requesting user's workspace *before* calling
-  `GatewayClient::mediaUrl()`. The frontend never sees a storage key or bucket URL — only this
-  proxied, time-boxed response.
+  `GatewayClient::mediaContent()`. The frontend never sees a storage key or file path — only
+  the proxied bytes (the separate signed-URL endpoint was removed in a later pass).
 - **Realtime event relay** (new, needed for Phase 7 below): `POST
   /internal/whatsapp/events/emit` (gateway) + `GatewayClient::emitEvent()` (backend) +
   `ConversationController::relayConversationEvent()`, called (best-effort, failures logged not
@@ -1747,17 +1747,16 @@ What this pass added:
 **Verified commands and results:**
 - `npm run build` (`tsc`) — exit 0, zero errors.
 - `npx vitest run` — **26/26 tests passed** (up from 17), 8 test files. New coverage: MIME
-  rejection/oversize rejection (pre-existing, re-verified), `resolveMediaAccess()` signed-URL
-  vs. local-file vs. missing-file paths (`src/lib/media-access.test.ts`), the
+  rejection/oversize rejection (pre-existing, re-verified), `resolveMediaAccess()`
+  local-file vs. missing-file paths (`src/lib/media-access.test.ts`), the
   retry-then-permanent-failure worker path in isolation
-  (`src/queues/media-download.worker-failure.test.ts`), and the new
-  `/media/:mediaId/url` + `/events/emit` internal routes including token rejection, 404 on
+  (`src/queues/media-download.worker-failure.test.ts`), and the
+  `/media/:mediaId/content` + `/events/emit` internal routes including token rejection, 404 on
   unknown media, and the response never containing the raw storage path
   (`src/routes/internal-whatsapp.media-and-events.test.ts`).
-- **Never exercised against a live MinIO/WhatsApp session** — no Docker/MinIO instance was
-  brought up in this environment; the S3 SDK calls in `media-access.test.ts` are mocked, not a
-  live integration test. This is a structurally-real code path (real AWS SDK v3 calls, real
-  presigner) that is genuinely unverified end-to-end.
+- **Never exercised against a live WhatsApp session** — no Docker instance was
+  brought up in this environment; the media-access tests are mocked, not a
+  live integration test.
 - Backend: `php artisan test` → still **55/55 passed** after adding `MediaController` and the
   `emitEvent` calls (assign/close/reopen tests now attempt a real, fast-failing local HTTP call
   to the unconfigured gateway URL and are caught/logged, adding ~2-4s to those two tests but not
@@ -1835,7 +1834,7 @@ messages anywhere in the shipped code; empty states render when there's genuinel
    form (RHF + Zod, matching backend Form Request rules), CSV import/export UI.
 4. Wire the inbox's right panel "Assign" control to a real user/team picker (currently a raw
    user-ID input) once a `/users` list-for-picker endpoint exists or is confirmed usable.
-5. Bring up `docker compose up -d --build` at least once end-to-end (MinIO + gateway + backend +
+5. Bring up `docker compose up -d --build` at least once end-to-end (gateway + backend +
    frontend) and manually exercise: QR login, one real inbound message with a media attachment,
    one real outbound reply, one assign/close/reopen — closing the "never live-verified" gap
    flagged above for both Phase 6 and Phase 7.
@@ -1869,7 +1868,7 @@ the real permission names from the matrix. `php artisan test` → **55/55 tests 
 - `markRead` only updates the backend-owned `conversation_participants` table; it does not reset
   the gateway-owned `conversations.unread_count` because no internal endpoint for that is
   documented in `docs/05-api-contract.md` — flagged rather than inventing an undocumented call.
-- Media storage (MinIO/S3-compatible client) and full retry/backoff hardening were built but not
+- Media storage (gateway local-disk client) and full retry/backoff hardening were built but not
   load-tested; see Phase 6 next steps below.
 
 *(Phase 6/7 next-steps that were listed here have been superseded — see the "Phase 6 — Media
@@ -2035,8 +2034,8 @@ socket.
    existing unique constraint proven in `tests/Feature/MessageUniqueConstraintTest.php` — decide
    how retried webhook/event deliveries and multi-device echoes get deduped before insert.
 4. **Media handling**: download media referenced in inbound messages via Baileys'
-   `downloadMediaMessage()`, store to the existing S3/MinIO-backed filesystem
-   (`config/filesystems.php`), and persist a reference (not the raw bytes) on the message row.
+   `downloadMediaMessage()`, store to the gateway's local-disk filesystem
+   (`src/lib/storage.ts`), and persist a reference (not the raw bytes) on the message row.
 5. **Sync checkpoints**: use the existing `whatsapp_sync_checkpoints` table to resume
    history/backfill sync after a gateway restart without re-processing already-ingested messages.
 6. Fix the Socket.IO namespace mismatch flagged above before building the live inbox UI on top of
@@ -2274,7 +2273,7 @@ against a live WhatsApp account, graceful shutdown on SIGTERM/SIGINT.
   (no realtime event contract implemented against the `EVENT_CATALOG.md` spec yet — deferred to
   the phase where the inbox realtime path is built).
 
-**infrastructure/** — `docker-compose.yml` (mysql, redis, minio, backend, frontend,
+**infrastructure/** — `docker-compose.yml` (mysql, redis, backend, frontend,
 whatsapp-gateway, nginx, health checks, named volumes) and `docker-compose.production.yml`
 overlay (resource limits, no bind mounts, restart policies, no exposed DB ports). Per-service
 `Dockerfile`s for backend (PHP-FPM/Alpine), frontend (multi-stage Next.js build), and gateway
@@ -2299,9 +2298,9 @@ vars in one reference file), this file.
 - WhatsApp gateway: Socket.IO server not attached; Baileys connection never live-tested (no
   WhatsApp account available in this environment) — this is a real adapter with a real
   interface, not a stub, but genuinely unverified against a live session.
-- SMTP/mail, production S3/MinIO credentials, and any other external credentials are only
+- SMTP/mail, production Azure credentials, and any other external credentials are only
   represented as env placeholders (`.env.example`) with real config plumbing (Laravel Mail
-  config, AWS/MinIO S3 disk config) — never claimed as tested live.
+  config, Azure Blob service) — never claimed as tested live.
 - Docker Compose stack has not been brought up end-to-end in this environment; Dockerfiles are
   written but unbuilt/unverified here.
 - Not a git repository yet — initialization intentionally deferred per instructions.

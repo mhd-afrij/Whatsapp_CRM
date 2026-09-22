@@ -66,7 +66,7 @@ All notable changes to this project are documented here. Format loosely follows
   `/healthz` + `/readyz`, BullMQ queue skeleton, `ConnectionManager` class structured around
   Baileys (not live-tested), graceful shutdown. Verified `npm install` and `npm run build`
   succeed.
-- `docker-compose.yml` and `docker-compose.production.yml` wiring mysql, redis, minio, backend,
+- `docker-compose.yml` and `docker-compose.production.yml` wiring mysql, redis, backend,
   frontend, whatsapp-gateway, nginx with health checks and named volumes.
 - `infrastructure/nginx/nginx.conf` with websocket-upgrade support for Socket.IO.
 - Root `.env.example` covering all services.

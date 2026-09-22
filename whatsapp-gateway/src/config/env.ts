@@ -4,12 +4,12 @@ import { z } from 'zod';
 
 // In tests (vitest) the environment must be DETERMINISTIC: vitest.setup.ts
 // pins every required variable explicitly, and individual tests manipulate
-// S3_* / MEDIA_* variables directly. Re-reading the developer's .env here
+// MEDIA_* variables directly. Re-reading the developer's .env here
 // (dotenv does not override set vars, but DOES repopulate deleted ones) made
-// storage mode nondeterministic - e.g. deleting S3_BUCKET in a test was
-// silently undone by this line re-loading it from .env, flipping media
-// access back to S3 mode and breaking the local-file expectations. Skipping
-// dotenv under NODE_ENV=test changes nothing in dev/prod.
+// storage nondeterministic - e.g. changing MEDIA_LOCAL_STORAGE_DIR in a test
+// was silently undone by this line re-loading it from .env, breaking
+// local-file expectations. Skipping dotenv under NODE_ENV=test changes
+// nothing in dev/prod.
 if (process.env.NODE_ENV !== 'test') {
   dotenv.config();
 }
@@ -95,15 +95,6 @@ const envSchema = z.object({
     ),
 
   MEDIA_LOCAL_STORAGE_DIR: z.string().default('./media-storage'),
-
-  // Optional MinIO/S3-compatible object storage. If S3_BUCKET is unset, the
-  // gateway falls back to local-disk storage (see src/lib/storage.ts).
-  S3_ENDPOINT: z.string().optional(),
-  S3_REGION: z.string().default('us-east-1'),
-  S3_BUCKET: z.string().optional(),
-  S3_ACCESS_KEY_ID: z.string().optional(),
-  S3_SECRET_ACCESS_KEY: z.string().optional(),
-  S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
 
   SEND_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(1),
   SEND_RATE_LIMIT_DURATION_MS: z.coerce.number().int().positive().default(1000),

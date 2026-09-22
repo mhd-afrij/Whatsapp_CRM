@@ -24,7 +24,7 @@ export const NAVIGATION_SECTIONS: NavigationSection[] = [
       { href: "/contacts", label: "Contacts", icon: ContactRound, permission: "contacts.view" },
       { href: "/leads", label: "Leads", icon: Users, permission: "leads.manage" },
       { href: "/calendar", label: "Calendar", icon: CalendarDays, permission: "tasks.manage" },
-      { href: "/reports", label: "Reports", icon: FileBarChart, permission: "analytics.view" },
+      { href: "/reports", label: "Reports", icon: FileBarChart, permission: "reports.view" },
     ],
   },
   {

@@ -187,7 +187,15 @@ export class SessionRepository {
     for (const file of files) {
       if (!file.endsWith('.json')) continue;
       const fullPath = path.join(authDir, file);
-      const content = await fs.readFile(fullPath, 'utf8');
+      let content: string;
+      try {
+        content = await fs.readFile(fullPath, 'utf8');
+      } catch {
+        // Baileys rotates pre-key files during creds.update; a file listed by
+        // readdir can be gone by the time readFile runs. It was superseded, so
+        // skipping it is correct.
+        continue;
+      }
       const encrypted = encryptCredentialValue(content);
 
       await execute(

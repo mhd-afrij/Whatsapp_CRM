@@ -95,7 +95,7 @@ Three cooperating services:
   logging of sensitive actions, internal service-to-service calls authenticated with a shared
   secret, secrets never in the repo, `.env`-driven config, Zod-validated env for the gateway.
 - **Scalability**: stateless Laravel + Node processes behind Nginx; Redis for cache/session/queue
-  broker; MinIO (S3-compatible) for media storage so app servers stay stateless.
+  broker; gateway-side media storage so app servers stay stateless.
 - **Observability**: structured logging (Pino for gateway, Laravel log channels for backend),
   health-check endpoints on all services, queue/job failure visibility (`failed_jobs`).
 - **Deployability**: Docker Compose for dev and prod, Nginx reverse proxy/TLS termination,

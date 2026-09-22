@@ -316,29 +316,11 @@ export async function markConversationUnread(
   return unwrap(apiClient.patch(`/conversations/${conversationId}/unread`));
 }
 
-export interface MediaAccess {
-  mimeType: string;
-  kind: "signed_url" | "local_file";
-  url?: string;
-  expiresInSeconds?: number;
-  filePath?: string;
-}
-
-export async function fetchMediaUrl(
-  conversationId: number,
-  messageId: number,
-  mediaId: number
-): Promise<MediaAccess> {
-  return unwrap(
-    apiClient.get(`/conversations/${conversationId}/messages/${messageId}/media/${mediaId}/url`)
-  );
-}
-
 /**
- * Local-disk dev mode (no S3_BUCKET on the gateway): fetches the raw media
- * bytes through the backend proxy so previews/downloads work without MinIO.
- * The backend streams the gateway's local file after verifying the user can
- * view the owning conversation.
+ * Fetches the raw media bytes through the backend proxy (the gateway stores
+ * media on its local disk and there is no public file server). The backend
+ * streams the gateway's file after verifying the user can view the owning
+ * conversation.
  */
 export async function fetchMediaContent(
   conversationId: number,

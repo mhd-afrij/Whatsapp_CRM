@@ -149,6 +149,22 @@ export async function updateContact(id: number, values: ContactFormValues): Prom
   return unwrap(apiClient.patch(`/contacts/${id}`, values));
 }
 
+export interface WhatsappContactSaveResult {
+  whatsapp_contact_id: number;
+  wa_jid: string;
+  contact_name: string | null;
+  phone_number: string | null;
+  contact: { id: number; full_name: string | null; phone_number: string | null } | null;
+}
+
+/** Save agent-edited customer details (name / phone) for a WhatsApp conversation's contact. */
+export async function updateWhatsappContact(
+  id: number,
+  values: { name?: string | null; phone?: string | null }
+): Promise<WhatsappContactSaveResult> {
+  return unwrap(apiClient.put(`/whatsapp/contacts/${id}`, values));
+}
+
 export async function archiveContact(id: number): Promise<null> {
   return unwrap(apiClient.delete(`/contacts/${id}`));
 }

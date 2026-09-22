@@ -69,7 +69,7 @@ import {
   removeReaction,
   revokeMessage,
   deleteMessageForMe,
-  fetchMediaUrl,
+  fetchMediaContent,
   fetchConversations,
   exportConversationChat,
   generateAiDraft,
@@ -176,8 +176,9 @@ function mediaTypeLabel(mime: string): string {
   return "Document";
 }
 
-/** Compact 36px thumbnail for the reply quote bar — reuses the same signed-URL
- *  query ("media-url") as MediaPreview, so already-loaded media is instant. */
+/** Compact 36px thumbnail for the reply quote bar — reuses the same
+ *  content-proxy query ("media-content") as MediaPreview, so already-loaded
+ *  media is instant. */
 function ReplyMediaThumb({
   conversationId,
   message,
@@ -188,9 +189,17 @@ function ReplyMediaThumb({
   const media = message.media;
   const isImage = Boolean(media?.mime_type.startsWith("image/"));
   const { data } = useQuery({
-    queryKey: ["media-url", conversationId, message.id, media?.id],
-    queryFn: () =>
-      media ? fetchMediaUrl(conversationId, message.id, media.id) : Promise.resolve(null),
+    queryKey: ["media-content", conversationId, message.id, media?.id],
+    queryFn: async () => {
+      if (!media) return null;
+      const blob = await fetchMediaContent(
+        conversationId,
+        message.id,
+        media.id,
+        media.mime_type
+      );
+      return URL.createObjectURL(blob);
+    },
     enabled: isImage,
     staleTime: 60_000,
   });
@@ -200,11 +209,11 @@ function ReplyMediaThumb({
   const isVideo = media.mime_type.startsWith("video/");
   const isAudio = media.mime_type.startsWith("audio/");
 
-  if (isImage && data?.kind === "signed_url" && data.url) {
+  if (isImage && data) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL
+      // eslint-disable-next-line @next/next/no-img-element -- short-lived blob URL
       <img
-        src={data.url}
+        src={data}
         alt=""
         className="h-9 w-9 shrink-0 rounded-lg border border-border object-cover"
       />

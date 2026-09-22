@@ -13,17 +13,16 @@ use Illuminate\Support\Facades\Validator;
 use RuntimeException;
 
 /**
- * Proxies message media access to the gateway's signed-URL endpoint
- * (GatewayClient::mediaUrl). The frontend/agent never receives a raw MinIO
- * bucket URL or storage key directly - only a short-lived signed URL (or, in
- * local-disk dev mode, a path this controller streams itself) - and only
- * after this controller confirms the requesting user can view the
- * conversation the media belongs to (same `conversations.view` gate as the
- * rest of the conversation/message read surface).
+ * Proxies message media access to the gateway's content-streaming endpoint
+ * (GatewayClient::mediaContent). The frontend/agent never receives a raw
+ * storage path directly - the bytes are streamed through this controller,
+ * and only after it confirms the requesting user can view the conversation
+ * the media belongs to (same `conversations.view` gate as the rest of the
+ * conversation/message read surface).
  *
  * `store` (added for outbound media) uploads an agent-attached file to the
- * gateway's object storage and returns the storage key + metadata the
- * frontend then passes as `media` when dispatching the message via
+ * gateway's storage and returns the storage key + metadata the frontend then
+ * passes as `media` when dispatching the message via
  * ConversationController::storeMessage.
  */
 class MediaController extends Controller
@@ -86,9 +85,10 @@ class MediaController extends Controller
 
     /**
      * GET /api/v1/conversations/{conversation}/messages/{message}/media/{media}/content
-     * Local-disk dev mode: proxies the raw media bytes from the gateway so
-     * previews work even without MinIO/S3 configured. Same authorization
-     * checks as url() - the user must be able to view the owning conversation.
+     * Proxies the raw media bytes from the gateway (stored on the gateway's
+     * local disk) so previews/downloads work in every environment. Same
+     * authorization checks - the user must be able to view the owning
+     * conversation.
      */
     public function content(Request $request, int $conversation, Message $message, MessageMedia $media)
     {
@@ -114,35 +114,5 @@ class MediaController extends Controller
         } catch (RuntimeException $e) {
             return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
         }
-    }
-
-    /**
-     * GET /api/v1/conversations/{conversation}/messages/{message}/media/{media}/url
-     */
-    public function url(Request $request, int $conversation, Message $message, MessageMedia $media)
-    {
-        if ($media->message_id !== $message->id) {
-            return $this->error('Media does not belong to the given message.', null, 404);
-        }
-
-        if ($message->conversation_id !== $conversation) {
-            return $this->error('Message does not belong to the given conversation.', null, 404);
-        }
-
-        $conversation = $message->conversation;
-        if (! $conversation || $conversation->workspace_id !== $request->user()->workspace_id) {
-            return $this->error('Conversation not found.', null, 404);
-        }
-
-        // Same per-conversation visibility gate as the message/read surface.
-        $this->authorize('view', $conversation);
-
-        try {
-            $result = $this->gateway->mediaUrl($media->id, $conversation->workspace_id, $conversation->whatsapp_account_id);
-        } catch (RuntimeException $e) {
-            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
-        }
-
-        return $this->success($result['data'] ?? null, 'OK');
     }
 }

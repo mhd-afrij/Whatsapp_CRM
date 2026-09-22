@@ -11,7 +11,7 @@ sequenceDiagram
     participant WA as WhatsApp
     participant GW as whatsapp-gateway (Baileys)
     participant DB as MySQL
-    participant MinIO as MinIO
+    participant Disk as Gateway local disk
     participant SIO as Socket.IO (/gateway)
     participant FE as Frontend (agent browser)
 
@@ -21,7 +21,7 @@ sequenceDiagram
     GW->>DB: find-or-create conversations row
     alt has media
         GW->>WA: fetch media stream
-        GW->>MinIO: store object, generate thumbnail
+        GW->>Disk: store file
         GW->>DB: insert message_media
     end
     GW->>DB: insert messages (workspace_id, whatsapp_message_id) UNIQUE

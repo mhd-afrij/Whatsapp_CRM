@@ -2,21 +2,25 @@
 
 import { useMemo, useRef, useState, useCallback, type ReactNode } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   BriefcaseBusiness,
+  Check,
   CheckSquare,
   ChevronDown,
   ChevronRight,
   History,
   MessageSquare,
   Package,
+  Pencil,
   Phone,
   Plus,
   StickyNote,
   Tag,
   UserCheck,
   UserRound,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePermission } from "@/hooks/use-permission";
@@ -35,6 +39,7 @@ import {
   useUpdateDeal,
 } from "@/hooks/use-deals";
 import { useCreateLead } from "@/hooks/use-leads";
+import { updateWhatsappContact } from "@/lib/contacts-api";
 import type { LeadSummary } from "@/lib/contacts-api";
 import { LabelPicker } from "@/components/labels/label-picker";
 import { Avatar } from "@/components/ui/avatar";
@@ -195,6 +200,9 @@ function CustomerDetailsCard({
   location,
   customerId,
   createdAt,
+  whatsappContactId,
+  rawPhoneNumber,
+  onSaved,
 }: {
   name: string;
   phoneNumber: string | null;
@@ -202,20 +210,130 @@ function CustomerDetailsCard({
   location: string | null;
   customerId: number | string | null;
   createdAt: string | null;
+  whatsappContactId: number | null;
+  rawPhoneNumber: string | null;
+  onSaved?: () => void;
 }) {
+  const { toast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [draftPhone, setDraftPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    setDraftName(name === "Unknown contact" ? "" : name);
+    setDraftPhone(rawPhoneNumber ?? "");
+    setEditing(true);
+  };
+
+  const save = async () => {
+    if (!whatsappContactId) return;
+    setSaving(true);
+    try {
+      await updateWhatsappContact(whatsappContactId, {
+        name: draftName.trim() || null,
+        phone: draftPhone.replace(/[^\d+]/g, "") || null,
+      });
+      setEditing(false);
+      toast("Customer details saved.", "success");
+      onSaved?.();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "Unable to save customer details.", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const editInputClass =
+    "w-full rounded-lg border border-border bg-bg px-2.5 py-1.5 text-xs text-text outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 disabled:opacity-50";
+
   return (
-    <CollapsibleSection title="Customer Details" icon={UserRound}>
-      <dl className="divide-y divide-border">
-        <DetailRow label="Name" value={name} />
-        <DetailRow label="Phone" value={formatDisplayPhone(phoneNumber)} mono />
-        <DetailRow label="Email" value={email} />
-        <DetailRow label="Location" value={location} />
-        <DetailRow label="Customer ID" value={customerId ? `#${customerId}` : null} mono />
-        <DetailRow
-          label="Created"
-          value={createdAt ? new Date(createdAt).toLocaleDateString() : null}
-        />
-      </dl>
+    <CollapsibleSection
+      title="Customer Details"
+      icon={UserRound}
+      action={
+        whatsappContactId &&
+        !editing && (
+          <button
+            type="button"
+            onClick={startEdit}
+            aria-label="Edit customer details"
+            title="Edit customer details"
+            className="rounded-md p-1.5 text-muted transition hover:bg-border hover:text-text"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )
+      }
+    >
+      {editing ? (
+        <div className="space-y-2.5 pt-2">
+          <label className="block space-y-1">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted">Name</span>
+            <input
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              maxLength={191}
+              placeholder="Customer name"
+              className={editInputClass}
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted">Phone</span>
+            <input
+              value={draftPhone}
+              onChange={(e) => setDraftPhone(e.target.value)}
+              inputMode="tel"
+              placeholder="Customer number"
+              className={editInputClass}
+            />
+          </label>
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-bold text-accent-text transition hover:bg-accent/90 disabled:opacity-50"
+            >
+              <Check className="h-3 w-3" />
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              disabled={saving}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-bg px-3 py-1.5 text-[11px] font-semibold text-text transition hover:bg-border disabled:opacity-50"
+            >
+              <X className="h-3 w-3" />
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <dl className="divide-y divide-border">
+            <DetailRow label="Name" value={name} />
+            <DetailRow label="Phone" value={formatDisplayPhone(rawPhoneNumber ?? phoneNumber)} mono />
+            <DetailRow label="Email" value={email} />
+            <DetailRow label="Location" value={location} />
+            <DetailRow label="Customer ID" value={customerId ? `#${customerId}` : null} mono />
+            <DetailRow
+              label="Created"
+              value={createdAt ? new Date(createdAt).toLocaleDateString() : null}
+            />
+          </dl>
+          {!customerId && whatsappContactId && (
+            <button
+              type="button"
+              onClick={startEdit}
+              className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-accent/40 bg-accent/5 px-3 py-2 text-[11px] font-bold text-accent transition hover:bg-accent/10"
+            >
+<Pencil className="h-3 w-3" />
+              Save customer details
+            </button>
+          )}
+        </>
+      )}
     </CollapsibleSection>
   );
 }
@@ -286,6 +404,10 @@ function LeadInfoCard({
   const lead = contactLeads?.[0] ?? null;
 
   const handleCreateLead = () => {
+    if (contactId <= 0) {
+      toast("This conversation has no linked contact. Link one from the contact panel first.", "error");
+      return;
+    }
     createLead.mutate(
       {
         contact_id: contactId,
@@ -302,6 +424,10 @@ function LeadInfoCard({
   };
 
   const handleCreateDeal = () => {
+    if (contactId <= 0) {
+      toast("This conversation has no linked contact. Link one from the contact panel first.", "error");
+      return;
+    }
     const pipeline =
       pipelines?.find((p) => p.is_default) ?? pipelines?.[0] ?? null;
     const stage = pipeline?.stages?.[0] ?? null;
@@ -906,11 +1032,20 @@ export function CustomerProfile({
   const canManageLabels = usePermission("conversations.reply");
   const { data: users } = useUsers();
   const contactId = conversation?.contact?.id ?? null;
+  const whatsappContactId = conversation?.whatsapp_contact?.id ?? null;
   const { data: contact } = useContact(contactId ?? 0);
   const { data: notes } = useNoteList({ conversation_id: conversationId });
   const { data: tasks } = useTaskList({ conversation_id: conversationId, per_page: 10 });
   const createNote = useCreateNote({ conversation_id: conversationId });
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const handleDetailsSaved = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    if (contactId) {
+      queryClient.invalidateQueries({ queryKey: ["contacts", "detail", contactId] });
+    }
+  }, [queryClient, contactId]);
 
   const contactDisplay = useMemo(
     () =>
@@ -998,10 +1133,13 @@ export function CustomerProfile({
           <CustomerDetailsCard
             name={contactDisplay}
             phoneNumber={phoneNumber}
+            rawPhoneNumber={phoneNumber}
+            whatsappContactId={whatsappContactId}
             email={contact?.email ?? null}
             location={null}
             customerId={contactId}
             createdAt={contact?.created_at ?? null}
+            onSaved={handleDetailsSaved}
           />
 
           <LeadInfoCard

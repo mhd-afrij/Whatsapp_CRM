@@ -25,7 +25,7 @@ Conventions used below:
 | slug | VARCHAR(255) UNIQUE | |
 | whatsapp_number | VARCHAR(32) NULL | E.164, denormalized for quick display |
 | timezone | VARCHAR(64) | default `UTC` |
-| logo_path | VARCHAR(255) NULL | MinIO object key |
+| logo_path | VARCHAR(255) NULL | Azure Blob path (workspace logos) |
 | is_active | BOOLEAN | default true |
 | created_at, updated_at | TIMESTAMP | |
 
@@ -257,7 +257,7 @@ Conventions used below:
 | message_id | BIGINT UNSIGNED FK → messages.id (CASCADE) | |
 | mime_type | VARCHAR(100) | |
 | file_size_bytes | BIGINT UNSIGNED NULL | |
-| storage_path | VARCHAR(500) | MinIO object key |
+| storage_path | VARCHAR(500) | Gateway media-storage key |
 | thumbnail_path | VARCHAR(500) NULL | |
 | duration_seconds | INT UNSIGNED NULL | audio/video |
 | width | INT UNSIGNED NULL | |

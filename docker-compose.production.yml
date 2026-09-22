@@ -3,7 +3,7 @@
 # Production overlay. Use with:
 #   docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
 # Differences from dev: no bind-mounted source (image-baked code), resource limits,
-# restart policies always-on, no exposed DB/Redis/MinIO ports to host, nginx handles TLS termination
+# restart policies always-on, no exposed DB/Redis ports to host, nginx handles TLS termination
 # (put a TLS-terminating reverse proxy/load balancer in front of nginx or extend this file with certs).
 
 services:
@@ -16,14 +16,6 @@ services:
 
   redis:
     ports: []
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-
-  minio:
-    ports:
-      - "9000:9000" # keep S3 API reachable if used externally; console (9001) stays internal
     deploy:
       resources:
         limits:

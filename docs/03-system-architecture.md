@@ -36,7 +36,6 @@ graph TD
     subgraph Data["Data Layer"]
         MySQL[("MySQL 8+\nshared schema, owned tables per service")]
         Redis[("Redis\ncache + queue broker + Socket.IO adapter")]
-        MinIO[("MinIO\nS3-compatible media storage")]
     end
 
     subgraph External
@@ -64,8 +63,7 @@ graph TD
     GW --> BullMQ
     BullMQ --> GW
 
-    BE --> MinIO
-    GW --> MinIO
+    GW -->|media files| GWDisk[("Gateway local\nmedia-storage volume")]
 
     GW <-->|Baileys multi-device WS| WA
 
@@ -109,7 +107,7 @@ graph TD
 - Outbound message pipeline: API request or BullMQ job → Baileys send → `message_status_events`
   written as delivery/read receipts arrive.
 - BullMQ queues: `outbound-messages` (send), `media-download` (fetch/store WhatsApp media into
-  MinIO), `session-maintenance` (periodic checkpoint/backoff bookkeeping).
+  the gateway's media-storage volume), `session-maintenance` (periodic checkpoint/backoff bookkeeping).
 - Exposes a small internal HTTP API (`/internal/*`, shared-secret authenticated) for the backend
   to trigger sends and query connection status, and a Socket.IO server for realtime fan-out to
   the frontend.
@@ -149,8 +147,7 @@ graph LR
     GW --> MySQLProd
     BE --> RedisProd[(Redis)]
     GW --> RedisProd
-    BE --> MinIOProd[(MinIO)]
-    GW --> MinIOProd
+    GW --> GWDiskProd[(Gateway media-storage volume)]
 ```
 
 Each box is a Docker Compose service in `infrastructure/docker-compose.prod.yml`. See

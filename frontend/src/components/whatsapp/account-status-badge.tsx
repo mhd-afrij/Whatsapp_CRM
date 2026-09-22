@@ -15,8 +15,8 @@ const STATUS_META: Record<WhatsappConnectionStatus, { label: string; dot: string
   connecting: { label: "Connecting", dot: "bg-warning", text: "text-warning", bg: "bg-warning/10", pulse: true },
   qr_pending: { label: "Awaiting QR scan", dot: "bg-warning", text: "text-warning", bg: "bg-warning/10", pulse: true },
   reconnecting: { label: "Reconnecting", dot: "bg-warning", text: "text-warning", bg: "bg-warning/10", pulse: true },
-  idle: { label: "Not connected", dot: "bg-muted", text: "text-muted", bg: "bg-muted", pulse: false },
-  disconnected: { label: "Disconnected", dot: "bg-muted", text: "text-muted", bg: "bg-muted", pulse: false },
+  idle: { label: "Not connected", dot: "bg-muted", text: "text-muted", bg: "bg-muted/10", pulse: false },
+  disconnected: { label: "Disconnected", dot: "bg-muted", text: "text-muted", bg: "bg-muted/10", pulse: false },
   auth_required: { label: "Re-auth required", dot: "bg-danger", text: "text-danger", bg: "bg-danger/10", pulse: false },
   error: { label: "Connection error", dot: "bg-danger", text: "text-danger", bg: "bg-danger/10", pulse: false },
 };

@@ -74,7 +74,7 @@ where noted.
 | Area | Exists | Needed |
 |---|---|---|
 | `docker-compose.dev.yml`, `docker-compose.prod.yml` | No | Yes |
-| MySQL, Redis, MinIO service definitions | No | Yes |
+| MySQL, Redis service definitions | No | Yes |
 | Nginx reverse proxy config + TLS | No | Yes |
 | Health-check wiring | No | Yes |
 | `.env.example` per service | No | Yes |
@@ -83,7 +83,7 @@ where noted.
 | Area | Exists | Needed |
 |---|---|---|
 | Deployment/backup scripts | No | Yes (Phase ~18) |
-| Local MinIO/media storage mount | No | Yes |
+| Local gateway media-storage mount | No | Yes |
 
 ## Conclusion
 
