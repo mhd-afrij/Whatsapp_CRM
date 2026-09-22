@@ -169,6 +169,32 @@ class WorkspaceSettingsAndAuditLogTest extends TestCase
         Storage::disk('public')->assertExists($workspace->logo_path);
     }
 
+    public function test_administrator_can_remove_workspace_logo(): void
+    {
+        Storage::fake('public');
+        $this->seedRbac();
+        $admin = $this->userWithRole('Administrator');
+
+        $file = UploadedFile::fake()->image('logo.png', 200, 200);
+        $this->asUser($admin)->post('/api/v1/workspace', [
+            '_method' => 'PATCH',
+            'logo' => $file,
+        ])->assertOk();
+
+        $workspace = Workspace::find($admin->workspace_id);
+        $this->assertNotNull($workspace->logo_path);
+        Storage::disk('public')->assertExists($workspace->logo_path);
+
+        $response = $this->asUser($admin)->patchJson('/api/v1/workspace', [
+            'remove_logo' => true,
+        ])->assertOk();
+
+        $this->assertNull($response->json('data.logo_url'));
+        $workspace->refresh();
+        $this->assertNull($workspace->logo_path);
+        Storage::disk('public')->assertMissing($workspace->logo_path ?? $file->hashName());
+    }
+
     public function test_workspace_settings_update_writes_audit_log(): void
     {
         $this->seedRbac();

@@ -72,7 +72,7 @@ class GenerateReportExportJob implements ShouldQueue
 
             [$mime, $extension, $headers, $rows] = $this->build($user, $reportData);
 
-            $filename = 'exports/'.$this->workspaceId.'/'.$this->type.'-'.now()->format('YmdHis').'-'.Str::random(8).'.'.$extension;
+            $filename = 'exports/'.$this->workspaceId.'/'.'crm-report-'.$this->from.'-to-'.$this->to.'-'.$this->type.'-'.Str::random(8).'.'.$extension;
             $payload = $extension === 'pdf'
                 ? $this->renderPdf($reportData, $headers, $rows)
                 : $this->toCsv($headers, $rows);
@@ -131,7 +131,7 @@ class GenerateReportExportJob implements ShouldQueue
      */
     private function dailyHeaders(): array
     {
-        return ['Date', 'New conversations', 'Avg response (min)', 'Deals won', 'Won value', 'Deals lost', 'Lost value'];
+        return ['Date', 'New conversations', 'New leads', 'Leads converted', 'Avg response (min)', 'Deals won', 'Won value', 'Deals lost', 'Lost value'];
     }
 
     /**
@@ -142,6 +142,8 @@ class GenerateReportExportJob implements ShouldQueue
         return array_map(fn ($row) => [
             'date' => $row['date'],
             'conversations' => $row['conversations'],
+            'leads_created' => $row['leads'],
+            'leads_converted' => $row['converted'],
             'avg_response_minutes' => $row['avg_response_minutes'] ?? '',
             'won_count' => $row['won_count'],
             'won_value' => $row['won_value'],
@@ -213,17 +215,28 @@ class GenerateReportExportJob implements ShouldQueue
         $metricRow = fn (string $label, ?string $current, $previous = '') => '<tr><td class="m">'.$label.'</td><td class="r">'.($current ?? '--').'</td><td class="r">'.($previous ?? '--').'</td></tr>';
 
         $rows .= $metricRow('New conversations', number_format((float) ($metrics['conversations']['value'] ?? 0)), ($metrics['conversations']['previous'] ?? null) !== null ? number_format((float) $metrics['conversations']['previous']) : null);
+        $rows .= $metricRow('New leads', number_format((float) ($metrics['leads_created']['value'] ?? 0)), ($metrics['leads_created']['previous'] ?? null) !== null ? number_format((float) $metrics['leads_created']['previous']) : null);
+        $rows .= $metricRow('Leads converted', number_format((float) ($metrics['leads_converted']['value'] ?? 0)), ($metrics['leads_converted']['previous'] ?? null) !== null ? number_format((float) $metrics['leads_converted']['previous']) : null);
+        $rows .= $metricRow('Lead conversion rate', isset($metrics['lead_conversion_rate']['value']) ? round($metrics['lead_conversion_rate']['value'], 1).'%' : '--', isset($metrics['lead_conversion_rate']['previous']) ? round($metrics['lead_conversion_rate']['previous'], 1).'%' : null);
         $rows .= $metricRow('Won value', $money($metrics['won_value']['value']), $money($metrics['won_value']['previous']));
         $rows .= $metricRow('Lost value', $money($metrics['lost_value']['value']), $money($metrics['lost_value']['previous']));
         $rows .= $metricRow('Win rate', isset($metrics['win_rate']['value']) ? round($metrics['win_rate']['value'], 1).'%' : '--', isset($metrics['win_rate']['previous']) ? round($metrics['win_rate']['previous'], 1).'%' : null);
         $rows .= $metricRow('Avg response (min)', $metrics['avg_response_minutes']['value'] !== null ? round($metrics['avg_response_minutes']['value'], 1) : '--', $metrics['avg_response_minutes']['previous'] !== null ? round($metrics['avg_response_minutes']['previous'], 1) : null);
         $rows .= $metricRow('Task completion', isset($metrics['task_completion_rate']['value']) ? round($metrics['task_completion_rate']['value'], 1).'%' : '--', isset($metrics['task_completion_rate']['previous']) ? round($metrics['task_completion_rate']['previous'], 1).'%' : null);
 
-        // Daily table (last 14 days) + top 5 agents.
+        // Daily table (last 14 days) + lead distribution + top 5 agents.
         $daily = array_slice(array_reverse($data['daily_series']), 0, 14);
         $dailyRows = '';
         foreach ($daily as $row) {
-            $dailyRows .= '<tr><td>'.$row['date'].'</td><td class="r">'.$row['conversations'].'</td><td class="r">'.($row['avg_response_minutes'] !== null ? round($row['avg_response_minutes'], 1) : '--').'</td><td class="r">'.$row['won_count'].'</td><td class="r">'.number_format((float) $row['won_value']).'</td><td class="r">'.$row['lost_count'].'</td><td class="r">'.number_format((float) $row['lost_value']).'</td></tr>';
+            $dailyRows .= '<tr><td>'.$row['date'].'</td><td class="r">'.$row['conversations'].'</td><td class="r">'.$row['leads'].'</td><td class="r">'.$row['converted'].'</td><td class="r">'.($row['avg_response_minutes'] !== null ? round($row['avg_response_minutes'], 1) : '--').'</td><td class="r">'.$row['won_count'].'</td><td class="r">'.number_format((float) $row['won_value']).'</td><td class="r">'.$row['lost_count'].'</td><td class="r">'.number_format((float) $row['lost_value']).'</td></tr>';
+        }
+
+        $leadRows = '';
+        foreach ($data['leads']['current_by_status'] ?? [] as $status) {
+            if (($status['count'] ?? 0) === 0) {
+                continue;
+            }
+            $leadRows .= '<tr><td>'.e($status['name']).'</td><td class="r">'.$status['count'].'</td></tr>';
         }
 
         $agents = array_slice($data['leaderboard'], 0, 5);
@@ -249,7 +262,9 @@ class GenerateReportExportJob implements ShouldQueue
             <h2>Key metrics</h2>
             <table><tr><th>Metric</th><th class="r">Period</th><th class="r">Previous</th></tr>'.$rows.'</table>
             <h2>Daily breakdown (last 14 days)</h2>
-            <table><tr><th>Date</th><th class="r">Chats</th><th class="r">Avg resp</th><th class="r">Won</th><th class="r">Won value</th><th class="r">Lost</th><th class="r">Lost value</th></tr>'.$dailyRows.'</table>
+            <table><tr><th>Date</th><th class="r">Chats</th><th class="r">Leads</th><th class="r">Conv.</th><th class="r">Avg resp</th><th class="r">Won</th><th class="r">Won value</th><th class="r">Lost</th><th class="r">Lost value</th></tr>'.$dailyRows.'</table>
+            <h2>Lead distribution (current)</h2>
+            <table><tr><th>Status</th><th class="r">Leads</th></tr>'.($leadRows !== '' ? $leadRows : '<tr><td colspan="2">No leads yet.</td></tr>').'</table>
             <h2>Agent leaderboard (top 5)</h2>
             <table><tr><th>#</th><th>Agent</th><th class="r">Conversations</th><th class="r">Tasks</th><th class="r">Deals won</th><th class="r">Won value</th></tr>'.$agentRows.'</table>
             <table><tr class="tfoot"><td>Generated by CRM Reports.</td></tr></table>

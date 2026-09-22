@@ -43,6 +43,7 @@ class WorkspaceSettingController extends Controller
             'timezone' => ['sometimes', 'string', 'timezone'],
             'language' => ['sometimes', 'string', 'max:20'],
             'logo' => ['sometimes', 'nullable', 'image', 'max:2048'],
+            'remove_logo' => ['sometimes', 'boolean'],
             'default_pipeline_id' => ['sometimes', 'nullable', 'integer', Rule::exists('pipelines', 'id')->where('workspace_id', $workspace->id)],
             'business_hours' => ['sometimes', 'array'],
             'notification_defaults' => ['sometimes', 'array'],
@@ -73,6 +74,9 @@ class WorkspaceSettingController extends Controller
             }
             $upload = $this->azureBlob->upload($request->file('logo'), 'workspace-logos/'.$workspace->id);
             $workspace->logo_path = $upload['file_path'];
+        } elseif ($request->boolean('remove_logo') && $workspace->logo_path) {
+            $this->azureBlob->delete($workspace->logo_path);
+            $workspace->logo_path = null;
         }
 
         $workspace->save();

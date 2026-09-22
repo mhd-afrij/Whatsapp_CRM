@@ -5,16 +5,12 @@ import Link from "next/link";
 import {
   AlertTriangle,
   BarChart3,
-  Building2,
-  Database,
   Download,
   FileText,
-  Inbox,
-  MessageSquare,
+  Loader2,
+  RotateCcw,
   Shield,
   SlidersHorizontal,
-  UserCheck,
-  Users,
 } from "lucide-react";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { SettingsCard, SettingRow } from "@/components/settings/settings-card";
@@ -27,6 +23,13 @@ import { Select } from "@/components/settings/select";
 import { Modal } from "@/components/settings/modal";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
+import { usePermission } from "@/hooks/use-permission";
+import {
+  useResetReportPreferences,
+  useReportSettings,
+  useUpdateReportPreferences,
+} from "@/hooks/use-reports";
+import type { ReportPreferences } from "@/lib/reports-api";
 import { useToast } from "@/providers/toast-provider";
 import {
   useAnalyticsSettings,
@@ -34,43 +37,18 @@ import {
   useUpdateAnalyticsSettings,
 } from "@/hooks/use-analytics-settings";
 import type {
-  AgentVisibility,
   AnalyticsDefaultPeriod,
   AnalyticsDateFormat,
   AnalyticsSettings,
-  AggregateRetentionDays,
-  ConversationResolutionRule,
-  ConversationStartRule,
-  DeletedMessagesRule,
-  MaxExportRangeDays,
-  RawEventRetentionDays,
 } from "@/lib/analytics-settings-api";
 
-type TabKey =
-  | "general"
-  | "messages"
-  | "conversations"
-  | "contacts"
-  | "agents"
-  | "accounts"
-  | "templates"
-  | "rules"
-  | "retention"
-  | "permissions"
-  | "export";
+type TabKey = "general" | "dashboard" | "exports" | "permissions";
 
 const TABS: Array<{ key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { key: "general", label: "General", icon: SlidersHorizontal },
-  { key: "messages", label: "Messages", icon: MessageSquare },
-  { key: "conversations", label: "Conversations", icon: Inbox },
-  { key: "contacts", label: "Contacts & Leads", icon: Users },
-  { key: "agents", label: "Agents", icon: UserCheck },
-  { key: "accounts", label: "WhatsApp Accounts", icon: Building2 },
-  { key: "templates", label: "Templates", icon: FileText },
-  { key: "rules", label: "Tracking Rules", icon: BarChart3 },
-  { key: "retention", label: "Retention", icon: Database },
+  { key: "dashboard", label: "Dashboard", icon: BarChart3 },
+  { key: "exports", label: "Reports & Exports", icon: Download },
   { key: "permissions", label: "Permissions", icon: Shield },
-  { key: "export", label: "Export & Reports", icon: Download },
 ];
 
 const TIMEZONE_OPTIONS = [
@@ -121,41 +99,22 @@ const DATE_FORMAT_OPTIONS: Array<{ value: AnalyticsDateFormat; label: string }> 
 
 const CURRENCY_OPTIONS = ["LKR", "USD", "EUR", "GBP"].map((c) => ({ value: c, label: c }));
 
-const AGENT_VISIBILITY_OPTIONS: Array<{ value: AgentVisibility; label: string }> = [
-  { value: "super_admin", label: "Super Admin Only" },
-  { value: "workspace_admins", label: "Workspace Admins" },
-  { value: "managers", label: "Managers" },
-  { value: "managers_plus_self", label: "Managers + Agent Self View" },
-  { value: "agent_self", label: "Agent Self View Only" },
-];
+/** The settings this workspace actually consumes - see analytics-settings-api.ts. */
+const LIVE_DEFAULTS: AnalyticsSettings = {
+  analytics_enabled: true,
+  timezone: "Asia/Colombo",
+  default_period: "last_30_days",
+  week_starts_on_monday: true,
+  currency: "LKR",
+  date_format: "DD/MM/YYYY",
 
-const START_RULE_OPTIONS: Array<{ value: ConversationStartRule; label: string }> = [
-  { value: "first_incoming", label: "First incoming message" },
-  { value: "first_outgoing", label: "First outgoing message" },
-  { value: "either_direction", label: "Either incoming or outgoing message" },
-];
-
-const RESOLUTION_RULE_OPTIONS: Array<{ value: ConversationResolutionRule; label: string }> = [
-  { value: "resolved", label: "Status changed to Resolved" },
-  { value: "closed", label: "Status changed to Closed" },
-  { value: "either", label: "Either Resolved or Closed" },
-];
-
-const DELETED_MESSAGES_OPTIONS: Array<{ value: DeletedMessagesRule; label: string }> = [
-  { value: "keep", label: "Keep in historical analytics" },
-  { value: "exclude", label: "Exclude from analytics" },
-];
-
-function retentionOptions(values: Array<number>, unlimitedLabel = "Unlimited") {
-  return values.map((days) => ({
-    value: String(days),
-    label: days === 0 ? unlimitedLabel : days >= 365 ? `${days / 365} Year${days > 365 ? "s" : ""}` : `${days} Days`,
-  }));
-}
-
-const RAW_RETENTION_OPTIONS = retentionOptions([30, 90, 180, 365, 730, 0]);
-const AGGREGATE_RETENTION_OPTIONS = retentionOptions([90, 365, 730, 1825, 0]);
-const EXPORT_RANGE_OPTIONS = retentionOptions([30, 90, 180, 365, 0]);
+  track_conversations: true,
+  track_response_time: true,
+  track_leads: true,
+  track_won_leads: true,
+  track_lost_leads: true,
+  track_agent_performance: true,
+};
 
 function formErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
@@ -169,107 +128,13 @@ function formErrorMessage(error: unknown): string {
 }
 
 function normalizeSettings(raw: unknown): AnalyticsSettings {
-  const base = {
-    analytics_enabled: true,
-    timezone: "Asia/Colombo",
-    default_period: "last_30_days",
-    week_starts_on_monday: true,
-    currency: "LKR",
-    date_format: "DD/MM/YYYY",
-
-    track_sent_messages: true,
-    track_received_messages: true,
-    track_delivered_messages: true,
-    track_read_messages: true,
-    track_failed_messages: true,
-    track_deleted_messages: true,
-    track_response_time: true,
-    track_first_response_time: true,
-    track_message_volume: true,
-    track_messages_by_agent: true,
-    track_messages_by_account: true,
-    track_messages_by_template: true,
-    include_automated_messages: true,
-    include_system_events: false,
-
-    track_conversations: true,
-    track_conversation_status_counts: true,
-    track_conversation_duration: true,
-    track_resolution_time: true,
-    track_assignment_time: true,
-    track_sla_breaches: true,
-
-    track_contacts: true,
-    track_contact_source: true,
-    track_contact_tags: true,
-    track_contact_activity: true,
-    track_contact_assignment: true,
-    track_leads: true,
-    track_lead_source: true,
-    track_lead_stage_changes: true,
-    track_lead_status_changes: true,
-    track_lead_assignment: true,
-    track_won_leads: true,
-    track_lost_leads: true,
-    track_lead_conversion: true,
-
-    track_agent_performance: true,
-    track_agent_assigned_conversations: true,
-    track_agent_conversations_handled: true,
-    track_agent_conversations_resolved: true,
-    track_agent_first_response_time: true,
-    track_agent_avg_response_time: true,
-    track_agent_resolution_time: true,
-    track_agent_messages_sent: true,
-    track_agent_messages_received: true,
-    track_agent_reopened_conversations: true,
-    track_agent_sla_performance: true,
-    track_agent_active_conversations: true,
-    agent_leaderboard_enabled: false,
-    agent_visibility: "managers_plus_self",
-
-    track_account_analytics: true,
-    track_account_messages: true,
-    track_account_conversations: true,
-    track_account_contacts: true,
-    track_account_leads: true,
-    track_account_delivery_rate: true,
-    track_account_read_rate: true,
-    track_account_failed_messages: true,
-    track_account_response_time: true,
-    track_account_templates: true,
-    track_account_message_volume: true,
-    aggregate_accounts: true,
-
-    track_template_analytics: true,
-    track_template_usage: true,
-    track_template_sent_count: true,
-    track_template_delivered_count: true,
-    track_template_read_count: true,
-    track_template_failed_count: true,
-    track_template_reply_count: true,
-    track_template_by_account: true,
-    track_template_by_agent: true,
-
-    conversation_start_rule: "either_direction",
-    conversation_resolution_rule: "either",
-    bot_reply_counts_as_response: false,
-    include_imported_messages: false,
-    deleted_messages_rule: "keep",
-    count_internal_notes: false,
-
-    raw_event_retention_days: 90,
-    aggregate_retention_days: 365,
-
-    allow_csv_export: true,
-    allow_excel_export: true,
-    allow_pdf_export: true,
-    allow_personal_data_export: false,
-    max_export_range_days: 365,
-  } as AnalyticsSettings;
-
-  if (!raw || typeof raw !== "object") return base;
-  return { ...base, ...(raw as Partial<AnalyticsSettings>) };
+  if (!raw || typeof raw !== "object") return LIVE_DEFAULTS;
+  const picked: Partial<AnalyticsSettings> = {};
+  for (const key of Object.keys(LIVE_DEFAULTS) as Array<keyof AnalyticsSettings>) {
+    const value = (raw as Record<string, unknown>)[key];
+    if (value !== undefined && value !== null) (picked as Record<string, unknown>)[key] = value;
+  }
+  return { ...LIVE_DEFAULTS, ...picked };
 }
 
 /** Toggle row bound to a boolean settings key. */
@@ -310,7 +175,7 @@ function AnalyticsSettingsContent() {
   const resetMutation = useResetAnalyticsSettings();
 
   const [activeTab, setActiveTab] = useState<TabKey>("general");
-  const [draft, setDraft] = useState<AnalyticsSettings>(normalizeSettings(null));
+  const [draft, setDraft] = useState<AnalyticsSettings>(LIVE_DEFAULTS);
   const [syncedJson, setSyncedJson] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -411,8 +276,7 @@ function AnalyticsSettingsContent() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-text">Analytics Settings</h1>
             <p className="mt-1 max-w-2xl text-sm text-muted">
-              Configure analytics tracking, reporting rules, agent performance metrics, data
-              retention, exports, and access permissions.
+              Configuration for the Reports dashboard and the Dashboard analytics widgets.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -438,35 +302,14 @@ function AnalyticsSettingsContent() {
           {activeTab === "general" && (
             <GeneralSection draft={draft} onChange={patch} />
           )}
-          {activeTab === "messages" && (
-            <MessagesSection draft={draft} onChange={patch} />
+          {activeTab === "dashboard" && (
+            <DashboardSection draft={draft} onChange={patch} />
           )}
-          {activeTab === "conversations" && (
-            <ConversationsSection draft={draft} onChange={patch} />
-          )}
-          {activeTab === "contacts" && (
-            <ContactsSection draft={draft} onChange={patch} />
-          )}
-          {activeTab === "agents" && (
-            <AgentsSection draft={draft} onChange={patch} />
-          )}
-          {activeTab === "accounts" && (
-            <AccountsSection draft={draft} onChange={patch} />
-          )}
-          {activeTab === "templates" && (
-            <TemplatesSection draft={draft} onChange={patch} />
-          )}
-          {activeTab === "rules" && (
-            <RulesSection draft={draft} onChange={patch} />
-          )}
-          {activeTab === "retention" && (
-            <RetentionSection draft={draft} onChange={patch} />
+          {activeTab === "exports" && (
+            <ExportsSection />
           )}
           {activeTab === "permissions" && (
-            <PermissionsSection draft={draft} onChange={patch} />
-          )}
-          {activeTab === "export" && (
-            <ExportSection draft={draft} onChange={patch} />
+            <PermissionsSection />
           )}
 
           <SettingsSaveBar
@@ -533,24 +376,24 @@ function GeneralSection({ draft, onChange }: SectionProps) {
         <div className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm text-text">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span>
-            Analytics is disabled. New analytics aggregation stops now; existing historical data
-            remains available unless removed by retention rules.
+            Analytics is disabled. The Reports dashboard shows an &quot;unavailable&quot; state and the
+            Dashboard analytics widgets stop returning new data. Existing history is not deleted.
           </span>
         </div>
       )}
       <SettingsCard
         title="General Analytics"
-        description="Workspace-wide analytics behavior and display defaults."
+        description="Values the Reports module and Dashboard analytics use for grouping, currency and display. Changes apply after saving."
       >
         <ToggleRow
           label="Enable analytics"
-          description="Collect and process analytics data for this workspace."
+          description="Workspace-wide switch for the Reports dashboard and Dashboard analytics widgets. When off, reports show an unavailable state."
           value={draft.analytics_enabled}
           onChange={(v) => onChange({ analytics_enabled: v })}
         />
         <SettingRow
           label="Workspace timezone"
-          description="All analytics grouping and date calculations use this timezone."
+          description="All period grouping and daily series dates use this timezone."
           control={
             <Select
               className="w-full sm:w-56"
@@ -563,7 +406,7 @@ function GeneralSection({ draft, onChange }: SectionProps) {
         />
         <SettingRow
           label="Default analytics period"
-          description="Initial date range used across analytics views."
+          description="Initial date range used for the Reports dashboard."
           control={
             <Select
               className="w-full sm:w-44"
@@ -576,6 +419,7 @@ function GeneralSection({ draft, onChange }: SectionProps) {
         />
         <SettingRow
           label="Week starts on"
+          description="Controls weekly revenue grouping."
           control={
             <Select
               className="w-full sm:w-44"
@@ -591,7 +435,7 @@ function GeneralSection({ draft, onChange }: SectionProps) {
         />
         <SettingRow
           label="Currency"
-          description="Used for future revenue and conversion analytics."
+          description="Shown on revenue and deal value figures in reports and exports."
           control={
             <Select
               className="w-full sm:w-32"
@@ -615,322 +459,230 @@ function GeneralSection({ draft, onChange }: SectionProps) {
           }
         />
       </SettingsCard>
+      <ReportPreferencesCard />
     </div>
   );
 }
 
-function MessagesSection({ draft, onChange }: SectionProps) {
+const REPORT_PREFERENCE_ROWS: Array<{
+  key: keyof ReportPreferences;
+  title: string;
+  description: string;
+}> = [
+  {
+    key: "include_weekends",
+    title: "Include weekends",
+    description: "Show Saturday & Sunday in the daily breakdown and exports.",
+  },
+  {
+    key: "allow_custom_periods",
+    title: "Custom periods",
+    description: "Allow choosing an exact from/to range instead of the presets.",
+  },
+  {
+    key: "compare_previous",
+    title: "Compare with previous period",
+    description: "Default the period-over-period change badges on.",
+  },
+];
+
+function ReportPreferencesCard() {
+  const { toast } = useToast();
+  const canManageSettings = usePermission("reports.manage_settings");
+  const settingsQuery = useReportSettings();
+  const updatePreferences = useUpdateReportPreferences();
+  const resetPreferences = useResetReportPreferences();
+  const [overrides, setOverrides] = useState<Partial<ReportPreferences>>({});
+
+  const saved = settingsQuery.data?.preferences;
+  const draft: ReportPreferences = {
+    include_weekends: true,
+    allow_custom_periods: true,
+    compare_previous: true,
+    ...saved,
+    ...overrides,
+  };
+
+  const dirty =
+    saved != null && REPORT_PREFERENCE_ROWS.some((row) => draft[row.key] !== saved[row.key]);
+  const saving = updatePreferences.isPending || resetPreferences.isPending;
+
+  const handleSave = async () => {
+    if (!saved || !canManageSettings) return;
+    const changes: Partial<ReportPreferences> = {};
+    for (const key of Object.keys(draft) as Array<keyof ReportPreferences>) {
+      if (draft[key] !== saved[key]) changes[key] = draft[key];
+    }
+    try {
+      await updatePreferences.mutateAsync(changes);
+      setOverrides({});
+      toast("Report preferences saved.", "success");
+    } catch {
+      toast("Couldn't save report preferences.", "error");
+    }
+  };
+
+  const handleReset = async () => {
+    if (!canManageSettings) return;
+    try {
+      await resetPreferences.mutateAsync();
+      setOverrides({});
+      toast("Report preferences reset to defaults.", "success");
+    } catch {
+      toast("Couldn't reset report preferences.", "error");
+    }
+  };
+
+  if (settingsQuery.isLoading) {
+    return <SettingsCard title="Report display preferences" description="Display options for the Reports page."><SettingsSkeleton rows={3} /></SettingsCard>;
+  }
+
   return (
     <SettingsCard
-      title="Message Analytics"
-      description="Choose which WhatsApp messaging events should be included in analytics."
+      title="Report display preferences"
+      description="Display options for the Reports page. Preferences save immediately."
     >
-      <ToggleRow label="Track sent messages" value={draft.track_sent_messages} onChange={(v) => onChange({ track_sent_messages: v })} />
-      <ToggleRow label="Track received messages" value={draft.track_received_messages} onChange={(v) => onChange({ track_received_messages: v })} />
-      <ToggleRow label="Track delivered messages" value={draft.track_delivered_messages} onChange={(v) => onChange({ track_delivered_messages: v })} />
-      <ToggleRow label="Track read messages" value={draft.track_read_messages} onChange={(v) => onChange({ track_read_messages: v })} />
-      <ToggleRow label="Track failed messages" value={draft.track_failed_messages} onChange={(v) => onChange({ track_failed_messages: v })} />
-      <ToggleRow label="Track deleted messages" value={draft.track_deleted_messages} onChange={(v) => onChange({ track_deleted_messages: v })} />
-      <ToggleRow label="Track response time" value={draft.track_response_time} onChange={(v) => onChange({ track_response_time: v })} />
-      <ToggleRow label="Track first response time" value={draft.track_first_response_time} onChange={(v) => onChange({ track_first_response_time: v })} />
-      <ToggleRow label="Track message volume" value={draft.track_message_volume} onChange={(v) => onChange({ track_message_volume: v })} />
-      <ToggleRow label="Track messages by agent" value={draft.track_messages_by_agent} onChange={(v) => onChange({ track_messages_by_agent: v })} />
-      <ToggleRow label="Track messages by WhatsApp account" value={draft.track_messages_by_account} onChange={(v) => onChange({ track_messages_by_account: v })} />
-      <ToggleRow label="Track messages by template" value={draft.track_messages_by_template} onChange={(v) => onChange({ track_messages_by_template: v })} />
-      <ToggleRow
-        label="Include automated messages"
-        description="When off, bot/system/automation messages do not count toward normal agent message statistics."
-        value={draft.include_automated_messages}
-        onChange={(v) => onChange({ include_automated_messages: v })}
-      />
-      <ToggleRow
-        label="Include internal/system events"
-        value={draft.include_system_events}
-        onChange={(v) => onChange({ include_system_events: v })}
-      />
+      {!canManageSettings && (
+        <div className="mx-3 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 p-3 text-xs text-text">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+          Changing report preferences requires the <code className="rounded bg-bg px-1 font-medium">reports.manage_settings</code> permission.
+        </div>
+      )}
+      {REPORT_PREFERENCE_ROWS.map((row) => (
+        <ToggleRow
+          key={row.key}
+          label={row.title}
+          description={row.description}
+          value={draft[row.key]}
+          disabled={!canManageSettings || saving}
+          onChange={(next) => setOverrides((current) => ({ ...current, [row.key]: next }))}
+        />
+      ))}
+      <div className="flex gap-2 px-3 pb-3">
+        <Button
+          type="button"
+          size="sm"
+          disabled={!dirty || saving || !canManageSettings}
+          onClick={() => void handleSave()}
+        >
+          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {saving ? "Saving…" : "Save preferences"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={saving || !canManageSettings}
+          onClick={() => void handleReset()}
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          Reset to defaults
+        </Button>
+      </div>
     </SettingsCard>
   );
 }
 
-function ConversationsSection({ draft, onChange }: SectionProps) {
-  const statusCounts = draft.track_conversation_status_counts;
+function DashboardSection({ draft, onChange }: SectionProps) {
   return (
-    <SettingsCard title="Conversation Analytics" description="Which conversation lifecycle events are tracked.">
+    <SettingsCard
+      title="Dashboard Analytics"
+      description="Per-topic availability for the Dashboard analytics widgets. Turning a topic off makes its widget report that data is unavailable; nothing is fabricated when tracking is off."
+    >
       <ToggleRow
         label="Track conversations"
-        description="Master switch for conversation analytics; when off, no conversation metrics are calculated."
+        description="Conversation volume widget (messages and conversation counts over time)."
         value={draft.track_conversations}
         onChange={(v) => onChange({ track_conversations: v })}
       />
-      {draft.track_conversations && (
-        <>
-          <ToggleRow
-            label="Track status counts"
-            description="New, open, pending, resolved, closed and reopened conversation totals."
-            value={statusCounts}
-            onChange={(v) => onChange({ track_conversation_status_counts: v })}
-          />
-          <ToggleRow label="Track conversation duration" value={draft.track_conversation_duration} onChange={(v) => onChange({ track_conversation_duration: v })} />
-          <ToggleRow label="Track resolution time" value={draft.track_resolution_time} onChange={(v) => onChange({ track_resolution_time: v })} />
-          <ToggleRow label="Track assignment time" value={draft.track_assignment_time} onChange={(v) => onChange({ track_assignment_time: v })} />
-          <ToggleRow label="Track SLA breaches" value={draft.track_sla_breaches} onChange={(v) => onChange({ track_sla_breaches: v })} />
-          <p className="px-3 pb-1 text-xs text-muted">
-            Unassigned-conversation totals are derived from assignment snapshots while status counts
-            are tracked; they are never fabricated when tracking is off.
-          </p>
-        </>
-      )}
-    </SettingsCard>
-  );
-}
-
-function ContactsSection({ draft, onChange }: SectionProps) {
-  return (
-    <div className="space-y-6">
-      <SettingsCard title="Contact Tracking" description="Which contact events are included in analytics.">
-        <ToggleRow label="Track new contacts" value={draft.track_contacts} onChange={(v) => onChange({ track_contacts: v })} />
-        <ToggleRow label="Track contact source" value={draft.track_contact_source} onChange={(v) => onChange({ track_contact_source: v })} />
-        <ToggleRow label="Track contact tags" value={draft.track_contact_tags} onChange={(v) => onChange({ track_contact_tags: v })} />
-        <ToggleRow label="Track contact activity" value={draft.track_contact_activity} onChange={(v) => onChange({ track_contact_activity: v })} />
-        <ToggleRow label="Track contact assignment" value={draft.track_contact_assignment} onChange={(v) => onChange({ track_contact_assignment: v })} />
-      </SettingsCard>
-      <SettingsCard title="Lead Tracking" description="Which lead and pipeline events are included in analytics.">
-        <ToggleRow label="Track new leads" value={draft.track_leads} onChange={(v) => onChange({ track_leads: v })} />
-        <ToggleRow label="Track lead source" value={draft.track_lead_source} onChange={(v) => onChange({ track_lead_source: v })} />
-        <ToggleRow label="Track pipeline stage changes" value={draft.track_lead_stage_changes} onChange={(v) => onChange({ track_lead_stage_changes: v })} />
-        <ToggleRow label="Track lead status changes" value={draft.track_lead_status_changes} onChange={(v) => onChange({ track_lead_status_changes: v })} />
-        <ToggleRow label="Track assigned agent" value={draft.track_lead_assignment} onChange={(v) => onChange({ track_lead_assignment: v })} />
-        <ToggleRow label="Track won leads" value={draft.track_won_leads} onChange={(v) => onChange({ track_won_leads: v })} />
-        <ToggleRow label="Track lost leads" value={draft.track_lost_leads} onChange={(v) => onChange({ track_lost_leads: v })} />
-        <ToggleRow label="Track lead conversion" value={draft.track_lead_conversion} onChange={(v) => onChange({ track_lead_conversion: v })} />
-      </SettingsCard>
-    </div>
-  );
-}
-
-function AgentsSection({ draft, onChange }: SectionProps) {
-  return (
-    <SettingsCard title="Agent Performance" description="Agent-level productivity and SLA metrics.">
       <ToggleRow
-        label="Enable agent performance analytics"
+        label="Track response time"
+        description="Response time trend widget (inbound message to first agent reply)."
+        value={draft.track_response_time}
+        onChange={(v) => onChange({ track_response_time: v })}
+      />
+      <ToggleRow
+        label="Track leads"
+        description="Lead tracking for the won-vs-lost widget. That widget also needs the two switches below."
+        value={draft.track_leads}
+        onChange={(v) => onChange({ track_leads: v })}
+      />
+      <ToggleRow
+        label="Track won leads"
+        description="Count leads converted to deals in the won-vs-lost widget."
+        value={draft.track_won_leads}
+        onChange={(v) => onChange({ track_won_leads: v })}
+      />
+      <ToggleRow
+        label="Track lost leads"
+        description="Count lost leads in the won-vs-lost widget."
+        value={draft.track_lost_leads}
+        onChange={(v) => onChange({ track_lost_leads: v })}
+      />
+      <ToggleRow
+        label="Track agent performance"
+        description="Agent performance widget (per-agent activity and response metrics)."
         value={draft.track_agent_performance}
         onChange={(v) => onChange({ track_agent_performance: v })}
       />
-      {draft.track_agent_performance && (
-        <>
-          <ToggleRow label="Assigned conversations" value={draft.track_agent_assigned_conversations} onChange={(v) => onChange({ track_agent_assigned_conversations: v })} />
-          <ToggleRow label="Conversations handled" value={draft.track_agent_conversations_handled} onChange={(v) => onChange({ track_agent_conversations_handled: v })} />
-          <ToggleRow label="Conversations resolved" value={draft.track_agent_conversations_resolved} onChange={(v) => onChange({ track_agent_conversations_resolved: v })} />
-          <ToggleRow label="First response time" value={draft.track_agent_first_response_time} onChange={(v) => onChange({ track_agent_first_response_time: v })} />
-          <ToggleRow label="Average response time" value={draft.track_agent_avg_response_time} onChange={(v) => onChange({ track_agent_avg_response_time: v })} />
-          <ToggleRow label="Average resolution time" value={draft.track_agent_resolution_time} onChange={(v) => onChange({ track_agent_resolution_time: v })} />
-          <ToggleRow label="Messages sent" value={draft.track_agent_messages_sent} onChange={(v) => onChange({ track_agent_messages_sent: v })} />
-          <ToggleRow label="Messages received" value={draft.track_agent_messages_received} onChange={(v) => onChange({ track_agent_messages_received: v })} />
-          <ToggleRow label="Reopened conversations" value={draft.track_agent_reopened_conversations} onChange={(v) => onChange({ track_agent_reopened_conversations: v })} />
-          <ToggleRow label="SLA performance" value={draft.track_agent_sla_performance} onChange={(v) => onChange({ track_agent_sla_performance: v })} />
-          <ToggleRow label="Active conversation count" value={draft.track_agent_active_conversations} onChange={(v) => onChange({ track_agent_active_conversations: v })} />
-          <ToggleRow
-            label="Enable agent leaderboard"
-            description="When enabled, authorized users can compare performance between agents."
-            value={draft.agent_leaderboard_enabled}
-            onChange={(v) => onChange({ agent_leaderboard_enabled: v })}
-          />
-          <SettingRow
-            label="Performance visibility"
-            description="An agent never sees another agent's private performance data unless their role explicitly has permission."
-            control={
-              <Select
-                className="w-full sm:w-64"
-                aria-label="Performance visibility"
-                value={draft.agent_visibility}
-                options={AGENT_VISIBILITY_OPTIONS}
-                onChange={(e) => onChange({ agent_visibility: e.target.value as AgentVisibility })}
-              />
-            }
-          />
-        </>
-      )}
-    </SettingsCard>
-  );
-}
-
-function AccountsSection({ draft, onChange }: SectionProps) {
-  return (
-    <div className="space-y-6">
-      <SettingsCard
-        title="WhatsApp Account Analytics"
-        description="Only real data from actual WhatsApp sessions and message events is used. Accounts without real event data report zero/no data honestly."
-      >
-        <ToggleRow
-          label="Track analytics by WhatsApp account"
-          value={draft.track_account_analytics}
-          onChange={(v) => onChange({ track_account_analytics: v })}
-        />
-        {draft.track_account_analytics && (
-          <>
-            <ToggleRow label="Messages" value={draft.track_account_messages} onChange={(v) => onChange({ track_account_messages: v })} />
-            <ToggleRow label="Conversations" value={draft.track_account_conversations} onChange={(v) => onChange({ track_account_conversations: v })} />
-            <ToggleRow label="Contacts" value={draft.track_account_contacts} onChange={(v) => onChange({ track_account_contacts: v })} />
-            <ToggleRow label="Leads" value={draft.track_account_leads} onChange={(v) => onChange({ track_account_leads: v })} />
-            <ToggleRow label="Delivery rate" value={draft.track_account_delivery_rate} onChange={(v) => onChange({ track_account_delivery_rate: v })} />
-            <ToggleRow label="Read rate" value={draft.track_account_read_rate} onChange={(v) => onChange({ track_account_read_rate: v })} />
-            <ToggleRow label="Failed messages" value={draft.track_account_failed_messages} onChange={(v) => onChange({ track_account_failed_messages: v })} />
-            <ToggleRow label="Response time" value={draft.track_account_response_time} onChange={(v) => onChange({ track_account_response_time: v })} />
-            <ToggleRow label="Templates" value={draft.track_account_templates} onChange={(v) => onChange({ track_account_templates: v })} />
-            <ToggleRow label="Message volume" value={draft.track_account_message_volume} onChange={(v) => onChange({ track_account_message_volume: v })} />
-            <ToggleRow
-              label="Aggregate all accounts in workspace"
-              description="When off, analytics require account-level filtering."
-              value={draft.aggregate_accounts}
-              onChange={(v) => onChange({ aggregate_accounts: v })}
-            />
-          </>
-        )}
-      </SettingsCard>
-    </div>
-  );
-}
-
-function TemplatesSection({ draft, onChange }: SectionProps) {
-  return (
-    <SettingsCard
-      title="Message Template Analytics"
-      description="Template usage and performance, filterable by template, account, agent and date range."
-    >
-      <ToggleRow label="Track template analytics" value={draft.track_template_analytics} onChange={(v) => onChange({ track_template_analytics: v })} />
-      {draft.track_template_analytics && (
-        <>
-          <ToggleRow label="Track template usage" value={draft.track_template_usage} onChange={(v) => onChange({ track_template_usage: v })} />
-          <ToggleRow label="Track sent count" value={draft.track_template_sent_count} onChange={(v) => onChange({ track_template_sent_count: v })} />
-          <ToggleRow label="Track delivered count" value={draft.track_template_delivered_count} onChange={(v) => onChange({ track_template_delivered_count: v })} />
-          <ToggleRow label="Track read count" value={draft.track_template_read_count} onChange={(v) => onChange({ track_template_read_count: v })} />
-          <ToggleRow label="Track failed count" value={draft.track_template_failed_count} onChange={(v) => onChange({ track_template_failed_count: v })} />
-          <ToggleRow label="Track reply count" value={draft.track_template_reply_count} onChange={(v) => onChange({ track_template_reply_count: v })} />
-          <ToggleRow label="Track performance by account" value={draft.track_template_by_account} onChange={(v) => onChange({ track_template_by_account: v })} />
-          <ToggleRow label="Track performance by agent" value={draft.track_template_by_agent} onChange={(v) => onChange({ track_template_by_agent: v })} />
-        </>
-      )}
-    </SettingsCard>
-  );
-}
-
-function RulesSection({ draft, onChange }: SectionProps) {
-  return (
-    <SettingsCard
-      title="Tracking Rules"
-      description="Defines exactly how metrics are calculated from real message and conversation events."
-    >
-      <SettingRow
-        label="Conversation start rule"
-        description="Which message opens a conversation for analytics purposes."
-        control={
-          <Select
-            className="w-full sm:w-72"
-            aria-label="Conversation start rule"
-            value={draft.conversation_start_rule}
-            options={START_RULE_OPTIONS}
-            onChange={(e) => onChange({ conversation_start_rule: e.target.value as ConversationStartRule })}
-          />
-        }
-      />
-      <SettingRow
-        label="Conversation resolution rule"
-        control={
-          <Select
-            className="w-full sm:w-72"
-            aria-label="Conversation resolution rule"
-            value={draft.conversation_resolution_rule}
-            options={RESOLUTION_RULE_OPTIONS}
-            onChange={(e) => onChange({ conversation_resolution_rule: e.target.value as ConversationResolutionRule })}
-          />
-        }
-      />
-      <ToggleRow
-        label="Bot responses count as responses"
-        description="Response time = time between an inbound customer message and the next valid agent response. Choose whether automated/bot replies count."
-        value={draft.bot_reply_counts_as_response}
-        onChange={(v) => onChange({ bot_reply_counts_as_response: v })}
-      />
-      <SettingRow
-        label="Deleted messages"
-        control={
-          <Select
-            className="w-full sm:w-64"
-            aria-label="Deleted messages rule"
-            value={draft.deleted_messages_rule}
-            options={DELETED_MESSAGES_OPTIONS}
-            onChange={(e) => onChange({ deleted_messages_rule: e.target.value as DeletedMessagesRule })}
-          />
-        }
-      />
-      <ToggleRow
-        label="Include imported messages in analytics"
-        value={draft.include_imported_messages}
-        onChange={(v) => onChange({ include_imported_messages: v })}
-      />
-      <ToggleRow
-        label="Count internal notes as agent activity"
-        description="Internal notes never count as WhatsApp sent messages."
-        value={draft.count_internal_notes}
-        onChange={(v) => onChange({ count_internal_notes: v })}
-      />
-    </SettingsCard>
-  );
-}
-
-function RetentionSection({ draft, onChange }: SectionProps) {
-  return (
-    <SettingsCard
-      title="Analytics Data Retention"
-      description="Control how long analytics-related information is stored. Raw event data may expire earlier than aggregated metrics. Changes apply only after saving, through the backend retention process."
-    >
-      <SettingRow
-        label="Raw event retention"
-        description="How long raw event data is kept."
-        control={
-          <Select
-            className="w-full sm:w-44"
-            aria-label="Raw event retention"
-            value={String(draft.raw_event_retention_days)}
-            options={RAW_RETENTION_OPTIONS}
-            onChange={(e) => onChange({ raw_event_retention_days: Number(e.target.value) as RawEventRetentionDays })}
-          />
-        }
-      />
-      <SettingRow
-        label="Aggregated analytics retention"
-        description="How long daily/monthly aggregated metrics are kept."
-        control={
-          <Select
-            className="w-full sm:w-44"
-            aria-label="Aggregated analytics retention"
-            value={String(draft.aggregate_retention_days)}
-            options={AGGREGATE_RETENTION_OPTIONS}
-            onChange={(e) => onChange({ aggregate_retention_days: Number(e.target.value) as AggregateRetentionDays })}
-          />
-        }
-      />
-      <p className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 p-3 text-xs text-text">
-        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-        Reducing a retention period may permanently delete analytics data older than the selected
-        period once saved. This action may not be reversible.
+      <p className="px-3 pb-1 text-xs text-muted">
+        The task completion widget follows the master Enable analytics switch only.
       </p>
     </SettingsCard>
   );
 }
 
-const ANALYTICS_PERMISSIONS = [
-  { key: "analytics.view", description: "View workspace analytics dashboards and reports." },
-  { key: "analytics.view_workspace", description: "View all analytics for the workspace." },
-  { key: "analytics.view_agents", description: "View agent performance analytics for others." },
-  { key: "analytics.view_accounts", description: "View per-account analytics." },
-  { key: "analytics.view_contacts", description: "View contact analytics." },
-  { key: "analytics.view_leads", description: "View lead analytics." },
-  { key: "analytics.export", description: "Export analytics data." },
-  { key: "analytics.manage_settings", description: "Change analytics settings (workspace admins)." },
-] as const;
+const EXPORT_FORMATS = [
+  { label: "Daily metrics · CSV", description: "Per-day conversations, leads, conversions, response time and deal value." },
+  { label: "Agent summary · CSV", description: "Agent leaderboard snapshot (conversations, tasks, deals won, value)." },
+  { label: "Full report · PDF", description: "Key metrics, daily breakdown, lead distribution and top agents." },
+];
 
-function PermissionsSection({ draft }: SectionProps) {
+function ExportsSection() {
+  return (
+    <div className="space-y-6">
+      <SettingsCard title="Report exports" description="Exports run on the job queue and are delivered to the Reports page and your notifications.">
+        <div className="divide-y divide-border/60">
+          {EXPORT_FORMATS.map((format) => (
+            <div key={format.label} className="flex items-start gap-3 px-3 py-3">
+              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+              <div>
+                <p className="text-sm font-medium text-text">{format.label}</p>
+                <p className="text-xs text-muted">{format.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="px-3 pb-1 text-xs text-muted">
+          Excel export is not currently available. Make sure your queue worker is running to produce
+          exports.
+        </p>
+      </SettingsCard>
+      <SettingsCard title="Where to go next" description="Open the Reports dashboard to use these settings.">
+        <Link
+          href="/reports"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
+        >
+          Open Reports dashboard
+        </Link>
+      </SettingsCard>
+    </div>
+  );
+}
+
+const REPORT_PERMISSIONS = [
+  { key: "reports.view", description: "View the Reports dashboard and overview." },
+  { key: "reports.view_all_agents", description: "See every agent's numbers in reports; without it, users only see their own slice." },
+  { key: "reports.manage_settings", description: "Change report preferences (include weekends, custom periods, compare previous)." },
+  { key: "reports.export", description: "Queue and download report exports (CSV/PDF)." },
+];
+
+const ANALYTICS_PERMISSIONS = [
+  { key: "analytics.view", description: "View the Dashboard analytics widgets." },
+  { key: "analytics.export", description: "Request legacy on-demand analytics exports." },
+];
+
+function PermissionsSection() {
   return (
     <div className="space-y-6">
       <SettingsCard
@@ -943,25 +695,22 @@ function PermissionsSection({ draft }: SectionProps) {
           control={<span className="text-xs font-medium text-muted">workspace.settings.manage</span>}
         />
         <SettingRow
-          label="Agent visibility"
-          description="Who can see agent performance data."
-          control={
-            <Select
-              className="w-full sm:w-64"
-              aria-label="Performance visibility"
-              value={draft.agent_visibility}
-              options={AGENT_VISIBILITY_OPTIONS}
-              disabled
-            />
-          }
+          label="Agent data visibility"
+          description="# of agents shown in reports and leaderboards is scoped server-side by reports.view_all_agents."
+          control={<span className="text-xs font-medium text-muted">reports.view_all_agents</span>}
         />
-        <p className="px-3 pb-1 text-xs text-muted">
-          Agent visibility is configured on the Agents tab. Super Admins always have full access;
-          workspace admins get workspace analytics and settings; managers get viewing access based
-          on granted permissions; agents only get their own analytics if permission is granted.
-        </p>
       </SettingsCard>
-      <SettingsCard title="Permission catalog" description="Permission keys governing analytics access. Manage them in Roles.">
+      <SettingsCard title="Reports module permissions" description="Manage them in Roles & Permissions.">
+        <ul className="space-y-2">
+          {REPORT_PERMISSIONS.map((permission) => (
+            <li key={permission.key} className="flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2 hover:bg-bg/70">
+              <code className="rounded bg-bg px-1.5 py-0.5 text-xs text-text">{permission.key}</code>
+              <span className="text-xs text-muted">{permission.description}</span>
+            </li>
+          ))}
+        </ul>
+      </SettingsCard>
+      <SettingsCard title="Dashboard analytics permissions" description="Legacy dashboard analytics surface.">
         <ul className="space-y-2">
           {ANALYTICS_PERMISSIONS.map((permission) => (
             <li key={permission.key} className="flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2 hover:bg-bg/70">
@@ -970,46 +719,6 @@ function PermissionsSection({ draft }: SectionProps) {
             </li>
           ))}
         </ul>
-      </SettingsCard>
-    </div>
-  );
-}
-
-function ExportSection({ draft, onChange }: SectionProps) {
-  return (
-    <div className="space-y-6">
-      <SettingsCard title="Export & Reports" description="Which export formats users with analytics.export can use.">
-        <ToggleRow label="Allow CSV export" value={draft.allow_csv_export} onChange={(v) => onChange({ allow_csv_export: v })} />
-        <ToggleRow label="Allow Excel export" value={draft.allow_excel_export} onChange={(v) => onChange({ allow_excel_export: v })} />
-        <ToggleRow label="Allow PDF export" value={draft.allow_pdf_export} onChange={(v) => onChange({ allow_pdf_export: v })} />
-        <ToggleRow
-          label="Export contact personal information"
-          description="When off, sensitive contact fields are masked or excluded in exports."
-          value={draft.allow_personal_data_export}
-          onChange={(v) => onChange({ allow_personal_data_export: v })}
-        />
-        <SettingRow
-          label="Maximum export date range"
-          control={
-            <Select
-              className="w-full sm:w-44"
-              aria-label="Maximum export date range"
-              value={String(draft.max_export_range_days)}
-              options={EXPORT_RANGE_OPTIONS}
-              onChange={(e) => onChange({ max_export_range_days: Number(e.target.value) as MaxExportRangeDays })}
-            />
-          }
-        />
-      </SettingsCard>
-      <SettingsCard title="Scheduled Reports" description="Automatically delivered recurring report emails.">
-        <div className="flex flex-wrap gap-2">
-          {["Daily", "Weekly", "Monthly"].map((label) => (
-            <span key={label} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-bg px-3 py-1 text-xs text-muted">
-              {label}
-              <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">Coming Soon</span>
-            </span>
-          ))}
-        </div>
       </SettingsCard>
     </div>
   );

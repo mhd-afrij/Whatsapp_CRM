@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Building2, CalendarDays, ContactRound, FileBarChart, Inbox, LayoutDashboard, MessageSquareText, Phone, Settings, SlidersHorizontal, UserRound, Users } from "lucide-react";
+import { Activity, BarChart3, Building2, CalendarDays, Calculator, ContactRound, FileBarChart, Inbox, LayoutDashboard, MessageSquareText, Phone, PieChart, Settings, SlidersHorizontal, UserRound, Users } from "lucide-react";
 
 export interface NavigationItem {
   href: string;
@@ -9,7 +9,7 @@ export interface NavigationItem {
 }
 
 export interface NavigationSection {
-  id: "main" | "channels" | "administration";
+  id: "main" | "reports" | "channels" | "administration";
   label: string;
   items: NavigationItem[];
 }
@@ -24,7 +24,17 @@ export const NAVIGATION_SECTIONS: NavigationSection[] = [
       { href: "/contacts", label: "Contacts", icon: ContactRound, permission: "contacts.view" },
       { href: "/leads", label: "Leads", icon: Users, permission: "leads.manage" },
       { href: "/calendar", label: "Calendar", icon: CalendarDays, permission: "tasks.manage" },
-      { href: "/reports", label: "Reports", icon: FileBarChart, permission: "reports.view" },
+    ],
+  },
+  {
+    id: "reports",
+    label: "Reports",
+    items: [
+      { href: "/reports", label: "Overview", icon: FileBarChart, permission: "reports.view" },
+      { href: "/reports#kpis", label: "Analytics", icon: Activity, permission: "reports.view" },
+      { href: "/reports#revenue", label: "Revenue", icon: BarChart3, permission: "reports.view" },
+      { href: "/reports#outcomes", label: "Outcomes", icon: PieChart, permission: "reports.view" },
+      { href: "/reports#calculate", label: "Calculate", icon: Calculator, permission: "reports.view" },
     ],
   },
   {

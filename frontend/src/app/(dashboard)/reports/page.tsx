@@ -1,26 +1,36 @@
 "use client";
 
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  Activity,
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
+  CalendarRange,
   CheckCircle2,
   Clock3,
   Database,
+  Download,
   FileBarChart,
+  Info,
+  Loader2,
   Minus,
   RefreshCw,
+  Search,
   Settings2,
+  SlidersHorizontal,
   Timer,
   TrendingUp,
   Trophy,
   Users,
+  X,
 } from "lucide-react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -33,10 +43,10 @@ import {
   YAxis,
 } from "recharts";
 import { RequirePermission } from "@/components/auth/require-permission";
-import { ReportSettingsDrawer } from "@/components/reports/settings-drawer";
-import { ExportsSection } from "@/components/reports/exports-section";
+import { ExportsSection, EXPORT_BUTTONS } from "@/components/reports/exports-section";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { usePermission } from "@/hooks/use-permission";
-import { useReportOverview, useReportSettings } from "@/hooks/use-reports";
+import { useReportOverview, useReportSettings, useQueueReportExport } from "@/hooks/use-reports";
 import { useUsers } from "@/hooks/use-users";
 import { useWhatsappAccounts } from "@/hooks/use-whatsapp-accounts";
 import { cn } from "@/lib/utils";
@@ -48,7 +58,8 @@ import {
   todayIso,
   weekdayShort,
 } from "@/lib/report-format";
-import type { ReportMetric, ReportRange } from "@/lib/reports-api";
+import type { ReportExportType, ReportMetric, ReportRange } from "@/lib/reports-api";
+import { useToast } from "@/providers/toast-provider";
 
 // ── Design tokens ───────────────────────────────────────────────
 
@@ -56,7 +67,9 @@ const CHART = {
   won: "var(--chart-series-3)",
   lost: "var(--chart-series-5)",
   open: "var(--chart-series-4)",
-  primary: "var(--chart-series-1)",
+  conversations: "var(--chart-series-1)",
+  leads: "var(--chart-series-3)",
+  converted: "var(--chart-series-2)",
 };
 
 const tooltipStyle = {
@@ -70,12 +83,36 @@ const tooltipStyle = {
 
 const axisTick = { fontSize: 11, fill: "var(--color-muted)" };
 
-const PRESETS: Array<{ value: ReportRange; label: string; days?: number }> = [
-  { value: "7d", label: "7D", days: 7 },
-  { value: "30d", label: "30D", days: 30 },
-  { value: "90d", label: "90D", days: 90 },
-  { value: "custom", label: "Custom" },
+const RANGE_OPTIONS: Array<{ key: ReportRange | "today" | "yesterday" | "thisMonth" | "lastMonth" | "custom"; label: string }> = [
+  { key: "7d", label: "Last 7 days" },
+  { key: "30d", label: "Last 30 days" },
+  { key: "90d", label: "Last 90 days" },
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "thisMonth", label: "This month" },
+  { key: "lastMonth", label: "Last month" },
+  { key: "custom", label: "Custom…" },
 ];
+
+function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function resolvePresetDates(preset: "today" | "yesterday" | "thisMonth" | "lastMonth"): { from: string; to: string } {
+  const now = new Date();
+  if (preset === "today") {
+    const from = isoDate(now);
+    return { from, to: from };
+  }
+  if (preset === "yesterday") {
+    const from = isoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+    return { from, to: from };
+  }
+  const offset = preset === "thisMonth" ? 0 : -1;
+  const from = isoDate(new Date(now.getFullYear(), now.getMonth() + offset, 1));
+  const to = preset === "thisMonth" ? isoDate(now) : isoDate(new Date(now.getFullYear(), now.getMonth() + offset + 1, 0));
+  return { from, to };
+}
 
 export default function ReportsPage() {
   return (
@@ -101,6 +138,7 @@ function ReportCard({
   action,
   children,
   className,
+  id,
 }: {
   title: string;
   subtitle?: string;
@@ -113,9 +151,10 @@ function ReportCard({
   action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  id?: string;
 }) {
   return (
-    <section className={cn("flex flex-col rounded-2xl border border-border bg-surface shadow-xs", className)}>
+    <section id={id} className={cn("flex flex-col rounded-2xl border border-border bg-surface shadow-xs", className)}>
       <div className="flex items-start justify-between gap-3 border-b border-border/60 px-5 py-4">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -151,6 +190,28 @@ function ReportCard({
         )}
       </div>
     </section>
+  );
+}
+
+function InfoTip({ label }: { label: string }) {
+  return (
+    <span className="group relative inline-flex items-center">
+      <Info className="h-3.5 w-3.5 shrink-0 text-muted" />
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 w-max max-w-60 -translate-x-1/2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[11px] font-normal normal-case tracking-normal text-text shadow-lg opacity-0 transition group-hover:opacity-100">
+        {label}
+      </span>
+    </span>
+  );
+}
+
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
+      {label}
+      <button type="button" onClick={onClear} aria-label={`Clear ${label} filter`} className="text-primary hover:text-danger">
+        <X className="h-3 w-3" />
+      </button>
+    </span>
   );
 }
 
@@ -199,6 +260,7 @@ function KpiTile({
   label,
   value,
   hint,
+  tooltip,
   icon: Icon,
   tone,
   metric,
@@ -207,6 +269,7 @@ function KpiTile({
   label: string;
   value: string;
   hint?: string;
+  tooltip?: string;
   icon: React.ComponentType<{ className?: string }>;
   tone: KpiTone;
   metric?: ReportMetric;
@@ -221,7 +284,10 @@ function KpiTile({
         {metric && <DeltaBadge metric={metric} />}
       </div>
       <div className="mt-3">
-        <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</p>
+        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+          <span className="truncate">{label}</span>
+          {tooltip && <InfoTip label={tooltip} />}
+        </p>
         <p className="mt-0.5 text-[22px] font-bold leading-7 tracking-tight tabular-nums text-text">{value}</p>
         {hint && <p className="mt-0.5 truncate text-[11px] text-muted">{hint}</p>}
       </div>
@@ -262,13 +328,29 @@ function ReportsContent() {
     return Number.isNaN(parsed) || parsed < 1 ? 1 : parsed;
   });
   const [compare, setCompare] = useState<boolean>(() => searchParams.get("compare")?.toString() !== "0");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [rangeOpen, setRangeOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const canManageSettings = usePermission("reports.manage_settings");
   const canViewAllAgents = usePermission("reports.view_all_agents");
+  const canExport = usePermission("reports.export");
   const { data: users } = useUsers();
   const accountsQuery = useWhatsappAccounts();
   const { data: settings } = useReportSettings();
+  const queueExport = useQueueReportExport();
+  const exportsBusy = queueExport.isPending;
+  const [exportOpen, setExportOpen] = useState(false);
+  const { toast } = useToast();
+
+  const handleExport = async (type: ReportExportType) => {
+    try {
+      await queueExport.mutateAsync(type);
+      toast("Export queued — you'll be notified when it's ready.", "success");
+    } catch {
+      toast("Couldn't queue the export.", "error");
+    }
+    setExportOpen(false);
+  };
 
   const allowCustom = settings?.preferences.allow_custom_periods ?? true;
   const effectiveRange = range === "custom" && !allowCustom ? "30d" : range;
@@ -287,14 +369,24 @@ function ReportsContent() {
     [router, searchParams]
   );
 
-  const applyPreset = (nextRange: ReportRange) => {
-    setRange(nextRange);
+  const selectRange = (key: ReportRange | "today" | "yesterday" | "thisMonth" | "lastMonth" | "custom") => {
+    setRangeOpen(false);
     setPage(1);
-    if (nextRange !== "custom") {
-      syncUrl({ range: nextRange, page: undefined });
-    } else {
-      syncUrl({ range: "custom", from, to, page: undefined });
+    if (key === "7d" || key === "30d" || key === "90d") {
+      setRange(key);
+      syncUrl({ range: key, page: undefined, from: undefined, to: undefined });
+      return;
     }
+    if (key === "custom") {
+      setRange("custom");
+      syncUrl({ range: "custom", from, to, page: undefined });
+      return;
+    }
+    const next = resolvePresetDates(key);
+    setRange("custom");
+    setFrom(next.from);
+    setTo(next.to);
+    syncUrl({ range: "custom", from: next.from, to: next.to, page: undefined });
   };
 
   const applyCustomRange = (nextFrom: string, nextTo: string) => {
@@ -326,8 +418,7 @@ function ReportsContent() {
     syncUrl({ page: nextPage > 1 ? String(nextPage) : undefined });
   };
 
-  // OWN claims must not route a stale foreign-agent filter to the backend.
-const filters = useMemo(
+  const filters = useMemo(
     () => ({
       range: effectiveRange,
       ...(effectiveRange === "custom" ? { from, to } : {}),
@@ -342,16 +433,57 @@ const filters = useMemo(
   const overview = useReportOverview(filters);
   const data = overview.data;
 
+  useEffect(() => {
+    if (!data) return;
+    const id = window.location.hash.slice(1);
+    if (id) {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [data]);
+
   const refreshing = overview.isFetching;
   const refresh = () => void overview.refetch();
 
-  // OWN claims never show the agent filter; the backend forces the caller's own agent id anyway.
   const claim = data?.claim ?? (canViewAllAgents ? "ALL" : "OWN");
   const showAgentFilter = claim === "ALL";
 
   const reportCurrency = settings?.analytics.currency ?? "";
 
+  const rangeLabel =
+    effectiveRange === "custom"
+      ? from === to
+        ? shortDate(from)
+        : `${shortDate(from)} – ${shortDate(to)}`
+      : (RANGE_OPTIONS.find((o) => o.key === effectiveRange)?.label ?? "Last 30 days");
+
+  const activeChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; clear: () => void }> = [];
+    if (agentId !== "") {
+      const agent = (users ?? []).find((u) => u.id === agentId);
+      chips.push({ key: "agent", label: agent ? agent.name : `Agent #${agentId}`, clear: () => applyAgent("") });
+    }
+    if (accountId !== "") {
+      const account = (accountsQuery.data ?? []).find((a) => a.id === accountId);
+      chips.push({ key: "account", label: account ? account.name : `Account #${accountId}`, clear: () => applyAccount("") });
+    }
+    return chips;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, accountId, users, accountsQuery.data]);
+
   // ── Derived panel data ────────────────────────────────────────
+  const trendData = useMemo(
+    () => (data?.trend ?? []).map((d) => ({ ...d, date: shortDate(d.date) })),
+    [data]
+  );
+
+  const leadBarData = useMemo(() => (data?.leads.created_by_status ?? []).filter((s) => s.count > 0), [data]);
+  const leadDonutData = useMemo(() => (data?.leads.current_by_status ?? []).filter((s) => s.count > 0), [data]);
+  const leadTypeLabels = useMemo(() => {
+    const byType = new Map<string, number>();
+    for (const s of leadDonutData) byType.set(s.type, (byType.get(s.type) ?? 0) + s.count);
+    return { open: byType.get("open") ?? 0, won: byType.get("won") ?? 0, lost: byType.get("lost") ?? 0 };
+  }, [leadDonutData]);
+
   const weeklyRevenue = useMemo(
     () =>
       (data?.weekly_revenue ?? []).map((w) => ({ week: shortDate(w.week_start), won: w.won, lost: w.lost })),
@@ -405,110 +537,152 @@ const filters = useMemo(
       <header className="rounded-2xl border border-border bg-surface p-4 shadow-xs">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold tracking-tight text-text">Reports</h1>
-              {data && (
-                <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold tabular-nums text-primary">
-                  {shortDate(data.period.from)} – {shortDate(data.period.to)}
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 text-xs text-muted">
-              {claim === "OWN" ? "Showing your own activity." : "Showing the whole workspace."}
-              {data?.comparison_period &&
-                ` Compared with ${shortDate(data.comparison_period.from)} – ${shortDate(data.comparison_period.to)}.`}
-            </p>
+            <h1 className="text-lg font-bold tracking-tight text-text">Reports</h1>
+            <p className="mt-0.5 text-xs text-muted">Analyze CRM, lead, conversation and team performance.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Presets */}
-            <div className="flex rounded-lg border border-border bg-bg p-0.5" role="group" aria-label="Period presets">
-              {PRESETS.filter((p) => p.value !== "custom" || allowCustom).map((preset) => (
-                <button
-                  key={preset.value}
-                  type="button"
-                  onClick={() => applyPreset(preset.value)}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-                    effectiveRange === preset.value ? "bg-primary text-primary-foreground shadow-sm" : "text-muted hover:text-text"
-                  )}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Custom range */}
-            {effectiveRange === "custom" && (
-              <div className="flex items-center gap-1.5 rounded-lg border border-border bg-bg px-2.5 py-1.5">
-                <input
-                  type="date"
-                  aria-label="From date"
-                  value={from}
-                  max={to}
-                  onChange={(e) => applyCustomRange(e.target.value, to)}
-                  className="w-[118px] bg-transparent text-xs tabular-nums text-text outline-none"
-                />
-                <span className="text-xs text-muted">–</span>
-                <input
-                  type="date"
-                  aria-label="To date"
-                  value={to}
-                  min={from}
-                  max={todayIso()}
-                  onChange={(e) => applyCustomRange(from, e.target.value)}
-                  className="w-[118px] bg-transparent text-xs tabular-nums text-text outline-none"
-                />
-              </div>
-            )}
-
-            {/* Compare toggle */}
-            <button
-              type="button"
-              onClick={() => applyCompare(!compare)}
-              className={cn(
-                "rounded-lg border px-3 py-1.5 text-xs font-medium transition",
-                compare ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-bg text-muted hover:text-text"
-              )}
-            >
-              Compare
-            </button>
-
-            {/* Agent filter */}
-            {showAgentFilter && (
-              <select
-                aria-label="Agent filter"
-                value={agentId}
-                onChange={(e) => applyAgent(e.target.value ? Number(e.target.value) : "")}
-                className="h-[34px] rounded-lg border border-border bg-bg px-2.5 text-xs text-text outline-none transition focus:border-primary/50"
-              >
-                <option value="">All agents</option>
-                {(users ?? []).map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
+            <Popover open={rangeOpen} onOpenChange={setRangeOpen}>
+              <PopoverTrigger className="inline-flex h-[34px] items-center gap-1.5 rounded-lg border border-border bg-bg px-3 text-xs font-medium text-text transition hover:bg-surface">
+                <CalendarRange className="size-3.5 text-muted" />
+                <span className="max-w-40 truncate tabular-nums">{rangeLabel}</span>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-56 p-1.5">
+                {RANGE_OPTIONS.filter((o) => o.key !== "custom" || allowCustom).map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => selectRange(option.key)}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-xs transition-colors hover:bg-bg",
+                      effectiveRange === option.key || (option.key === "custom" && effectiveRange === "custom")
+                        ? "font-semibold text-primary"
+                        : "text-text"
+                    )}
+                  >
+                    {option.label}
+                    {(effectiveRange === option.key || (option.key === "custom" && effectiveRange === "custom")) && (
+                      <span className="size-1.5 rounded-full bg-primary" />
+                    )}
+                  </button>
                 ))}
-              </select>
-            )}
+                {effectiveRange === "custom" && (
+                  <div className="mt-1 border-t border-border pt-2">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="date"
+                        aria-label="From date"
+                        value={from}
+                        max={to}
+                        onChange={(e) => applyCustomRange(e.target.value, to)}
+                        className="w-[118px] bg-transparent text-xs tabular-nums text-text outline-none"
+                      />
+                      <span className="text-xs text-muted">–</span>
+                      <input
+                        type="date"
+                        aria-label="To date"
+                        value={to}
+                        min={from}
+                        max={todayIso()}
+                        onChange={(e) => applyCustomRange(from, e.target.value)}
+                        className="w-[118px] bg-transparent text-xs tabular-nums text-text outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+                <label className="mt-2 flex cursor-pointer items-center gap-2 border-t border-border px-0.5 pt-2 text-xs text-muted">
+                  <input type="checkbox" checked={compare} onChange={(e) => applyCompare(e.target.checked)} className="accent-primary" />
+                  Compare with previous period
+                </label>
+              </PopoverContent>
+            </Popover>
 
-            {/* Account filter */}
-            {accountsQuery.data && accountsQuery.data.length > 0 && (
-              <select
-                aria-label="Account filter"
-                value={accountId}
-                onChange={(e) => applyAccount(e.target.value ? Number(e.target.value) : "")}
-                className="h-[34px] rounded-lg border border-border bg-bg px-2.5 text-xs text-text outline-none transition focus:border-primary/50"
-              >
-                <option value="">All accounts</option>
-                {accountsQuery.data.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
-              </select>
-            )}
+            <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
+              <PopoverTrigger className="inline-flex h-[34px] items-center gap-1.5 rounded-lg border border-border bg-bg px-3 text-xs font-medium text-text transition hover:bg-surface">
+                <SlidersHorizontal className="size-3.5 text-muted" />
+                Filters
+                {activeChips.length > 0 && (
+                  <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white">
+                    {activeChips.length}
+                  </span>
+                )}
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64 space-y-3 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-text">
+                  <SlidersHorizontal className="size-3.5 text-muted" /> Filters
+                </div>
+                {showAgentFilter && (
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted">Agent</label>
+                    <select
+                      aria-label="Agent filter"
+                      value={agentId}
+                      onChange={(e) => applyAgent(e.target.value ? Number(e.target.value) : "")}
+                      className="h-[34px] w-full rounded-lg border border-border bg-bg px-2.5 text-xs text-text outline-none transition focus:border-primary/50"
+                    >
+                      <option value="">All agents</option>
+                      {(users ?? []).map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {accountsQuery.data && accountsQuery.data.length > 0 && (
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted">
+                      WhatsApp account
+                    </label>
+                    <select
+                      aria-label="Account filter"
+                      value={accountId}
+                      onChange={(e) => applyAccount(e.target.value ? Number(e.target.value) : "")}
+                      className="h-[34px] w-full rounded-lg border border-border bg-bg px-2.5 text-xs text-text outline-none transition focus:border-primary/50"
+                    >
+                      <option value="">All accounts</option>
+                      {accountsQuery.data.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
 
             <div className="flex items-center gap-2">
+              {canExport && (
+                <Popover open={exportOpen} onOpenChange={setExportOpen}>
+                  <PopoverTrigger
+                    disabled={exportsBusy}
+                    className="inline-flex h-[34px] items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-white shadow-xs transition hover:bg-primary-dark disabled:opacity-60"
+                  >
+                    {exportsBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                    Export
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-60 p-1.5">
+                    {EXPORT_BUTTONS.map(({ type, label, description, icon: Icon, pdf }) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => handleExport(type)}
+                        className={cn(
+                          "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors hover:bg-bg",
+                          pdf && "text-primary"
+                        )}
+                      >
+                        <Icon className="h-4 w-4 shrink-0 text-muted" />
+                        <span className="min-w-0">
+                          <span className="block font-medium text-text">{label}</span>
+                          <span className="block text-[11px] text-muted">{description}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              )}
               <button
                 type="button"
                 onClick={refresh}
@@ -519,82 +693,323 @@ const filters = useMemo(
                 Refresh
               </button>
               {canManageSettings && (
-                <button
-                  type="button"
-                  onClick={() => setSettingsOpen(true)}
+                <Link
+                  href="/settings/workspace/analytics"
                   className="inline-flex h-[34px] items-center gap-1.5 rounded-lg border border-border bg-bg px-3 text-xs font-medium text-text transition hover:bg-surface"
                 >
                   <Settings2 className="size-3.5" />
                   Settings
-                </button>
+                </Link>
               )}
             </div>
           </div>
         </div>
+        {activeChips.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+            {activeChips.map((chip) => (
+              <FilterChip key={chip.key} label={chip.label} onClear={chip.clear} />
+            ))}
+          </div>
+        )}
       </header>
 
       {/* ── KPI strip ───────────────────────────────────────────── */}
-      <section aria-label="Executive summary">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <KpiTile
-            label="Conversations"
-            value={overview.isLoading ? "…" : (data?.metrics.conversations.value ?? 0).toLocaleString()}
-            hint="new in period"
-            icon={Users}
-            tone="blue"
-            metric={data?.metrics.conversations}
-            href="/inbox"
-          />
-          <KpiTile
-            label="Won value"
-            value={overview.isLoading ? "…" : formatMoney(data?.metrics.won_value.value ?? 0, reportCurrency)}
-            hint={`${data?.metrics.won_count.value ?? 0} deals closed`}
-            icon={TrendingUp}
-            tone="green"
-            metric={data?.metrics.won_value}
-            href="/deals"
-          />
-          <KpiTile
-            label="Win rate"
-            value={overview.isLoading ? "…" : formatPercent(data?.metrics.win_rate.value ?? null)}
-            hint={`${data?.metrics.won_count.value ?? 0}W · ${data?.metrics.lost_count.value ?? 0}L`}
-            icon={Trophy}
-            tone="violet"
-            metric={data?.metrics.win_rate}
-            href="/deals"
-          />
-          <KpiTile
-            label="Avg response"
-            value={overview.isLoading ? "…" : formatMinutes(data?.metrics.avg_response_minutes.value ?? null)}
-            hint="first reply speed"
-            icon={Clock3}
-            tone="orange"
-            metric={data?.metrics.avg_response_minutes}
-            href="/inbox"
-          />
-          <KpiTile
-            label="Task completion"
-            value={overview.isLoading ? "…" : formatPercent(data?.task_completion.rate_percent ?? 0)}
-            hint={data ? `${data.task_completion.completed} of ${data.task_completion.total} tasks` : undefined}
-            icon={CheckCircle2}
-            tone="slate"
-            metric={data?.metrics.task_completion_rate}
-            href="/tasks"
-          />
-          <KpiTile
-            label="Lost value"
-            value={overview.isLoading ? "…" : formatMoney(data?.metrics.lost_value.value ?? 0, reportCurrency)}
-            hint={`${data?.metrics.lost_count.value ?? 0} deals lost`}
-            icon={AlertCircle}
-            tone="red"
-            metric={data?.metrics.lost_value}
-            href="/deals"
-          />
+      <section id="kpis" aria-label="Key metrics" className="scroll-mt-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+          {overview.isLoading
+            ? Array.from({ length: 5 }, (_, i) => (
+                <div key={i} className="h-[110px] animate-pulse rounded-2xl border border-border bg-surface" />
+              ))
+            : (
+                <>
+                  <KpiTile
+                    label="Conversations"
+                    value={data ? (data.metrics.conversations.value ?? 0).toLocaleString() : "0"}
+                    hint="started in period"
+                    tooltip="Conversations created in the selected period."
+                    icon={Users}
+                    tone="blue"
+                    metric={data?.metrics.conversations}
+                    href="/inbox"
+                  />
+                  <KpiTile
+                    label="Total leads"
+                    value={data ? (data.metrics.leads_created.value ?? 0).toLocaleString() : "0"}
+                    hint="new in period"
+                    tooltip="New leads created in the selected period."
+                    icon={Activity}
+                    tone="violet"
+                    metric={data?.metrics.leads_created}
+                    href="/leads"
+                  />
+                  <KpiTile
+                    label="Converted leads"
+                    value={data ? (data.metrics.leads_converted.value ?? 0).toLocaleString() : "0"}
+                    hint="converted to a deal"
+                    tooltip="Leads converted to a deal within the selected period."
+                    icon={CheckCircle2}
+                    tone="green"
+                    metric={data?.metrics.leads_converted}
+                    href="/leads"
+                  />
+                  <KpiTile
+                    label="Conversion rate"
+                    value={data ? formatPercent(data.metrics.lead_conversion_rate.value ?? null) : "0%"}
+                    hint="converted ÷ created"
+                    tooltip="Leads converted ÷ leads created in the period. Conversion usually lags creation, so this is a period measure, not a lifetime rate."
+                    icon={TrendingUp}
+                    tone="orange"
+                    metric={data?.metrics.lead_conversion_rate}
+                    href="/leads"
+                  />
+                  <KpiTile
+                    label="Avg response"
+                    value={data ? formatMinutes(data.metrics.avg_response_minutes.value ?? null) : "–"}
+                    hint="first reply speed"
+                    tooltip="Mean first reply time: inbound customer message → first agent outbound reply in the period."
+                    icon={Clock3}
+                    tone="red"
+                    metric={data?.metrics.avg_response_minutes}
+                    href="/inbox"
+                  />
+                </>
+              )}
         </div>
       </section>
 
+      {/* ── Trend (hero) ────────────────────────────────────────── */}
+      <ReportCard
+        id="trend"
+        title="Analytics trend"
+        subtitle="Conversations, leads and conversions per day"
+        icon={Activity}
+        {...enquiry}
+        onRetry={refresh}
+        isEmpty={!trendData.some((d) => d.conversations > 0 || d.leads > 0 || d.converted > 0)}
+        emptyLabel="trend data"
+        action={
+          <div className="flex flex-wrap items-center gap-4 text-xs">
+            <span className="flex items-center gap-1.5 text-muted">
+              <span className="size-2 rounded-full" style={{ backgroundColor: CHART.conversations }} /> Conversations
+            </span>
+            <span className="flex items-center gap-1.5 text-muted">
+              <span className="size-2 rounded-full" style={{ backgroundColor: CHART.leads }} /> Leads
+            </span>
+            <span className="flex items-center gap-1.5 text-muted">
+              <span className="size-2 rounded-full" style={{ backgroundColor: CHART.converted }} /> Converted
+            </span>
+          </div>
+        }
+      >
+        <div className="h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={trendData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+              <defs>
+                {([
+                  [CHART.conversations, "trendConversations"],
+                  [CHART.leads, "trendLeads"],
+                  [CHART.converted, "trendConverted"],
+                ] as const).map(([color, id]) => (
+                  <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={color} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={color} stopOpacity={0} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+              <XAxis dataKey="date" tick={axisTick} tickLine={false} axisLine={false} minTickGap={24} />
+              <YAxis tick={axisTick} tickLine={false} axisLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Area
+                type="monotone"
+                dataKey="conversations"
+                name="Conversations"
+                stroke={CHART.conversations}
+                strokeWidth={2}
+                fill={`url(#trendConversations)`}
+              />
+              <Area type="monotone" dataKey="leads" name="Leads" stroke={CHART.leads} strokeWidth={2} fill={`url(#trendLeads)`} />
+              <Area type="monotone" dataKey="converted" name="Converted" stroke={CHART.converted} strokeWidth={2} fill={`url(#trendConverted)`} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </ReportCard>
+
+      {/* ── Lead distribution + performance ─────────────────────── */}
+      <div id="leads" className="grid scroll-mt-5 gap-5 xl:grid-cols-2">
+        <ReportCard
+          title="Lead distribution"
+          subtitle="Current pipeline by lead status"
+          icon={Users}
+          {...enquiry}
+          onRetry={refresh}
+          isEmpty={leadDonutData.length === 0}
+          emptyLabel="leads"
+        >
+          <div className="grid grid-cols-[1fr_auto] items-center gap-6">
+            <div className="relative h-60">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={leadDonutData}
+                    dataKey="count"
+                    nameKey="name"
+                    innerRadius="62%"
+                    outerRadius="92%"
+                    paddingAngle={3}
+                    strokeWidth={0}
+                  >
+                    {leadDonutData.map((entry) => (
+                      <Cell key={entry.slug} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={tooltipStyle} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <p className="text-2xl font-bold tabular-nums text-text">{data?.leads.total_current ?? 0}</p>
+                <p className="text-[11px] text-muted">Total leads</p>
+              </div>
+            </div>
+            <div className="max-h-60 space-y-2.5 overflow-y-auto pr-1">
+              {leadDonutData.map((status) => (
+                <div key={status.slug} className="flex items-center gap-2 text-xs">
+                  <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: status.color }} />
+                  <span className="min-w-0 flex-1 truncate text-muted">{status.name}</span>
+                  <span className="font-bold tabular-nums text-text">{status.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-4 border-t border-border/60 pt-3 text-[11px] text-muted">
+            <span>Open {leadTypeLabels.open}</span>
+            <span className="text-success">Won {leadTypeLabels.won}</span>
+            <span className="text-danger">Lost {leadTypeLabels.lost}</span>
+          </div>
+        </ReportCard>
+
+        <ReportCard
+          title="Lead performance"
+          subtitle="New leads created in the period, by status"
+          icon={BarChart3}
+          {...enquiry}
+          onRetry={refresh}
+          isEmpty={leadBarData.length === 0}
+          emptyLabel="new leads"
+        >
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={leadBarData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barCategoryGap="32%">
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={false} interval={0} angle={-18} textAnchor="end" height={44} />
+                <YAxis tick={axisTick} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--color-border)", opacity: 0.25 }} />
+                <Bar dataKey="count" name="Leads" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                  {leadBarData.map((entry) => (
+                    <Cell key={entry.slug} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </ReportCard>
+      </div>
+
+      {/* ── Conversation analytics + response time ──────────────── */}
+      <div className="grid gap-5 xl:grid-cols-2">
+        <ReportCard
+          title="Conversation analytics"
+          subtitle="Messages and conversation state in the period"
+          icon={Search}
+          {...enquiry}
+          onRetry={refresh}
+          isEmpty={!data || (data.conversation_analytics.total_messages === 0 && data.conversation_analytics.conversations_in_period === 0)}
+          emptyLabel="conversation data"
+        >
+          {data && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-xl border border-border bg-bg/40 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Received</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-text">{data.conversation_analytics.messages_received.toLocaleString()}</p>
+                </div>
+                <div className="rounded-xl border border-border bg-bg/40 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Sent</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-text">{data.conversation_analytics.messages_sent.toLocaleString()}</p>
+                </div>
+                <div className="rounded-xl border border-border bg-bg/40 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Conversations</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-text">{data.conversation_analytics.conversations_in_period.toLocaleString()}</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {data.conversation_analytics.by_status.map((row) => {
+                  const max = Math.max(1, ...data.conversation_analytics.by_status.map((r) => r.count));
+                  return (
+                    <div key={row.status} className="grid grid-cols-[90px_1fr_60px] items-center gap-3">
+                      <span className="truncate text-xs text-muted">{row.label}</span>
+                      <div className="h-2 overflow-hidden rounded-full bg-border/60">
+                        <div className="h-full rounded-full bg-primary" style={{ width: `${(row.count / max) * 100}%` }} />
+                      </div>
+                      <span className="text-right text-xs font-semibold tabular-nums text-text">{row.count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </ReportCard>
+
+        <ReportCard
+          title="Response time"
+          subtitle={`First reply: inbound → first agent outbound · ${data ? formatMinutes(data.response_speed.avg_response_minutes) : "n/a"} avg`}
+          icon={Timer}
+          {...enquiry}
+          onRetry={refresh}
+          isEmpty={(data?.response_speed.buckets ?? []).every((b) => b.count === 0)}
+          emptyLabel="response data"
+          action={data ? <DeltaBadge metric={data.metrics.avg_response_minutes} /> : undefined}
+        >
+          {data && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-xl border border-border bg-bg/40 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Fastest</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-success">{formatMinutes(data.response_speed.fastest_response_minutes)}</p>
+                </div>
+                <div className="rounded-xl border border-border bg-bg/40 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Median</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-text">{formatMinutes(data.response_speed.median_response_minutes)}</p>
+                </div>
+                <div className="rounded-xl border border-border bg-bg/40 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Average</p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-text">{formatMinutes(data.response_speed.avg_response_minutes)}</p>
+                </div>
+              </div>
+              <div className="space-y-4">
+                {(data?.response_speed.buckets ?? []).map((bucket) => (
+                  <div key={bucket.key} className="grid grid-cols-[110px_1fr_88px] items-center gap-3">
+                    <span className="truncate text-xs text-muted">{bucket.label}</span>
+                    <div className="h-2 overflow-hidden rounded-full bg-border/60">
+                      <div
+                        className={cn("h-full rounded-full", bucket.key === "no_reply" ? "bg-muted" : "bg-primary")}
+                        style={{ width: `${(bucket.count / speedMax) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-right text-xs font-semibold tabular-nums text-text">
+                      {bucket.count} · {bucket.percentage}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </ReportCard>
+      </div>
+
       {/* ── Revenue trend (hero) ────────────────────────────────── */}
       <ReportCard
+        id="revenue"
         title="Weekly revenue"
         subtitle="Won vs lost deal value, stacked by week"
         icon={BarChart3}
@@ -630,7 +1045,7 @@ const filters = useMemo(
       </ReportCard>
 
       {/* ── Outcomes + task completion ──────────────────────────── */}
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div id="outcomes" className="grid scroll-mt-5 gap-5 xl:grid-cols-2">
         <ReportCard
           title="Deal outcomes"
           subtitle={`${data?.deal_outcomes.total ?? 0} deals in pipeline`}
@@ -730,41 +1145,39 @@ const filters = useMemo(
         </ReportCard>
       </div>
 
-      {/* ── Response speed ──────────────────────────────────────── */}
+      {/* ── Calculated metrics ─────────────────────────────────── */}
       <ReportCard
-        title="Response speed"
-        subtitle={`Conversations by first-reply time · avg ${data ? formatMinutes(data.response_speed.avg_response_minutes) : "n/a"}`}
-        icon={Timer}
+        id="calculate"
+        title="Calculated metrics"
+        subtitle="Derived from the period totals"
+        icon={Activity}
         {...enquiry}
         onRetry={refresh}
-        isEmpty={(data?.response_speed.buckets ?? []).every((b) => b.count === 0)}
-        emptyLabel="response data"
-        action={data ? <DeltaBadge metric={data.metrics.avg_response_minutes} /> : undefined}
+        isEmpty={!data || (data.metrics.won_count.value ?? 0) === 0}
+        emptyLabel="won deals"
       >
-        <div className="space-y-4">
-          {(data?.response_speed.buckets ?? []).map((bucket) => (
-            <div key={bucket.key} className="grid grid-cols-[110px_1fr_88px] items-center gap-3">
-              <span className="truncate text-xs text-muted">{bucket.label}</span>
-              <div className="h-2 overflow-hidden rounded-full bg-border/60">
-                <div
-                  className={cn(
-                    "h-full rounded-full",
-                    bucket.key === "no_reply" ? "bg-muted" : "bg-primary"
-                  )}
-                  style={{ width: `${(bucket.count / speedMax) * 100}%` }}
-                />
+        {data && (
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {([
+              { label: "Avg deal value", value: formatMoney(data.metrics.won_count.value ? (data.metrics.won_value.value ?? 0) / data.metrics.won_count.value : null, reportCurrency), hint: "won value ÷ won deals" },
+              { label: "Close rate", value: formatPercent(data.deal_outcomes.won.count + data.deal_outcomes.lost.count ? (data.deal_outcomes.won.count / (data.deal_outcomes.won.count + data.deal_outcomes.lost.count)) * 100 : null), hint: "won ÷ won + lost" },
+              { label: "Tasks per agent", value: data.leaderboard.length ? (data.task_completion.completed / data.leaderboard.length).toFixed(1) : "0", hint: "completed ÷ agents" },
+              { label: "Responses per day", value: data.response_speed.sample_size ? (data.response_speed.sample_size / Math.max(1, Math.round((Date.parse(data.period.to) - Date.parse(data.period.from)) / 86400000))).toFixed(1) : "0", hint: "sampled replies ÷ days" },
+            ] as const).map(({ label, value, hint }) => (
+              <div key={label} className="rounded-xl border border-border bg-bg/40 p-3.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</p>
+                <p className="mt-1 text-lg font-bold tabular-nums tracking-tight text-text">{value}</p>
+                <p className="mt-0.5 text-[11px] text-muted">{hint}</p>
               </div>
-              <span className="text-right text-xs font-semibold tabular-nums text-text">
-                {bucket.count} · {bucket.percentage}%
-              </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </ReportCard>
 
       {/* ── Agent leaderboard ───────────────────────────────────── */}
       <ReportCard
-        title="Agent leaderboard"
+        id="team"
+        title="Team performance"
         subtitle={showAgentFilter ? "Click a row to focus that agent" : "Agents with activity in the period"}
         icon={Users}
         {...enquiry}
@@ -874,11 +1287,13 @@ const filters = useMemo(
         }
       >
         <div className="-mx-1 overflow-x-auto">
-          <table className="w-full min-w-[680px] border-separate border-spacing-0 text-sm">
+          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
             <thead>
               <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted">
                 <th className="border-b border-border px-3 py-2.5">Date</th>
                 <th className="border-b border-border px-3 py-2.5 text-right">Chats</th>
+                <th className="border-b border-border px-3 py-2.5 text-right">Leads</th>
+                <th className="border-b border-border px-3 py-2.5 text-right">Converted</th>
                 <th className="border-b border-border px-3 py-2.5 text-right">Avg response</th>
                 <th className="border-b border-border px-3 py-2.5 text-right">Won</th>
                 <th className="border-b border-border px-3 py-2.5 text-right">Won value</th>
@@ -894,6 +1309,8 @@ const filters = useMemo(
                     <span className="ml-1.5 text-[11px] text-muted">{weekdayShort(row.date)}</span>
                   </td>
                   <td className="border-b border-border/60 px-3 py-2.5 text-right tabular-nums text-muted">{row.conversations}</td>
+                  <td className="border-b border-border/60 px-3 py-2.5 text-right tabular-nums text-violet">{row.leads || "–"}</td>
+                  <td className="border-b border-border/60 px-3 py-2.5 text-right tabular-nums text-success">{row.converted || "–"}</td>
                   <td className="border-b border-border/60 px-3 py-2.5 text-right tabular-nums text-muted">
                     {formatMinutes(row.avg_response_minutes)}
                   </td>
@@ -914,8 +1331,6 @@ const filters = useMemo(
 
       {/* ── Exports ─────────────────────────────────────────────── */}
       <ExportsSection />
-
-      <ReportSettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }
