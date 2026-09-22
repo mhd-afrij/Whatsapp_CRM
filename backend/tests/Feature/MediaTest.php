@@ -51,25 +51,23 @@ class MediaTest extends TestCase
         return [$conversation, $messageId, $mediaId];
     }
 
-    public function test_agent_with_conversations_view_can_get_a_signed_media_url(): void
+    public function test_agent_with_conversations_view_can_stream_media_content(): void
     {
         $this->seedRbac();
         $agent = $this->userWithRole('Agent');
         [$conversation, $messageId, $mediaId] = $this->makeMessageWithMedia($agent->workspace_id, $agent->id);
 
         Http::fake([
-            '*/internal/whatsapp/media/*' => Http::response([
-                'success' => true, 'message' => 'OK', 'data' => ['url' => 'https://signed.example/media/x'],
-            ], 200),
+            '*/internal/whatsapp/media/*' => Http::response('fake-image-bytes', 200, ['Content-Type' => 'image/jpeg']),
         ]);
 
         $this->asUser($agent)
-            ->getJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$mediaId}/url")
+            ->get("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$mediaId}/content")
             ->assertOk()
-            ->assertJsonPath('data.url', 'https://signed.example/media/x');
+            ->assertSee('fake-image-bytes');
     }
 
-    public function test_user_who_cannot_view_the_conversation_is_denied_media_url(): void
+    public function test_user_who_cannot_view_the_conversation_is_denied_media_content(): void
     {
         $this->seedRbac();
         $agent = $this->userWithRole('Agent');
@@ -81,7 +79,7 @@ class MediaTest extends TestCase
         [$conversation, $messageId, $mediaId] = $this->makeMessageWithMedia($agent->workspace_id, $otherAgent->id);
 
         $this->asUser($agent)
-            ->getJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$mediaId}/url")
+            ->get("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$mediaId}/content")
             ->assertForbidden();
     }
 
@@ -93,7 +91,7 @@ class MediaTest extends TestCase
         [, $otherMessageId, $otherMediaId] = $this->makeMessageWithMedia($agent->workspace_id);
 
         $this->asUser($agent)
-            ->getJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$otherMediaId}/url")
+            ->getJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$otherMediaId}/content")
             ->assertNotFound();
     }
 
@@ -105,7 +103,7 @@ class MediaTest extends TestCase
         $otherConversation = Conversation::factory()->create(['workspace_id' => $agent->workspace_id]);
 
         $this->asUser($agent)
-            ->getJson("/api/v1/conversations/{$otherConversation->id}/messages/{$messageId}/media/{$mediaId}/url")
+            ->getJson("/api/v1/conversations/{$otherConversation->id}/messages/{$messageId}/media/{$mediaId}/content")
             ->assertNotFound();
     }
 
@@ -117,7 +115,7 @@ class MediaTest extends TestCase
         [$conversation, $messageId, $mediaId] = $this->makeMessageWithMedia($otherWorkspace->id);
 
         $this->asUser($agent)
-            ->getJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$mediaId}/url")
+            ->getJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$mediaId}/content")
             ->assertNotFound();
     }
 
@@ -127,12 +125,12 @@ class MediaTest extends TestCase
         $agent = $this->userWithRole('Agent');
         [$conversation, $messageId, $mediaId] = $this->makeMessageWithMedia($agent->workspace_id, $agent->id);
 
-        Http::fake([
-            '*/internal/whatsapp/media/*' => Http::response(['success' => false, 'message' => 'down'], 500),
-        ]);
+        Http::fake(function () {
+            throw new \Illuminate\Http\Client\ConnectionException('gateway down');
+        });
 
         $this->asUser($agent)
-            ->getJson("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$mediaId}/url")
+            ->get("/api/v1/conversations/{$conversation->id}/messages/{$messageId}/media/{$mediaId}/content")
             ->assertStatus(502);
     }
 

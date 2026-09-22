@@ -31,11 +31,14 @@ export const connectionRegistry = new ConnectionManagerRegistry();
 export const connectionManager = new ConnectionManager();
 
 /**
- * When a new manager is created in the registry, wire its Baileys events to
- * the Socket.IO layer and sync pipeline. Each manager is an independent
- * EventEmitter; the listener attachment is idempotent (one per manager).
+ * Wires a ConnectionManager's Baileys events to the Socket.IO layer and sync
+ * pipelines. Each manager is an independent EventEmitter; the attachment is
+ * idempotent (one per manager). Applied to registry-created managers AND the
+ * legacy singleton below - a single-account deployment with no
+ * whatsapp_connections rows runs entirely on the legacy manager, and without
+ * this wiring its inbound messages.upsert events are silently dropped.
  */
-connectionRegistry.on('manager:created', (manager: ConnectionManager) => {
+function wireManager(manager: ConnectionManager): void {
   manager.on('connection.updated', (payload) => {
     void import('../lib/socket-server')
       .then(({ emitConnectionUpdated }) => emitConnectionUpdated(payload.workspaceId, payload))
@@ -92,4 +95,14 @@ connectionRegistry.on('manager:created', (manager: ConnectionManager) => {
         .catch((err) => logger.error({ err }, 'Unhandled error in messaging-history.set pipeline'));
     },
   );
+}
+
+wireManager(connectionManager);
+
+/**
+ * When a new manager is created in the registry, wire its Baileys events to
+ * the Socket.IO layer and sync pipeline.
+ */
+connectionRegistry.on('manager:created', (manager: ConnectionManager) => {
+  wireManager(manager);
 });

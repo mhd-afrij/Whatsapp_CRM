@@ -2,15 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Download } from "lucide-react";
-import { fetchMediaUrl, fetchMediaContent, type MessageMedia } from "@/lib/conversations-api";
+import { fetchMediaContent, type MessageMedia } from "@/lib/conversations-api";
 
 /**
- * Resolves a message_media row to a short-lived signed URL via
- * GET /conversations/{id}/messages/{id}/media/{id}/url (never a raw storage
- * key/bucket URL) and renders the appropriate preview. In local-disk dev mode
- * (no S3_BUCKET configured on the gateway) there is no public file server to
- * point an <img>/<a> at, so the bytes are fetched through the backend proxy
- * (GET .../media/{id}/content) and rendered from a blob URL instead.
+ * Resolves a message_media row by fetching its raw bytes through the backend
+ * proxy (GET .../media/{id}/content) and rendering them from a blob URL —
+ * the gateway stores media on its local disk, so there is no public file
+ * server to point an <img>/<a> at.
  */
 function PreviewSkeleton() {
   return <div className="h-32 w-48 animate-pulse rounded-md bg-border/60" />;
@@ -26,7 +24,7 @@ function PreviewError({ message = "Unable to load attachment." }: { message?: st
 function MediaView({ url, media }: { url: string; media: MessageMedia }) {
   if (media.mime_type.startsWith("image/")) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element -- signed/blob URL is short-lived/opaque; next/image domain allow-listing doesn't apply
+      // eslint-disable-next-line @next/next/no-img-element -- blob URL is short-lived/opaque; next/image domain allow-listing doesn't apply
       <img
         src={url}
         alt="Attachment"
@@ -70,42 +68,22 @@ export function MediaPreview({
   messageId: number;
   media: MessageMedia;
 }) {
-  const urlQuery = useQuery({
-    queryKey: ["media-url", conversationId, messageId, media.id],
-    queryFn: () => fetchMediaUrl(conversationId, messageId, media.id),
-    staleTime: 60_000,
-  });
-
-  const isLocal = urlQuery.data?.kind === "local_file";
-
-  // Local-disk mode has no public URL - fetch the bytes through the backend
-  // proxy and render from a blob URL so previews work without MinIO.
   const contentQuery = useQuery({
     queryKey: ["media-content", conversationId, messageId, media.id],
     queryFn: async () => {
       const blob = await fetchMediaContent(conversationId, messageId, media.id, media.mime_type);
       return URL.createObjectURL(blob);
     },
-    enabled: isLocal,
     staleTime: 60_000,
   });
 
-  if (urlQuery.isLoading) {
+  if (contentQuery.isLoading) {
     return <PreviewSkeleton />;
   }
 
-  if (urlQuery.isError || !urlQuery.data) {
+  if (contentQuery.isError || !contentQuery.data) {
     return <PreviewError />;
   }
 
-  if (isLocal) {
-    if (contentQuery.isLoading) return <PreviewSkeleton />;
-    if (contentQuery.isError || !contentQuery.data) return <PreviewError />;
-    return <MediaView url={contentQuery.data} media={media} />;
-  }
-
-  if (!urlQuery.data.url) {
-    return <PreviewError />;
-  }
-  return <MediaView url={urlQuery.data.url} media={media} />;
+  return <MediaView url={contentQuery.data} media={media} />;
 }

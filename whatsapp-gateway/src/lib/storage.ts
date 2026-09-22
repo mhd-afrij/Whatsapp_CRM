@@ -1,14 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { env } from '../config/env';
 
 /**
- * Minimal object-storage abstraction so message media can be persisted to
- * either a MinIO/S3-compatible bucket (preferred, Phase 1 infra) or local
- * disk (fallback when no S3_* env is configured, e.g. local dev). Callers
- * only ever receive/store a storage KEY - never a raw public URL - per
- * docs/04-database-design.md (message_media.storage_path).
+ * Object-storage abstraction persisting message media to the gateway's
+ * local disk (MEDIA_LOCAL_STORAGE_DIR). Callers only ever receive/store a
+ * storage KEY - never a raw public URL - per docs/04-database-design.md
+ * (message_media.storage_path).
  */
 export interface StorageClient {
   /** Persists a buffer under `key` and returns the storage key (unchanged). */
@@ -32,69 +30,20 @@ class LocalDiskStorageClient implements StorageClient {
   }
 }
 
-class S3StorageClient implements StorageClient {
-  private readonly client: S3Client;
-
-  constructor(
-    private readonly bucket: string,
-    clientOptions: import('@aws-sdk/client-s3').S3ClientConfig,
-  ) {
-    this.client = new S3Client(clientOptions);
-  }
-
-  async putObject(key: string, body: Buffer, contentType: string): Promise<string> {
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: body,
-        ContentType: contentType,
-      }),
-    );
-    return key;
-  }
-
-  async getObject(key: string): Promise<Buffer> {
-    const response = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-    );
-    const stream = response.Body as unknown as NodeJS.ReadableStream;
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    return Buffer.concat(chunks);
-  }
-}
-
 let client: StorageClient | null = null;
 
 /**
  * The provider label persisted alongside message media
- * (message_media.storage_provider). Mirrors the client getStorageClient()
- * returns so callers never hardcode a provider that contradicts the storage
- * the gateway actually writes to.
+ * (message_media.storage_provider).
  */
 export function getStorageProviderName(): string {
-  return env.S3_BUCKET ? 's3' : 'local';
+  return 'local';
 }
 
 export function getStorageClient(): StorageClient {
   if (client) return client;
 
-  if (env.S3_BUCKET) {
-    client = new S3StorageClient(env.S3_BUCKET, {
-      region: env.S3_REGION,
-      endpoint: env.S3_ENDPOINT,
-      forcePathStyle: env.S3_FORCE_PATH_STYLE,
-      credentials:
-        env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY
-          ? { accessKeyId: env.S3_ACCESS_KEY_ID, secretAccessKey: env.S3_SECRET_ACCESS_KEY }
-          : undefined,
-    });
-  } else {
-    client = new LocalDiskStorageClient(path.resolve(env.MEDIA_LOCAL_STORAGE_DIR));
-  }
+  client = new LocalDiskStorageClient(path.resolve(env.MEDIA_LOCAL_STORAGE_DIR));
 
   return client;
 }

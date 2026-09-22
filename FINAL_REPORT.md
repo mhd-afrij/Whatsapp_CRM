@@ -12,7 +12,7 @@ CRM-WhatsApp is a WhatsApp-first CRM and team-inbox platform: a shared team inbo
 linked WhatsApp number, contacts/leads/deals pipelines, tasks with reminders, internal notes,
 labels, notifications, dashboards/analytics, and full workspace/RBAC administration. It is built
 as three independently deployable services (Laravel 12 API, a Node/TypeScript WhatsApp gateway
-using Baileys, and a Next.js 16 frontend) plus supporting infrastructure (MySQL, Redis, MinIO/S3,
+using Baileys, and a Next.js 16 frontend) plus supporting infrastructure (MySQL, Redis,
 nginx, Docker Compose).
 
 All application-level work across 20 phases is complete and passes its own test suite in this
@@ -97,7 +97,7 @@ precisely in §16–§17 rather than glossed over.
 |---|---|
 | **Live WhatsApp account** (a real phone number to pair via QR) | `ConnectionManager` (Baileys wrapper), QR pairing flow, session persistence/restore-on-boot, inbound normalization, outbound send queue (`send-message.queue.ts`), delivery-status tracking, and the full inbox UI are all built and unit/integration-tested against mocked Baileys. Never run against a real WhatsApp session — this is the single largest unverified surface in the whole build. The `e2e/` WhatsApp specs additionally need a Baileys test-adapter/simulator that does not exist yet. |
 | **Real SMTP provider** | `backend/.env`'s `MAIL_MAILER=log` (mail is logged, not sent) in every environment used. Password-reset/invitation emails use Laravel's `Mail`/notification classes already wired to `config/mail.php` — swapping `MAIL_MAILER` to `smtp` plus real host/user/pass credentials is the only change needed; no code changes anticipated. |
-| **Production S3/MinIO bucket** | `AWS_*` env vars in `backend/.env`/`.env.example` and the gateway's media-access path (`whatsapp-gateway/src/lib/media-access.ts`) already branch on `S3_BUCKET` being set; local dev uses a MinIO container. Needs a real bucket + credentials + (optionally) CDN/signed-URL TTL tuning for production. |
+| **Media-storage backup path** | Media lives on the gateway's local `media-storage` volume (`whatsapp-gateway/src/lib/storage.ts`); the S3/MinIO option was removed. Include that volume in the production backup strategy. |
 | **Real domain + TLS** | `infrastructure/nginx/nginx.conf` proxies frontend/`/api/`/`/gateway/`/`/socket.io/` with websocket upgrade headers already configured; needs a real certificate (Let's Encrypt/ACM) and `FRONTEND_URL`/`SANCTUM_STATEFUL_DOMAINS`/CORS origin updated from `localhost` to the real domain. No code changes anticipated, config changes only. |
 | **A live Docker daemon** | Both compose files were reviewed and two real bugs fixed in Phase 19 (gateway URL not overridden for the Docker network; missing `.env` files treated as hard errors). Never run through `docker compose config`/`up` for real — see §16. |
 | **A real GitHub Actions runner** | `.github/workflows/ci.yml` was written against each service's actual `composer.json`/`package.json` scripts and YAML-parsed successfully, but has never executed on an actual runner. |
@@ -118,7 +118,7 @@ Three independently deployable services behind nginx:
   sends and media downloads.
 - **Realtime**: gateway emits on a `/gateway` Socket.IO namespace (message events) and a `/crm`
   namespace (notifications/presence/assignment), consumed directly by the frontend client.
-- **Infrastructure**: MySQL 8, Redis 7, MinIO (S3-compatible) for media, nginx as the single
+- **Infrastructure**: MySQL 8, Redis 7, gateway-side media storage, nginx as the single
   ingress reverse-proxying all three services plus WebSocket upgrade.
 
 ## 6. Database Summary
@@ -203,9 +203,9 @@ mounted under `/api/v1`, gated per `docs/07-permission-matrix.md` via route midd
   sends via Baileys, persists, emits `message.created`/`message.failed`), `media-download.queue.ts`
   (inbound media fetch/persist).
 - `routes/` — `internal-whatsapp.routes.ts` (token-gated internal API consumed by Laravel:
-  connect/disconnect/status/send/media signed URLs).
+  connect/disconnect/status/send/media content streaming).
 - `lib/` — crypto (AES-256-GCM credential encryption), logger, redis/mysql pool, socket-server,
-  media-access (S3/MinIO signed URLs), backoff (retry delay computation).
+  storage + media-access (gateway local-disk media), backoff (retry delay computation).
 
 **Phase 20 cleanup**: removed `queues/outgoing-message.queue.ts`, a dead Phase-0-era stub whose
 processor unconditionally threw `NotImplementedError`. Its BullMQ worker was still being started
@@ -291,8 +291,8 @@ This pass specifically:
   exceptions, so any future `.env.<anything>` variant is covered by default.
 - Manually inspected `backend/.env` and `frontend/.env.local` (the only two committed-to-disk env
   files that exist; `whatsapp-gateway/.env` was never created, only its `.env.example`) — every
-  value is a local-dev placeholder (empty DB password, `MAIL_MAILER=log`, localhost URLs, local
-  MinIO endpoint). Nothing resembling a real production credential found.
+  value is a local-dev placeholder (empty DB password, `MAIL_MAILER=log`, localhost URLs). Nothing
+  resembling a real production credential found.
 - Permission-matrix spot-check (5 permissions, one per module area) — see §4 of the audit
   process: `conversations.view` (inbox), `leads.manage`/`deals.manage`, `tasks.manage`/
   `tasks.view_team`, `teams.view`/`teams.manage` + `roles.view`/`roles.manage`, `users.manage` —
@@ -342,10 +342,10 @@ available should run, in order: `docker compose config`, then
 
 ## 18. Production Deployment Steps
 
-1. Provision MySQL 8, Redis 7, an S3-compatible bucket (or MinIO), and a real domain with TLS
+1. Provision MySQL 8, Redis 7, and a real domain with TLS
    (Let's Encrypt/ACM).
 2. Set real env vars in `backend/.env`, `frontend/.env.local`, `whatsapp-gateway/.env` from their
-   `.env.example` templates: real `DB_*`, `REDIS_*`, `AWS_*`/S3 credentials, `MAIL_MAILER=smtp` +
+   `.env.example` templates: real `DB_*`, `REDIS_*`, Azure credentials, `MAIL_MAILER=smtp` +
    real SMTP credentials, `FRONTEND_URL`/`SANCTUM_STATEFUL_DOMAINS` set to the real domain,
    `WHATSAPP_GATEWAY_TOKEN`/`INTERNAL_GATEWAY_TOKEN`/`CREDENTIALS_ENCRYPTION_KEY` set to real
    generated secrets (never the compose-file dev defaults).
@@ -359,8 +359,8 @@ available should run, in order: `docker compose config`, then
    desired) inside the backend container.
 7. Pair the WhatsApp gateway with a real number via the `/settings/whatsapp` QR flow.
 8. Set up a recurring `infrastructure/scripts/mysql-backup.sh` cron/scheduled job pointed at the
-   production DB credentials, plus a separate MinIO/S3 bucket replication policy (the backup
-   script deliberately does not cover bucket contents — see `PROJECT_STATUS.md` Phase 19).
+   production DB credentials, plus a backup policy for the gateway's media-storage volume (the
+   script deliberately does not cover media files — see `PROJECT_STATUS.md` Phase 19).
 9. Wire `.github/workflows/ci.yml` into the real repository once `git init`/a remote exists, and
    get its first real run on an actual GitHub Actions runner.
 10. Install Playwright (`npx playwright install`) against the live staging stack and get the
@@ -449,10 +449,10 @@ in `PROJECT_STATUS.md` §A.
 - **Gateway jid normalization** (`jid.ts` + tests): explicit `+`/`00` international prefixes,
   trunk-zero numbers, and numbers already carrying the configured country code are now handled
   before the CC-default branch (initial fix mishandled `00`; corrected).
-- **Gateway storage-provider routing**: `getStorageProviderName()` (`s3` when `S3_BUCKET` set,
-  else `local`) replaced a hardcoded `azure_blob` default in `insertMessageMedia` and the
+- **Gateway storage-provider routing**: `getStorageProviderName()` (now always `local` after
+  the S3/MinIO removal) replaced a hardcoded `azure_blob` default in `insertMessageMedia` and the
   media-download queue — a latent bug that would have pointed every media write at the wrong
-  provider unless `S3_BUCKET` happened to be set.
+  provider.
 - **Frontend/backend contract alignment**: removed the dead `deleteWorkspace` API + danger-page
   card (no backend endpoint exists; ownership transfer + disable remain); `reportConversation`
   now sends `reason` (server validates `reason`); signup page removed (auth is invitation-only);

@@ -17,10 +17,11 @@ services:
       MYSQL_USER: ${DB_USERNAME:-crm_user}
       MYSQL_PASSWORD: ${DB_PASSWORD:-crm_password}
     ports:
-      - "3306:3306"
+      # 3307 on host to avoid clashing with a local (non-docker) MySQL on 3306.
+      # Services still reach this DB over the compose network as 'mysql:3306'.
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./infrastructure/scripts/mysql-init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootsecret}"]
       interval: 10s
@@ -46,27 +47,6 @@ services:
     logging: *default-logging
     networks: [crm_net]
 
-  minio:
-    image: minio/minio:latest
-    container_name: crm_minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    logging: *default-logging
-    networks: [crm_net]
-
   backend:
     build:
       context: ./backend
@@ -84,8 +64,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-crm_password}
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      QUEUE_CONNECTION: redis
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      AWS_ENDPOINT: http://minio:9000
       # Backend -> gateway internal calls must use the container/service name on
       # the compose network, not "localhost" (that would resolve to the backend
       # container itself). backend/.env.example defaults to localhost:3000 for
@@ -103,8 +83,6 @@ services:
         required: false
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend:/var/www/html
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
       interval: 15s
@@ -123,7 +101,7 @@ services:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: production
       PORT: 4000
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
@@ -156,7 +134,6 @@ services:
     ports:
       - "4000:4000"
     volumes:
-      - ./whatsapp-gateway:/app
       - gateway_sessions:/app/sessions
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/healthz', r => process.exit(r.statusCode===200?0:1))"]
@@ -209,6 +186,5 @@ networks:
 volumes:
   mysql_data:
   redis_data:
-  minio_data:
   gateway_sessions:
 

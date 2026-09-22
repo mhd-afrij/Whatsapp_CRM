@@ -100,6 +100,19 @@ class GatewayClient
     }
 
     /**
+     * Persist agent-edited customer details (display name / phone) on a
+     * whatsapp_contacts row via the gateway (the gateway owns that table).
+     */
+    public function updateContact(int $workspaceId, int $whatsappContactId, ?string $name, ?string $phoneNumber): array
+    {
+        return $this->request('put', "/internal/whatsapp/contacts/{$whatsappContactId}", [
+            'workspaceId' => $workspaceId,
+            'name' => $name,
+            'phoneNumber' => $phoneNumber,
+        ]);
+    }
+
+    /**
      * Ask the gateway to delete every message in a conversation and reset the
      * gateway-owned conversation summary columns (last_message_at,
      * last_message_preview, unread_count). The conversation row itself stays
@@ -128,25 +141,9 @@ class GatewayClient
     }
 
     /**
-     * Resolves a message_media row to a short-lived signed URL (or, in
-     * local-disk dev mode, a server-side file path) via the gateway's
-     * `/internal/whatsapp/media/:mediaId/url` endpoint. Callers MUST verify
-     * the requesting user can view the owning conversation before calling
-     * this - see MediaController::url().
-     */
-    public function mediaUrl(int $mediaId, int $workspaceId, ?int $accountId = null): array
-    {
-        return $this->request('get', "/internal/whatsapp/media/{$mediaId}/url", array_merge(
-            ['workspaceId' => $workspaceId],
-            $this->accountParams($accountId),
-        ));
-    }
-
-    /**
      * Proxies the raw bytes of a message_media row from the gateway's
-     * `/internal/whatsapp/media/:mediaId/content` endpoint (local-disk dev
-     * mode, where there is no public signed URL). Returns a full response
-     * with the gateway's bytes + content type; the caller MUST verify the
+     * `/internal/whatsapp/media/:mediaId/content` endpoint. Returns a full
+     * response with the gateway's bytes + content type; the caller MUST verify the
      * requesting user can view the owning conversation first - see
      * MediaController::content().
      */

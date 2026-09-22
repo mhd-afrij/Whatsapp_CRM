@@ -55,6 +55,9 @@ class AnalyticsSetting extends Model
 
         'allow_csv_export', 'allow_excel_export', 'allow_pdf_export', 'allow_personal_data_export',
         'max_export_range_days',
+
+        // Reports-page prefs (JSON blob, cast to array - see reportPreferenceDefaults).
+        'report_preferences',
     ];
 
     protected function casts(): array
@@ -93,6 +96,7 @@ class AnalyticsSetting extends Model
                 'raw_event_retention_days' => 'integer',
                 'aggregate_retention_days' => 'integer',
                 'max_export_range_days' => 'integer',
+                'report_preferences' => 'array',
             ]
         );
     }
@@ -207,6 +211,23 @@ class AnalyticsSetting extends Model
             'allow_pdf_export' => true,
             'allow_personal_data_export' => false,
             'max_export_range_days' => 365,
+        ];
+    }
+
+    /**
+     * Defaults for the Reports page preferences (report_preferences JSON column).
+     * Kept separate from recommendedDefaults on purpose: recommendedDefaults() is also
+     * the whitelist for the Analytics Settings page rules/validation, and these prefs
+     * belong only to the Reports module (ReportSettingsController is their writer).
+     *
+     * @return array<string, mixed>
+     */
+    public static function reportPreferenceDefaults(): array
+    {
+        return [
+            'include_weekends' => true,
+            'allow_custom_periods' => true,
+            'compare_previous' => true,
         ];
     }
 }

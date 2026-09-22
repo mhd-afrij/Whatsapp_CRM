@@ -80,6 +80,13 @@ class RolePermissionSeeder extends Seeder
             'analytics.view' => ['Super Administrator', 'Administrator', 'Manager', 'Viewer'],
             'analytics.export' => ['Super Administrator', 'Administrator', 'Manager'],
 
+            // Reports module (Phase 15): reports.view already granted above to every role.
+            // Viewers see ONLY their own slice of the report (no reports.view_all_agents);
+            // Manager+ see the whole workspace. Settings + export are privileged.
+            'reports.manage_settings' => ['Super Administrator', 'Administrator'],
+            'reports.export' => ['Super Administrator', 'Administrator', 'Manager'],
+            'reports.view_all_agents' => ['Super Administrator', 'Administrator', 'Manager'],
+
             'dlq.manage' => ['Super Administrator', 'Administrator'],
 
             // Webhook endpoints: view + send-test are safe read/self-directed

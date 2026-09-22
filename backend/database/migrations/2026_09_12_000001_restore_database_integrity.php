@@ -103,14 +103,29 @@ return new class extends Migration
                  WHERE r1.user_id IS NOT NULL OR r1.whatsapp_contact_id IS NOT NULL',
             );
 
-            if ($this->indexExists('message_reactions', 'message_reactions_message_id_whatsapp_contact_id_user_id_unique')) {
-                DB::statement('ALTER TABLE message_reactions DROP INDEX message_reactions_message_id_whatsapp_contact_id_user_id_unique');
-            }
+            // MySQL refuses (error 1553) to drop an index that a foreign key
+            // still leans on, and does NOT re-home the FK onto an alternative
+            // index automatically. The message_id FK has no dedicated index —
+            // it borrows the 3-column unique (leftmost message_id). So: create
+            // a replacement unique first, then drop the FK -> drop the old
+            // unique -> re-add the FK (it picks up the replacement index).
             if (! $this->indexExists('message_reactions', 'message_reactions_message_id_user_id_unique')) {
                 Schema::table('message_reactions', fn (Blueprint $table) => $table->unique(['message_id', 'user_id']));
             }
             if (! $this->indexExists('message_reactions', 'message_reactions_message_id_whatsapp_contact_id_unique')) {
                 Schema::table('message_reactions', fn (Blueprint $table) => $table->unique(['message_id', 'whatsapp_contact_id']));
+            }
+            if ($this->indexExists('message_reactions', 'message_reactions_message_id_whatsapp_contact_id_user_id_unique')) {
+                Schema::table('message_reactions', function (Blueprint $table): void {
+                    $table->dropForeign('message_reactions_message_id_foreign');
+                });
+                DB::statement('ALTER TABLE message_reactions DROP INDEX message_reactions_message_id_whatsapp_contact_id_user_id_unique');
+                Schema::table('message_reactions', fn (Blueprint $table) => $table->foreign('message_id')
+                    ->references('id')->on('messages')->cascadeOnDelete());
+            }
+            if (! $this->foreignKeyExists('message_reactions', 'message_reactions_message_id_foreign')) {
+                Schema::table('message_reactions', fn (Blueprint $table) => $table->foreign('message_id')
+                    ->references('id')->on('messages')->cascadeOnDelete());
             }
         } finally {
             Schema::enableForeignKeyConstraints();
@@ -126,14 +141,26 @@ return new class extends Migration
         Schema::disableForeignKeyConstraints();
 
         try {
+            // Re-home order matters here too (see up()): recreate the
+            // 3-column unique first, then drop the FK before dropping the
+            // per-identity uniques it may lean on, and re-add it afterwards
+            // (it picks up the recreated 3-column unique).
+            if (! $this->indexExists('message_reactions', 'message_reactions_message_id_whatsapp_contact_id_user_id_unique')) {
+                Schema::table('message_reactions', fn (Blueprint $table) => $table->unique(['message_id', 'whatsapp_contact_id', 'user_id']));
+            }
+            $messageFkExists = $this->foreignKeyExists('message_reactions', 'message_reactions_message_id_foreign');
+            if ($messageFkExists) {
+                Schema::table('message_reactions', fn (Blueprint $table) => $table->dropForeign('message_reactions_message_id_foreign'));
+            }
             if ($this->indexExists('message_reactions', 'message_reactions_message_id_user_id_unique')) {
                 Schema::table('message_reactions', fn (Blueprint $table) => $table->dropUnique(['message_id', 'user_id']));
             }
             if ($this->indexExists('message_reactions', 'message_reactions_message_id_whatsapp_contact_id_unique')) {
                 Schema::table('message_reactions', fn (Blueprint $table) => $table->dropUnique(['message_id', 'whatsapp_contact_id']));
             }
-            if (! $this->indexExists('message_reactions', 'message_reactions_message_id_whatsapp_contact_id_user_id_unique')) {
-                Schema::table('message_reactions', fn (Blueprint $table) => $table->unique(['message_id', 'whatsapp_contact_id', 'user_id']));
+            if ($messageFkExists) {
+                Schema::table('message_reactions', fn (Blueprint $table) => $table->foreign('message_id')
+                    ->references('id')->on('messages')->cascadeOnDelete());
             }
 
             if ($this->indexExists('messages', 'messages_conversation_id_sent_at_index')) {

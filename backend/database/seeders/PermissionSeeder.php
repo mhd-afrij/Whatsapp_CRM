@@ -83,6 +83,15 @@ class PermissionSeeder extends Seeder
             ['name' => 'analytics.view', 'group' => 'analytics'],
             ['name' => 'analytics.export', 'group' => 'analytics'],
 
+            // Reports module (Phase 15) - the unified Reports dashboard gates on reports.view
+            // (already in the catalog, seeded to every role). reports.manage_settings gates the
+            // Report settings drawer, reports.export gates tracked background/PDF exports, and
+            // reports.view_all_agents gates whether a viewer sees workspace-wide or only their
+            // own slice of the report (see ReportService claim resolution).
+            ['name' => 'reports.manage_settings', 'group' => 'reports'],
+            ['name' => 'reports.export', 'group' => 'reports'],
+            ['name' => 'reports.view_all_agents', 'group' => 'reports'],
+
             // Campaigns module (bulk WhatsApp messaging).
             ['name' => 'campaigns.view', 'group' => 'campaigns'],
             ['name' => 'campaigns.create', 'group' => 'campaigns'],

@@ -1,8 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\Internal\WhatsappMessageNotifyController;
+use App\Http\Controllers\Api\V1\AiAssistantController;
 use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Api\V1\AnalyticsSettingController;
-use App\Http\Controllers\Api\V1\AiAssistantController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BusinessHoursController;
@@ -11,15 +12,16 @@ use App\Http\Controllers\Api\V1\CampaignController;
 use App\Http\Controllers\Api\V1\ContactController;
 use App\Http\Controllers\Api\V1\ContactTagController;
 use App\Http\Controllers\Api\V1\ConversationController;
+use App\Http\Controllers\Api\V1\CustomFieldDefinitionController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DealController;
 use App\Http\Controllers\Api\V1\FailedJobController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\InternalNoteController;
 use App\Http\Controllers\Api\V1\LabelController;
-use App\Http\Controllers\Api\V1\LeadController;
 use App\Http\Controllers\Api\V1\LeadAssignmentRuleController;
 use App\Http\Controllers\Api\V1\LeadAutomationController;
+use App\Http\Controllers\Api\V1\LeadController;
 use App\Http\Controllers\Api\V1\LeadScoringRuleController;
 use App\Http\Controllers\Api\V1\LeadSettingsController;
 use App\Http\Controllers\Api\V1\LeadSourceController;
@@ -31,7 +33,9 @@ use App\Http\Controllers\Api\V1\NotificationPreferenceController;
 use App\Http\Controllers\Api\V1\NotificationSettingsController;
 use App\Http\Controllers\Api\V1\PermissionController;
 use App\Http\Controllers\Api\V1\PipelineController;
+use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\ReportExportController;
+use App\Http\Controllers\Api\V1\ReportSettingsController;
 use App\Http\Controllers\Api\V1\RoleController;
 use App\Http\Controllers\Api\V1\RoutingRuleController;
 use App\Http\Controllers\Api\V1\SearchController;
@@ -49,7 +53,7 @@ use Illuminate\Support\Facades\Route;
 // Gateway -> backend internal API (no Sanctum auth; guarded by EnsureInternalSecret's
 // shared-secret header). These routes must stay outside the `/v1` group on purpose.
 Route::prefix('internal')->name('api.internal.')->middleware('internal.secret')->group(function () {
-    Route::post('/whatsapp/messages/notify-new', [App\Http\Controllers\Api\Internal\WhatsappMessageNotifyController::class, 'notifyNewMessage'])
+    Route::post('/whatsapp/messages/notify-new', [WhatsappMessageNotifyController::class, 'notifyNewMessage'])
         ->name('whatsapp.messages.notify-new');
 });
 
@@ -187,11 +191,11 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::get('/permissions', [PermissionController::class, 'index'])->name('permissions.index');
 
         Route::prefix('custom-field-definitions')->name('custom-field-definitions.')->middleware('permission:workspace.settings.manage')->group(function () {
-            Route::get('/', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'index'])->name('index');
-            Route::post('/', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'store'])->name('store');
-            Route::patch('/{id}', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'update'])->name('update');
-            Route::delete('/{id}', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'destroy'])->name('destroy');
-            Route::post('/reorder', [App\Http\Controllers\Api\V1\CustomFieldDefinitionController::class, 'reorder'])->name('reorder');
+            Route::get('/', [CustomFieldDefinitionController::class, 'index'])->name('index');
+            Route::post('/', [CustomFieldDefinitionController::class, 'store'])->name('store');
+            Route::patch('/{id}', [CustomFieldDefinitionController::class, 'update'])->name('update');
+            Route::delete('/{id}', [CustomFieldDefinitionController::class, 'destroy'])->name('destroy');
+            Route::post('/reorder', [CustomFieldDefinitionController::class, 'reorder'])->name('reorder');
         });
 
         Route::prefix('whatsapp')->name('whatsapp.')->middleware('permission:whatsapp.connection.manage')->group(function () {
@@ -277,8 +281,6 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 ->middleware('permission:conversations.view')->name('typing');
             Route::get('/{conversation}/assignment-history', [ConversationController::class, 'assignmentHistory'])
                 ->middleware('permission:conversations.view')->name('assignment-history');
-            Route::get('/{conversation}/messages/{message}/media/{media}/url', [MediaController::class, 'url'])
-                ->middleware('permission:conversations.view')->name('messages.media.url');
             Route::get('/{conversation}/messages/{message}/media/{media}/content', [MediaController::class, 'content'])
                 ->middleware('permission:conversations.view')->name('messages.media.content');
             Route::get('/{conversation}/messages/{message}/status-events', [ConversationController::class, 'messageStatusEvents'])
@@ -342,6 +344,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::delete('/{contact}/labels/{label}', [ContactController::class, 'detachLabel'])
                 ->middleware('permission:contacts.view')->name('labels.detach');
         });
+
+        Route::put('/whatsapp/contacts/{whatsappContact}', [WhatsappController::class, 'updateContact'])
+            ->middleware('permission:contacts.edit')->name('whatsapp.contacts.update');
 
         Route::prefix('deals')->name('deals.')->middleware('permission:deals.manage')->group(function () {
             Route::get('/', [DealController::class, 'index'])->name('index');
@@ -631,6 +636,24 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             // authentication, same rationale as the notifications routes above.
             Route::get('/export/{notification}/download', [ReportExportController::class, 'download'])
                 ->name('export.download');
+
+            // Reports module v2 - unified overview + report preferences + tracked exports.
+            Route::get('/overview', [ReportController::class, 'overview'])
+                ->middleware('permission:reports.view')->name('overview');
+
+            Route::get('/settings', [ReportSettingsController::class, 'show'])
+                ->middleware('permission:reports.view')->name('settings.show');
+            Route::patch('/settings', [ReportSettingsController::class, 'update'])
+                ->middleware('permission:reports.manage_settings')->name('settings.update');
+            Route::post('/settings/reset', [ReportSettingsController::class, 'reset'])
+                ->middleware('permission:reports.manage_settings')->name('settings.reset');
+
+            Route::prefix('exports')->name('exports.')->middleware('permission:reports.export')->group(function () {
+                Route::get('/', [ReportExportController::class, 'index'])->name('index');
+                Route::post('/', [ReportExportController::class, 'storeExport'])->name('store');
+                Route::get('/{reportExport}/download', [ReportExportController::class, 'downloadExport'])->name('download');
+                Route::post('/{reportExport}/retry', [ReportExportController::class, 'retry'])->name('retry');
+            });
         });
 
         // Webhook endpoints - workspace integration surface. Read: webhooks.view.

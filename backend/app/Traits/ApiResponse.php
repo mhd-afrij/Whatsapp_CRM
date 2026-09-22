@@ -11,6 +11,9 @@ trait ApiResponse
      */
     protected function success(mixed $data = null, string $message = '', mixed $meta = null, int $status = 200): JsonResponse
     {
+        // JSON_PRESERVE_ZERO_FRACTION keeps PHP floats as JSON numbers with a decimal
+        // point (2.0 -> "2.0", not "2"), so clients decoding the payload reliably get
+        // floats back instead of silently-coerced ints.
         $response = [
             'success' => true,
             'message' => $message,
@@ -21,7 +24,7 @@ trait ApiResponse
             $response['meta'] = $meta;
         }
 
-        return response()->json($response, $status);
+        return response()->json($response, $status, [], JSON_PRESERVE_ZERO_FRACTION);
     }
 
     /**

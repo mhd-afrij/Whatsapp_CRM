@@ -42,3 +42,19 @@ graphify-out/
 
 # Logs
 *.log
+
+# Generated dependency / build caches (regenerated from lock files)
+backend/vendor/
+backend/node_modules/
+
+# Test runner / tool caches
+.phpunit.result.cache
+.phpunit.result.cache.bak
+*.tsbuildinfo
+
+# DB backup dumps (created by infrastructure/scripts/mysql-backup.sh)
+storage/backups/
+
+# Ad-hoc temp/scratch files
+/tmp-*
+/scratch-*

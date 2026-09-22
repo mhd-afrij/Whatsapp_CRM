@@ -1,0 +1,14 @@
+# Keep the local dev .env out of the image. Runtime config is supplied by
+# docker compose (env_file: ./backend/.env + environment overrides), so a
+# baked-in copy would only go stale and shadow the network-aware values
+# (DB_HOST=mysql, REDIS_HOST=redis, ...) set in docker-compose.yml.
+.env
+.env.backup
+.env.*.backup
+
+# Local-only artifacts that must never ship in the image
+.phpunit.result.cache
+storage/logs/*.log
+storage/framework/sessions/*
+storage/framework/cache/data/*
+storage/framework/views/*

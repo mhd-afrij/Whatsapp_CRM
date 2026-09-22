@@ -103,7 +103,7 @@ export function ConnectWhatsAppModal({
         <DialogHeader>
           <DialogTitle>Connect {liveAccount.name}</DialogTitle>
           <DialogDescription>
-            Link this account to WhatsApp through the gateway's secure pairing flow.
+            Link this account to WhatsApp through the gateway&apos;s secure pairing flow.
           </DialogDescription>
         </DialogHeader>
 

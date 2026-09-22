@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api\Internal;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Notification;
+use App\Services\ContactAutoLinker;
 use App\Services\NotificationService;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -40,7 +42,20 @@ class WhatsappMessageNotifyController extends Controller
             ->where('id', $validated['conversationId'])
             ->first();
 
-        if (! $conversation || ! $conversation->assigned_user_id || ! $conversation->assignedUser) {
+        if (! $conversation) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Conversation not found',
+                'data' => null,
+            ], 202);
+        }
+
+        // Eager provision: turn a first-time WhatsApp number into a CRM Contact
+        // the instant its first message lands, instead of waiting until someone
+        // opens the inbox. ContactAutoLinker is idempotent and never throws.
+        app(ContactAutoLinker::class)->ensureForConversations(new Collection([$conversation]));
+
+        if (! $conversation->assigned_user_id || ! $conversation->assignedUser) {
             return response()->json([
                 'success' => true,
                 'message' => 'No assignee to notify',

@@ -23,6 +23,7 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
   return {
     id: 42,
     workspace_id: 1,
+    whatsapp_account_id: null,
     status: "open",
     priority: "normal",
     unread_count: 0,
@@ -48,7 +49,6 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
     assigned_user: null,
     assigned_team: null,
     labels: [],
-    deal: null,
     ...overrides,
   };
 }

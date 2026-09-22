@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
 
 vi.mock('../whatsapp/manager-instance', () => ({
   connectionManager: { getSnapshot: vi.fn().mockReturnValue({}) },
@@ -120,20 +123,24 @@ describe('internal media/url and events/emit routes', () => {
     });
   });
 
-  describe('GET /internal/whatsapp/media/:mediaId/url', () => {
+  describe('GET /internal/whatsapp/media/:mediaId/content', () => {
     it('rejects requests without the internal gateway token', async () => {
-      const res = await fetch(`${baseUrl}/internal/whatsapp/media/5/url?workspaceId=1`);
+      const res = await fetch(`${baseUrl}/internal/whatsapp/media/5/content?workspaceId=1`);
       expect(res.status).toBe(401);
       expect(findMessageMediaById).not.toHaveBeenCalled();
     });
 
     it('returns 404 when the media row does not exist for the workspace', async () => {
       findMessageMediaById.mockResolvedValueOnce(null);
-      const res = await fetch(`${baseUrl}/internal/whatsapp/media/5/url?workspaceId=1`, { headers });
+      const res = await fetch(`${baseUrl}/internal/whatsapp/media/5/content?workspaceId=1`, { headers });
       expect(res.status).toBe(404);
     });
 
-    it('returns a signed URL payload and never the raw storage_path/bucket', async () => {
+    it('streams media content for the requesting workspace', async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'media-content-test-'));
+      const filePath = path.join(tmpDir, 'deadbeef.jpg');
+      await fs.writeFile(filePath, Buffer.from('fake image bytes'));
+
       findMessageMediaById.mockResolvedValueOnce({
         id: 5,
         message_id: 99,
@@ -141,18 +148,19 @@ describe('internal media/url and events/emit routes', () => {
         mime_type: 'image/jpeg',
       });
       resolveMediaAccess.mockResolvedValueOnce({
-        kind: 'signed_url',
-        url: 'https://minio.local/signed?sig=xyz',
-        expiresInSeconds: 300,
+        kind: 'local_file',
+        filePath,
       });
 
-      const res = await fetch(`${baseUrl}/internal/whatsapp/media/5/url?workspaceId=1`, { headers });
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { data: { kind: string; url: string } };
-      expect(body.data.kind).toBe('signed_url');
-      expect(body.data.url).toBe('https://minio.local/signed?sig=xyz');
-      expect(JSON.stringify(body)).not.toContain('1/99/deadbeef.jpg');
-      expect(resolveMediaAccess).toHaveBeenCalledWith('1/99/deadbeef.jpg');
+      try {
+        const res = await fetch(`${baseUrl}/internal/whatsapp/media/5/content?workspaceId=1`, { headers });
+        expect(res.status).toBe(200);
+        expect(resolveMediaAccess).toHaveBeenCalledWith('1/99/deadbeef.jpg');
+        expect(res.headers.get('content-type')).toBe('image/jpeg');
+        expect(await res.text()).toBe('fake image bytes');
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
     });
   });
 

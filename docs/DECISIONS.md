@@ -74,11 +74,11 @@ permission catalog.
 screen implies runtime-editable role→permission mappings — a static config-file approach
 couldn't support that UI.
 
-## D8 — Media & file storage: MinIO (S3 API) from day one, even in dev
-**Decision**: `docker-compose.dev.yml` includes MinIO rather than local filesystem storage for
-message media/avatars/logos.
-**Why**: Keeps dev/staging/prod storage code paths identical (same S3 client, same signed-URL
-generation), avoiding a class of "works locally, breaks in prod" storage bugs.
+## D8 — Media & file storage: gateway local disk
+**Decision**: Message media is stored on the gateway's local disk
+(`MEDIA_LOCAL_STORAGE_DIR`), served through the backend's authorized content proxy.
+**Why**: One storage code path for dev/staging/prod and no external object-storage
+dependency; media access stays behind the backend's per-conversation authorization.
 
 ## D9 — MySQL 8+ chosen over PostgreSQL
 **Decision**: MySQL 8, per the explicit spec requirement ("MySQL 8+" listed for both backend and

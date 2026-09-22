@@ -32,7 +32,6 @@ docker compose up -d --build
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000/api/v1/health
 - WhatsApp Gateway: http://localhost:4000/healthz
-- MinIO console: http://localhost:9001
 - Everything behind nginx: http://localhost:80
 
 **Note:** `docker compose up` has never been run live in the environment this project was built

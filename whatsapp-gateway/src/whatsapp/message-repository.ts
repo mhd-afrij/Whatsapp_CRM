@@ -346,9 +346,9 @@ export class MessageRepository {
 
       const [result] = await conn.query<ResultSetHeader>(
         `INSERT INTO messages
-           (workspace_id, conversation_id, whatsapp_account_id, whatsapp_message_id, direction, sender_type,
-            message_type, body, status, replied_to_message_id, sent_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'inbound', 'contact', ?, ?, 'sent', ?, ?, NOW(), NOW())`,
+(workspace_id, conversation_id, whatsapp_account_id, whatsapp_message_id, direction, sender_type,
+              message_type, body, status, replied_to_message_id, sent_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'inbound', 'contact', ?, ?, 'sent', ?, ?, NOW(), NOW())`,
         [
           workspaceId,
           conversationId,
@@ -410,9 +410,9 @@ export class MessageRepository {
       const sentAt = params.sentAt ?? new Date();
       const [result] = await conn.query<ResultSetHeader>(
         `INSERT INTO messages
-           (workspace_id, conversation_id, whatsapp_account_id, whatsapp_message_id, direction, sender_type,
-            message_type, body, status, replied_to_message_id, sent_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'outbound', 'user', ?, ?, ?, ?, ?, NOW(), NOW())`,
+(workspace_id, conversation_id, whatsapp_account_id, whatsapp_message_id, direction, sender_type,
+              message_type, body, status, replied_to_message_id, sent_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'outbound', 'user', ?, ?, ?, ?, ?, NOW(), NOW())`,
         [
           workspaceId,
           conversationId,

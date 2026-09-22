@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\WhatsappConnectionEvent;
+use App\Models\WhatsappContact;
+use App\Services\ContactAutoLinker;
 use App\Services\GatewayClient;
 use App\Support\AuditLogger;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use RuntimeException;
 
 class WhatsappController extends Controller
@@ -181,5 +184,76 @@ class WhatsappController extends Controller
             ->get(['id', 'event_type', 'metadata', 'occurred_at']);
 
         return $this->success($events, 'OK');
+    }
+
+    /**
+     * PUT /api/v1/whatsapp/contacts/{whatsappContact}
+     * Saves agent-edited customer details (display name / phone number) for a
+     * WhatsApp conversation. The gateway owns whatsapp_contacts, so the write
+     * is proxied through its internal API; this endpoint then provisions or
+     * links the CRM Contact (ContactAutoLinker) and syncs conversation links so
+     * the inbox immediately renders the saved name instead of the push name.
+     */
+    public function updateContact(Request $request, WhatsappContact $whatsappContact, ContactAutoLinker $autoLinker)
+    {
+        $validator = Validator::make($request->all(), [
+            'name' => ['nullable', 'string', 'max:191'],
+            'phone' => ['nullable', 'string', 'max:32'],
+        ]);
+
+        if ($validator->fails()) {
+            return $this->error('The given data was invalid.', $validator->errors());
+        }
+
+        $data = $validator->validated();
+
+        try {
+            $this->gateway->updateContact(
+                $request->user()->workspace_id,
+                $whatsappContact->id,
+                $data['name'] ?? null,
+                $data['phone'] ?? null,
+            );
+        } catch (RuntimeException $e) {
+            return $this->failure($e->getMessage(), 'gateway_unreachable', 502);
+        }
+
+        $whatsappContact->refresh();
+
+        // Provision/link a CRM contact. Number-hidden @lid rows are skipped by
+        // the linker until they carry a phone - which saving a number unlocks.
+        $autoLinker->ensureForWhatsappContact($whatsappContact);
+        $whatsappContact->refresh();
+
+        $linked = $whatsappContact->contact_id ? $whatsappContact->contact : null;
+
+        if ($linked) {
+            $update = [];
+            if (array_key_exists('name', $data)) {
+                $update['full_name'] = $data['name'];
+            }
+            if (($data['phone'] ?? null) !== null) {
+                $update['phone_number'] = $data['phone'];
+            }
+            if ($update) {
+                $linked->update($update);
+            }
+
+            // The inbox/conversation list renders the CRM contact's name first;
+            // point every conversation at it so the saved details show up now.
+            foreach ($whatsappContact->conversations as $conversation) {
+                if ($conversation->contact_id === null) {
+                    $conversation->update(['contact_id' => $linked->id]);
+                }
+            }
+        }
+
+        return $this->success([
+            'whatsapp_contact_id' => $whatsappContact->id,
+            'wa_jid' => $whatsappContact->wa_jid,
+            'contact_name' => $whatsappContact->contact_name,
+            'phone_number' => $whatsappContact->phone_number,
+            'contact' => $linked ? $linked->only(['id', 'full_name', 'phone_number']) : null,
+        ], 'Contact details saved');
     }
 }

@@ -5,10 +5,10 @@
 | Environment | Purpose | Notes |
 |---|---|---|
 | `dev` | Local development | `infrastructure/docker-compose.dev.yml`, hot-reload volumes, seeded demo data, Mailhog/log-based email, self-signed or no TLS |
-| `staging` | Pre-prod verification | Mirrors prod compose topology, separate MySQL/Redis/MinIO volumes, real (test) WhatsApp number, deploy on every merge to `main` |
+| `staging` | Pre-prod verification | Mirrors prod compose topology, separate MySQL/Redis volumes, real (test) WhatsApp number, deploy on every merge to `main` |
 | `prod` | Live workspace deployment | `infrastructure/docker-compose.prod.yml`, TLS via Nginx + Let's Encrypt (or provided certs), backups enabled, monitoring enabled |
 
-Each environment is a fully separate stack (separate DB, Redis, MinIO bucket) — no shared
+Each environment is a fully separate stack (separate DB, Redis, media storage) — no shared
 infrastructure between staging and prod, since a workspace's WhatsApp session must not be
 accidentally shared.
 
@@ -30,7 +30,7 @@ Services in `docker-compose.prod.yml`:
 - `mysql` — MySQL 8, named volume, `my.cnf` tuned for the workload (max_connections, innodb
   buffer pool).
 - `redis` — Redis 7, AOF persistence enabled (queue durability matters).
-- `minio` — S3-compatible object storage, named volume, bucket created via init container/script.
+- `whatsapp-gateway` — media files stored on the gateway's local `media-storage` volume.
 
 All containers on an internal Docker network; only `nginx` publishes host ports 80/443.
 
@@ -41,9 +41,9 @@ All containers on an internal Docker network; only `nginx` publishes host ports 
 | backend | `GET /api/v1/health` (public, no auth) → DB + Redis ping | Docker healthcheck, Nginx upstream check, deploy gate |
 | gateway | `GET /health` → DB + Redis + Baileys socket state | Docker healthcheck, deploy gate |
 | frontend | `GET /api/health` (Next.js route handler) → backend reachability | Docker healthcheck |
-| mysql/redis/minio | native healthcheck commands (`mysqladmin ping`, `redis-cli ping`, `mc ready`) | Compose `depends_on: condition: service_healthy` |
+| mysql/redis | native healthcheck commands (`mysqladmin ping`, `redis-cli ping`) | Compose `depends_on: condition: service_healthy` |
 
-Compose `depends_on` chains ensure app services only start once `mysql`/`redis`/`minio` report
+Compose `depends_on` chains ensure app services only start once `mysql`/`redis` report
 healthy, and deploy scripts poll `backend`/`gateway` health endpoints before flipping traffic.
 
 ## 4. Migration & Rollback Strategy
@@ -82,10 +82,10 @@ healthy, and deploy scripts poll `backend`/`gateway` health endpoints before fli
 ## 6. Backup Strategy
 
 - **MySQL**: nightly full logical backup (`mysqldump` or `mydumper` for larger datasets) to a
-  retained object storage location (a dedicated MinIO bucket or external S3), plus binary log
+  retained storage location, plus binary log
   retention for point-in-time recovery between nightly backups. Retention: 14 daily, 8 weekly.
-- **MinIO (media)**: versioning enabled on the bucket; periodic sync to a secondary
-  bucket/region for disaster recovery.
+- **Gateway media (message attachments)**: the gateway's `media-storage` directory must be
+  included in the backup strategy (volume snapshot or periodic sync to secondary storage).
 - **WhatsApp session credentials**: covered by the MySQL backup (they live in
   `whatsapp_session_credentials`); note that restoring an old backup may still require a fresh
   QR relink if WhatsApp has invalidated the session server-side in the interim — documented as

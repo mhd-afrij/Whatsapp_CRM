@@ -7,6 +7,7 @@ use App\Models\Notification;
 use App\Models\NotificationPreference;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\CreatesWorkspaceUsers;
 use Tests\TestCase;
@@ -93,6 +94,94 @@ class InternalMessageNotifyTest extends TestCase
         Http::assertSent(fn ($request) => str_contains($request->url(), '/internal/whatsapp/events/emit')
             && $request['event'] === 'notification.created'
             && $request['userId'] === $agent->id);
+    }
+
+    public function test_provisions_a_crm_contact_for_a_first_time_number(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'assigned_user_id' => $agent->id,
+        ]);
+
+        $waId = DB::table('whatsapp_contacts')->insertGetId([
+            'workspace_id' => $agent->workspace_id,
+            'wa_jid' => '94770000003@s.whatsapp.net',
+            'phone_number' => '94770000003',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $conversation->update(['whatsapp_contact_id' => $waId]);
+
+        $this->postNotified($this->validPayload($conversation))->assertStatus(202);
+
+        $this->assertDatabaseHas('contacts', [
+            'workspace_id' => $agent->workspace_id,
+            'phone_number' => '94770000003',
+            'source' => 'whatsapp',
+            'status' => 'active',
+        ]);
+
+        $linkedContactId = DB::table('whatsapp_contacts')->where('id', $waId)->value('contact_id');
+        $this->assertNotNull($linkedContactId);
+        $this->assertSame($linkedContactId, $conversation->fresh()->contact_id);
+    }
+
+    public function test_provisions_a_contact_for_a_lid_that_shared_its_number(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'assigned_user_id' => $agent->id,
+        ]);
+
+        $waId = DB::table('whatsapp_contacts')->insertGetId([
+            'workspace_id' => $agent->workspace_id,
+            'wa_jid' => '238418315501603@lid',
+            'phone_number' => '238418315501603',
+            'contact_name' => 'Azka',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $conversation->update(['whatsapp_contact_id' => $waId]);
+
+        $this->postNotified($this->validPayload($conversation))->assertStatus(202);
+
+        $this->assertDatabaseHas('contacts', [
+            'workspace_id' => $agent->workspace_id,
+            'phone_number' => '238418315501603',
+            'full_name' => 'Azka',
+            'source' => 'whatsapp',
+            'status' => 'active',
+        ]);
+
+        $this->assertNotNull(DB::table('whatsapp_contacts')->where('id', $waId)->value('contact_id'));
+    }
+
+    public function test_does_not_provision_a_contact_for_an_anonymous_lid(): void
+    {
+        $this->seedRbac();
+        $agent = $this->userWithRole('Agent');
+        $conversation = Conversation::factory()->create([
+            'workspace_id' => $agent->workspace_id,
+            'assigned_user_id' => $agent->id,
+        ]);
+
+        $waId = DB::table('whatsapp_contacts')->insertGetId([
+            'workspace_id' => $agent->workspace_id,
+            'wa_jid' => '99961152790578@lid',
+            'push_name' => 'Abdullah Faris',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $conversation->update(['whatsapp_contact_id' => $waId]);
+
+        $this->postNotified($this->validPayload($conversation))->assertStatus(202);
+
+        $this->assertDatabaseCount('contacts', 0);
+        $this->assertNull(DB::table('whatsapp_contacts')->where('id', $waId)->value('contact_id'));
     }
 
     public function test_does_not_notify_when_conversation_has_no_assignee(): void

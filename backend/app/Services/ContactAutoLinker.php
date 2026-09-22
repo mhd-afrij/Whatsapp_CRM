@@ -84,9 +84,10 @@ class ContactAutoLinker
         // CRM contact from it would poison phone-based dedup matching (the
         // gateway now resolves @lid messages to the canonical phone-number
         // whatsapp_contact via the lid_jid alias - see
-        // whatsapp-gateway/src/whatsapp/message-repository.ts). Never create a
-        // contact from a LID; if the mapping is already known, inherit the
-        // canonical row's contact instead.
+        // whatsapp-gateway/src/whatsapp/message-repository.ts). When the
+        // customer shares their real number (SHARE_PHONE_NUMBER protocol
+        // message, surfaced as whatsapp_contacts.phone_number), that value IS
+        // real and we fall through to the phone-based provisioning below.
         if (str_ends_with($whatsappContact->wa_jid, '@lid')) {
             $canonical = WhatsappContact::query()
                 ->where('workspace_id', $whatsappContact->workspace_id)
@@ -96,9 +97,13 @@ class ContactAutoLinker
 
             if ($canonical) {
                 $whatsappContact->linkToContact($canonical->contact);
+
+                return;
             }
 
-            return;
+            if (! $whatsappContact->phone_number) {
+                return;
+            }
         }
 
         try {

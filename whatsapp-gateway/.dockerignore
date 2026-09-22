@@ -1,0 +1,10 @@
+# Keep the local dev .env out of the image. Runtime config is supplied by
+# docker compose (env_file + environment); dotenv does not override real
+# process env vars, but a baked-in copy is stale by definition.
+.env
+.env.*.local
+
+node_modules
+dist
+coverage
+*.tsbuildinfo

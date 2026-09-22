@@ -61,11 +61,11 @@ fi
 echo "Backup complete: ${DUMP_FILE} (${SIZE_BYTES} bytes)"
 
 # Note on what else production backups need to cover (not scripted here):
-#   - MinIO/S3 media bucket contents (message attachments, exports) - use
-#     `mc mirror` (MinIO client) or your cloud provider's bucket-replication /
-#     versioning feature; this script only covers the relational database.
+#   - Gateway media files (message attachments) stored on the gateway's
+#     local media-storage directory - include that directory in your backup
+#     strategy; this script only covers the relational database.
 #   - .env secrets (APP_KEY, DB_PASSWORD, WHATSAPP_GATEWAY_TOKEN,
 #     CREDENTIALS_ENCRYPTION_KEY, etc.) - these must NOT be included in any
 #     backup artifact written to shared/long-lived storage. Manage them via a
-#     secrets manager (Vault, AWS Secrets Manager, Doppler, etc.) with its own
+#     secrets manager (Vault, Doppler, etc.) with its own
 #     backup/rotation story instead.

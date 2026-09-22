@@ -534,11 +534,66 @@ export function createInternalWhatsappRouter(): Router {
   });
 
   /**
+   * PUT /internal/whatsapp/contacts/:id
+   * Agent-saved customer details (display name + phone) via the backend. The
+   * gateway owns whatsapp_contacts, so the backend's "save customer details"
+   * flow routes through here instead of writing the table directly. Storing a
+   * phone on an otherwise number-hidden @lid row is what lets the backend's
+   * ContactAutoLinker build/link a real CRM contact for it.
+   */
+  const updateContactBodySchema = z.object({
+    workspaceId: z.coerce.number().int().positive(),
+    name: z.string().max(191).nullish(),
+    phoneNumber: z.string().max(32).nullish(),
+  });
+
+  router.put('/contacts/:id', async (req: Request, res: Response) => {
+    const id = z.coerce.number().int().positive().safeParse(req.params.id);
+    if (!id.success) {
+      res.status(400).json({ success: false, message: 'Invalid contact id', data: null });
+      return;
+    }
+
+    const parsed = updateContactBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, message: 'Invalid request body', data: parsed.error.issues });
+      return;
+    }
+
+    try {
+      const [rows] = await query<RowDataPacket[]>(
+        'SELECT id FROM whatsapp_contacts WHERE workspace_id = ? AND id = ? LIMIT 1',
+        [parsed.data.workspaceId, id.data],
+      );
+      if (rows.length === 0) {
+        res.status(404).json({ success: false, message: 'Contact not found', data: null });
+        return;
+      }
+
+      const name = parsed.data.name?.trim() || null;
+      const phoneNumber = parsed.data.phoneNumber?.replace(/\D/g, '') || null;
+      await execute(
+        'UPDATE whatsapp_contacts SET contact_name = ?, phone_number = ?, updated_at = NOW() WHERE id = ?',
+        [name, phoneNumber, id.data],
+      );
+
+      const [updated] = await query<RowDataPacket[]>(
+        'SELECT id, wa_jid, contact_name, phone_number, push_name, contact_id FROM whatsapp_contacts WHERE id = ?',
+        [id.data],
+      );
+      res.status(200).json({ success: true, message: 'Contact updated', data: updated[0] });
+    } catch (err) {
+      logger.error({ err, contactId: id.data }, 'Failed to update contact details');
+      res.status(500).json({ success: false, message: 'Failed to update contact details', data: null });
+    }
+  });
+
+  /**
    * POST /internal/whatsapp/media/upload
    * Receives a multipart `file` (plus a `workspaceId` form field), validates
    * it against the same allow-list/size cap as inbound media, stores it via
    * the shared StorageClient, and returns only a storage key + metadata -
-   * never a raw bucket URL. The Laravel caller (MediaController) then passes
+   * never a public URL. The Laravel caller (MediaController) then passes
    * the returned key as `mediaRef` when dispatching the outbound message, and
    * the send worker reads the bytes back through StorageClient::getObject.
    */
@@ -598,56 +653,11 @@ export function createInternalWhatsappRouter(): Router {
   );
 
   /**
-   * GET /internal/whatsapp/media/:mediaId/url?workspaceId=
-   * Returns a short-lived signed URL (or, in local-disk dev mode, a
-   * server-side file path the caller streams itself) for a message_media
-   * row - never the raw bucket URL. Authorization (does this user have
-   * access to the owning conversation's workspace) is the Laravel caller's
-   * responsibility; this endpoint is only reachable via the shared internal
-   * gateway token, never directly by the frontend.
-   */
-  router.get('/media/:mediaId/url', async (req: Request, res: Response) => {
-    const mediaId = z.coerce.number().int().positive().safeParse(req.params.mediaId);
-    const workspaceId = z.coerce.number().int().positive().safeParse(req.query.workspaceId);
-
-    if (!mediaId.success || !workspaceId.success) {
-      res.status(400).json({ success: false, message: 'Invalid mediaId or workspaceId', data: null });
-      return;
-    }
-
-    try {
-      const media = await messageRepository.findMessageMediaById(workspaceId.data, mediaId.data);
-      if (!media) {
-        res.status(404).json({ success: false, message: 'Media not found', data: null });
-        return;
-      }
-
-      const access = await resolveMediaAccess(media.storage_path);
-      res.status(200).json({
-        success: true,
-        message: 'OK',
-        data: {
-          mimeType: media.mime_type,
-          ...(access.kind === 'signed_url'
-            ? { kind: 'signed_url', url: access.url, expiresInSeconds: access.expiresInSeconds }
-            : { kind: 'local_file', filePath: access.filePath }),
-        },
-      });
-    } catch (err) {
-      logger.error({ err, mediaId: mediaId.data }, 'Failed to resolve media access');
-      res.status(500).json({ success: false, message: 'Failed to resolve media access', data: null });
-    }
-  });
-
-  /**
    * GET /internal/whatsapp/media/:mediaId/content?workspaceId=
-   * Local-disk dev mode only: streams the raw bytes of a message_media row so
-   * the Laravel backend (and through it the browser) can preview/download
-   * media that has no public URL. In S3/MinIO mode the frontend uses the
-   * signed URL from /media/:mediaId/url instead, so this returns 400 there.
-   * Same authorization contract as the url route: reachable only via the
-   * shared internal gateway token, with workspace scoping the Laravel caller
-   * has already verified.
+   * Streams the raw bytes of a message_media row so the Laravel backend (and
+   * through it the browser) can preview/download media stored on the
+   * gateway's local disk. Reachable only via the shared internal gateway
+   * token, with workspace scoping the Laravel caller has already verified.
    */
   router.get('/media/:mediaId/content', async (req: Request, res: Response) => {
     const mediaId = z.coerce.number().int().positive().safeParse(req.params.mediaId);
@@ -666,14 +676,6 @@ export function createInternalWhatsappRouter(): Router {
       }
 
       const access = await resolveMediaAccess(media.storage_path);
-      if (access.kind !== 'local_file') {
-        res.status(400).json({
-          success: false,
-          message: 'Media is served via a signed URL; use /media/:mediaId/url instead',
-          data: null,
-        });
-        return;
-      }
 
       res.setHeader('Content-Type', media.mime_type);
       const stream = createReadStream(access.filePath);

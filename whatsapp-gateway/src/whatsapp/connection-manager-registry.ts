@@ -131,6 +131,19 @@ export class ConnectionManagerRegistry extends EventEmitter {
     // Gatewise boot is workspace-scoped in single-instance deployments; the
     // registry owns the per-account iteration.
     const sessions = await this.repository.findActiveAccountsForWorkspace(env.WHATSAPP_WORKSPACE_ID);
+
+    // Single-account deployment: no whatsapp_connections rows means the whole
+    // workspace runs on the legacy (workspace-level) manager. Restore it so
+    // the session reconnects on boot instead of waiting for an operator/Laravel
+    // /reconnect poke. Skipped whenever at least one account row exists.
+    if (sessions.length === 0) {
+      const { connectionManager } = await import('./manager-instance');
+      await connectionManager.restoreOnBoot().catch((err) => {
+        logger.warn({ err }, 'Failed to restore legacy WhatsApp session on boot');
+      });
+      return;
+    }
+
     const concurrency = Math.max(1, env.STARTUP_RESTORE_CONCURRENCY);
 
     for (let offset = 0; offset < sessions.length; offset += concurrency) {

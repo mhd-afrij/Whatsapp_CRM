@@ -12,7 +12,7 @@ doc, event catalog, key flow diagrams.
 - Initialize git repo, base `.gitignore`, `.editorconfig`.
 - Scaffold `backend` (Laravel 12, PHP 8.3), `frontend` (Next.js 14 App Router + TS strict +
   Tailwind + shadcn/ui), `whatsapp-gateway` (Node 20 + TS + Express).
-- `infrastructure/docker-compose.dev.yml` with MySQL, Redis, MinIO, Nginx, and the three app
+- `infrastructure/docker-compose.dev.yml` with MySQL, Redis, Nginx, and the three app
   services wired for hot-reload.
 - Per-service `.env.example`, lint/format configs (ESLint/Prettier, Laravel Pint), CI skeleton.
 
@@ -39,7 +39,7 @@ doc, event catalog, key flow diagrams.
 ## Phase 5 — Inbound Message Pipeline
 - Baileys message events → `whatsapp_contacts` upsert → `conversations` upsert →
   `messages`/`message_media` write → `message.created` socket emit.
-- Media download worker (BullMQ) writing to MinIO.
+- Media download worker (BullMQ) writing to the gateway's media-storage volume.
 - Dedup verification against the unique constraint under simulated duplicate delivery.
 
 ## Phase 6 — Outbound Message Pipeline
