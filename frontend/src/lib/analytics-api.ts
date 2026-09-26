@@ -29,12 +29,34 @@ export async function fetchDashboardSummary(filters: DashboardFilters): Promise<
   return unwrap(apiClient.get("/dashboard/summary", { params: filters }));
 }
 
+/**
+ * The /analytics/* endpoints return `{ tracked: false, unavailable_reason }`
+ * (instead of a series) when the workspace's analytics are disabled or the
+ * metric's specific toggle is off - see AnalyticsController::notTracked. The
+ * dashboard must distinguish "not tracked" from a legitimately empty series.
+ */
+export type AnalyticsNotTrackedReason = "analytics_disabled" | "metric_not_tracked";
+
+export interface AnalyticsNotTrackedResult {
+  tracked: false;
+  unavailable_reason: AnalyticsNotTrackedReason;
+}
+
+export function isNotTracked(value: unknown): value is AnalyticsNotTrackedResult {
+  return typeof value === "object" && value !== null && (value as { tracked?: unknown }).tracked === false;
+}
+
+/** Normalize a series-or-not-tracked payload into a plain array (empty when untracked). */
+export function asArray<T>(value: T[] | AnalyticsNotTrackedResult | undefined): T[] {
+  return isNotTracked(value) ? [] : value ?? [];
+}
+
 export interface VolumePoint {
   date: string;
   count: number;
 }
 
-export async function fetchConversationVolume(filters: AnalyticsFilters): Promise<VolumePoint[]> {
+export async function fetchConversationVolume(filters: AnalyticsFilters): Promise<VolumePoint[] | AnalyticsNotTrackedResult> {
   return unwrap(apiClient.get("/analytics/conversation-volume", { params: filters }));
 }
 
@@ -43,7 +65,7 @@ export interface ResponseTimePoint {
   avg_response_minutes: number | null;
 }
 
-export async function fetchResponseTimeTrend(filters: AnalyticsFilters): Promise<ResponseTimePoint[]> {
+export async function fetchResponseTimeTrend(filters: AnalyticsFilters): Promise<ResponseTimePoint[] | AnalyticsNotTrackedResult> {
   return unwrap(apiClient.get("/analytics/response-time-trend", { params: filters }));
 }
 
@@ -55,7 +77,7 @@ export interface WonVsLostPoint {
   lost_value: number;
 }
 
-export async function fetchWonVsLost(filters: AnalyticsFilters): Promise<WonVsLostPoint[]> {
+export async function fetchWonVsLost(filters: AnalyticsFilters): Promise<WonVsLostPoint[] | AnalyticsNotTrackedResult> {
   return unwrap(apiClient.get("/analytics/won-vs-lost", { params: filters }));
 }
 
@@ -66,7 +88,7 @@ export interface AgentPerformancePoint {
   tasks_completed: number;
 }
 
-export async function fetchAgentPerformance(filters: AnalyticsFilters): Promise<AgentPerformancePoint[]> {
+export async function fetchAgentPerformance(filters: AnalyticsFilters): Promise<AgentPerformancePoint[] | AnalyticsNotTrackedResult> {
   return unwrap(apiClient.get("/analytics/agent-performance", { params: filters }));
 }
 

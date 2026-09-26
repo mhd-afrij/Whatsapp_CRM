@@ -21,7 +21,7 @@ export default function UnauthorizedPage() {
         <div className="mt-6 flex flex-col gap-2">
           <Link
             href="/dashboard"
-            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
+            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-dark"
           >
             Back to dashboard
           </Link>

@@ -197,7 +197,7 @@ function MonthGrid({
               <span
                 className={cn(
                   "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs",
-                  isToday ? "bg-primary text-white" : isCurrentMonth ? "text-text" : "text-muted"
+                  isToday ? "bg-primary text-primary-foreground" : isCurrentMonth ? "text-text" : "text-muted"
                 )}
               >
                 {day.getDate()}
@@ -312,7 +312,7 @@ function TimelineGrid({
                 <p
                   className={cn(
                     "mx-auto mt-0.5 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold",
-                    isToday ? "bg-primary text-white" : "text-text"
+                    isToday ? "bg-primary text-primary-foreground" : "text-text"
                   )}
                 >
                   {day.getDate()}
@@ -896,7 +896,7 @@ function CalendarView() {
                 onClick={() => setView(mode)}
                 className={cn(
                   "px-3 py-1.5 text-xs font-semibold capitalize transition",
-                  view === mode ? "bg-primary text-white" : "text-muted hover:bg-primary-soft/40 hover:text-text"
+                  view === mode ? "bg-primary text-primary-foreground" : "text-muted hover:bg-primary-soft/40 hover:text-text"
                 )}
               >
                 {mode}

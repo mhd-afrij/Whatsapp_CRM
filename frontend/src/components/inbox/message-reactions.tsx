@@ -104,7 +104,7 @@ export function MessageReactions({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1 rounded-full bg-[#202c33] border border-[#111b21] px-1.5 py-0.5 shadow-md">
+    <div className="flex flex-wrap items-center gap-1 rounded-full bg-[#121516] border border-[#0e1112] px-1.5 py-0.5 shadow-md">
       {summary.map((reaction) => (
         <button
           key={reaction.emoji}
@@ -114,7 +114,7 @@ export function MessageReactions({
             "inline-flex items-center gap-1 rounded-full px-1 text-[11px] leading-none transition-colors",
             reaction.hasMyReaction
               ? "text-emerald-400 font-semibold"
-              : "text-[#8696a0] hover:text-[#e9edef]"
+              : "text-[#a4acab] hover:text-[#f4f6f5]"
           )}
           title={`${reaction.emoji} reacted ${reaction.count} time${reaction.count === 1 ? "" : "s"}`}
         >

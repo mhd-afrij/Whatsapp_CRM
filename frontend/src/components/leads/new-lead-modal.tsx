@@ -125,7 +125,7 @@ export function NewLeadModal({ onClose, initialContactId }: { onClose: () => voi
             <button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-60"
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-dark disabled:opacity-60"
             >
               {isSubmitting ? "Creating…" : "Create lead"}
             </button>

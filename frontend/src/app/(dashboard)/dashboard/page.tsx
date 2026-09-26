@@ -12,7 +12,7 @@ import { usePermission } from "@/hooks/use-permission";
 import { useUsers } from "@/hooks/use-users";
 import { DashboardOverviewWidgets } from "@/components/dashboard/dashboard-overview-widgets";
 import { useAgentPerformance, useConversationVolume, useDashboardSummary, useResponseTimeTrend, useWonVsLost } from "@/hooks/use-analytics";
-import { requestReportExport } from "@/lib/analytics-api";
+import { asArray, isNotTracked, requestReportExport } from "@/lib/analytics-api";
 
 const SERIES = ["var(--chart-series-1)", "var(--chart-series-2)", "var(--chart-series-3)", "var(--chart-series-4)", "var(--chart-series-5)"];
 const tooltipStyle = { backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: 10, fontSize: 12, color: "var(--color-text)" };
@@ -46,6 +46,7 @@ function ChartCard({
   title,
   isLoading,
   isError,
+  unavailable,
   isEmpty,
   emptyLabel,
   onRetry,
@@ -54,6 +55,7 @@ function ChartCard({
   title: string;
   isLoading: boolean;
   isError?: boolean;
+  unavailable?: boolean;
   isEmpty: boolean;
   emptyLabel: string;
   onRetry?: () => void;
@@ -72,6 +74,10 @@ function ChartCard({
               Retry
             </button>
           )}
+        </div>
+      ) : unavailable ? (
+        <div className="flex h-24 items-center justify-center text-xs text-muted">
+          Analytics tracking is off for this metric.
         </div>
       ) : isEmpty ? (
         <div className="flex h-24 items-center justify-center text-xs text-muted">
@@ -110,7 +116,7 @@ function ExportCta({ from, to }: { from: string; to: string }) {
         type="button"
         onClick={trigger}
         disabled={state === "generating"}
-        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-semibold text-white shadow-xs transition hover:bg-primary-dark disabled:opacity-60"
+        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 text-xs font-semibold text-primary-foreground shadow-xs transition hover:bg-primary-dark disabled:opacity-60"
       >
         <Download className="size-3.5" />
         {state === "generating"
@@ -150,6 +156,17 @@ function DashboardContent() {
   const wonVsLost = useWonVsLost(agentFilters);
   const agentPerformance = useAgentPerformance(agentFilters);
   const s = summary.data;
+  // The analytics endpoints return { tracked: false } instead of a series when a
+  // metric's toggle (or analytics_enabled) is off - normalize so widgets render an
+  // honest "tracking off" state rather than treating it as data and crashing.
+  const wonNotTracked = isNotTracked(wonVsLost.data);
+  const wonSeries = asArray(wonVsLost.data);
+  const volumeNotTracked = isNotTracked(volume.data);
+  const volumeSeries = asArray(volume.data);
+  const responseNotTracked = isNotTracked(responseTrend.data);
+  const responseSeries = asArray(responseTrend.data);
+  const agentNotTracked = isNotTracked(agentPerformance.data);
+  const agentSeries = asArray(agentPerformance.data);
   const analyticsQueries = [summary, volume, responseTrend, wonVsLost, agentPerformance];
   const refreshing = analyticsQueries.some((query) => query.isFetching);
   const refresh = () => {
@@ -243,7 +260,7 @@ function DashboardContent() {
               supportingText={`${s.deals.lost_count} lost deals in period`}
               icon={CheckCircle2}
               tone="green"
-              trend={chartValues(wonVsLost.data, (point) => point.won_value)}
+              trend={chartValues(wonSeries, (point) => point.won_value)}
             />
             <DashboardKpiCard
               label="Avg first response"
@@ -251,7 +268,7 @@ function DashboardContent() {
               supportingText={s.response_time.sample_size > 0 ? `${s.response_time.sample_size} measured replies` : "No replies measured yet"}
               icon={Clock3}
               tone="orange"
-              trend={chartValues(responseTrend.data, (point) => point.avg_response_minutes)}
+              trend={chartValues(responseSeries, (point) => point.avg_response_minutes)}
             />
             <DashboardKpiCard
               label="Overdue tasks"
@@ -264,7 +281,7 @@ function DashboardContent() {
         )
       )}
 
-      <DashboardHeroChart data={wonVsLost.data} isLoading={wonVsLost.isLoading} isError={wonVsLost.isError} />
+      <DashboardHeroChart data={wonSeries} isLoading={wonVsLost.isLoading} isError={wonVsLost.isError} notTracked={wonNotTracked} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <ChartCard
@@ -272,11 +289,12 @@ function DashboardContent() {
           isLoading={volume.isLoading}
           isError={volume.isError}
           onRetry={() => volume.refetch()}
-          isEmpty={!volume.data?.some((point) => point.count > 0)}
+          unavailable={volumeNotTracked}
+          isEmpty={!volumeSeries.some((point) => point.count > 0)}
           emptyLabel="conversations"
         >
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={volume.data ?? []}>
+            <BarChart data={volumeSeries}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--color-muted)" }} />
               <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "var(--color-muted)" }} />
@@ -291,11 +309,12 @@ function DashboardContent() {
           isLoading={responseTrend.isLoading}
           isError={responseTrend.isError}
           onRetry={() => responseTrend.refetch()}
-          isEmpty={!responseTrend.data?.some((point) => point.avg_response_minutes != null)}
+          unavailable={responseNotTracked}
+          isEmpty={!responseSeries.some((point) => point.avg_response_minutes != null)}
           emptyLabel="response data"
         >
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={responseTrend.data ?? []}>
+            <LineChart data={responseSeries}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: "var(--color-muted)" }} />
               <YAxis tick={{ fontSize: 11, fill: "var(--color-muted)" }} />
@@ -314,7 +333,7 @@ function DashboardContent() {
         </ChartCard>
       </div>
 
-      <DashboardOverviewWidgets filters={agentFilters} summary={s} agentPerformance={agentPerformance.data} />
+      <DashboardOverviewWidgets filters={agentFilters} summary={s} agentPerformance={agentSeries} agentPerformanceNotTracked={agentNotTracked} />
     </div>
   );
 }

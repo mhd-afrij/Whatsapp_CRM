@@ -299,7 +299,7 @@ export default function OnboardingPage() {
     <div className="flex min-h-screen flex-col bg-bg">
       {/* Brand bar */}
       <header className="flex items-center gap-2 px-6 py-4">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-white">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <MessageCircle className="h-5 w-5" aria-hidden="true" />
         </span>
         <span className="text-lg font-semibold text-text">WhatsCRM</span>
@@ -314,8 +314,8 @@ export default function OnboardingPage() {
                 <span
                   className={cn(
                     "flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold",
-                    i < idx && "bg-success text-white",
-                    i === idx && "bg-primary text-white",
+                    i < idx && "bg-success text-primary-foreground",
+                    i === idx && "bg-primary text-primary-foreground",
                     i > idx && "bg-border text-muted"
                   )}
                   aria-current={i === idx ? "step" : undefined}

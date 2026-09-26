@@ -116,7 +116,7 @@ function DealDetail({ id }: { id: number }) {
             type="button"
             onClick={onWon}
             disabled={wonMutation.isPending}
-            className="rounded-md bg-success px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            className="rounded-md bg-success px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
             Mark won
           </button>

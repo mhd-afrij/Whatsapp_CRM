@@ -296,16 +296,16 @@ function MessageActionsMenu({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-44 overflow-hidden rounded-md border border-black/[0.08] dark:border-white/[0.1] bg-white dark:bg-[#233138] py-1.5 shadow-[0_2px_5px_0_rgba(11,20,26,0.2),0_2px_10px_0_rgba(11,20,26,0.12)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.5)] z-50 animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute right-0 top-full mt-1 w-44 overflow-hidden rounded-md border border-black/[0.08] dark:border-white/[0.1] bg-white dark:bg-[#171a1b] py-1.5 shadow-[0_2px_5px_0_rgba(11,20,26,0.2),0_2px_10px_0_rgba(11,20,26,0.12)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.5)] z-50 animate-in fade-in zoom-in-95 duration-100">
           <button
             type="button"
             onClick={() => {
               onReply(message);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-muted dark:text-text/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
           >
-            <CornerUpLeft className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <CornerUpLeft className="h-4 w-4 text-muted shrink-0" />
             <span>Reply</span>
           </button>
           <button
@@ -317,9 +317,9 @@ function MessageActionsMenu({
               setOpen(false);
             }}
             disabled={!message.replied_to_message_id}
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-muted dark:text-text/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <ArrowLeft className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <ArrowLeft className="h-4 w-4 text-muted shrink-0" />
             <span>Jump to reply</span>
           </button>
           <button
@@ -328,9 +328,9 @@ function MessageActionsMenu({
               onForward(message);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-muted dark:text-text/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
           >
-            <Forward className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <Forward className="h-4 w-4 text-muted shrink-0" />
             <span>Forward</span>
           </button>
           <button
@@ -339,17 +339,17 @@ function MessageActionsMenu({
               onStarToggle(message);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-muted dark:text-text/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
           >
-            <Sparkles className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <Sparkles className="h-4 w-4 text-muted shrink-0" />
             <span>{message.starred_at ? "Unstar" : "Star"}</span>
           </button>
           <button
             type="button"
             onClick={copyMessage}
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-muted dark:text-text/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
           >
-            <Copy className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <Copy className="h-4 w-4 text-muted shrink-0" />
             <span>Copy text</span>
           </button>
           <button
@@ -434,7 +434,7 @@ function MessageContextMenu({
 
   return (
     <div
-      className={`absolute pointer-events-none transform transition-opacity opacity-0 rounded-md border border-black/[0.08] dark:border-white/[0.1] bg-white dark:bg-[#233138] py-1.5 shadow-[0_2px_5px_0_rgba(11,20,26,0.2),0_2px_10px_0_rgba(11,20,26,0.12)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.5)] z-50 ${
+      className={`absolute pointer-events-none transform transition-opacity opacity-0 rounded-md border border-black/[0.08] dark:border-white/[0.1] bg-white dark:bg-[#171a1b] py-1.5 shadow-[0_2px_5px_0_rgba(11,20,26,0.2),0_2px_10px_0_rgba(11,20,26,0.12)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.5)] z-50 ${
         open ? "pointer-events-auto opacity-100" : ""
       }`}
       style={{ left: `${x}px`, top: `${y}px` }}
@@ -450,17 +450,17 @@ function MessageContextMenu({
         <button
           type="button"
           onClick={handleReply}
-          className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
+          className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-muted dark:text-text/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
         >
-          <CornerUpLeft className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+          <CornerUpLeft className="h-4 w-4 text-muted shrink-0" />
           <span>Reply</span>
         </button>
         <button
           type="button"
           onClick={handleCopy}
-          className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
+          className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-muted dark:text-text/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
         >
-          <Copy className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+          <Copy className="h-4 w-4 text-muted shrink-0" />
           <span>Copy text</span>
         </button>
         <button
@@ -469,9 +469,9 @@ function MessageContextMenu({
             onForward(message);
             setOpen(false);
           }}
-          className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
+          className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-muted dark:text-text/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
         >
-          <Forward className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+          <Forward className="h-4 w-4 text-muted shrink-0" />
           <span>Forward</span>
         </button>
         {canRetry && (
@@ -483,7 +483,7 @@ function MessageContextMenu({
             }}
             className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-primary hover:bg-primary/10 transition-colors"
           >
-            <Clock className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <Clock className="h-4 w-4 text-muted shrink-0" />
             <span>Retry</span>
           </button>
         )}
@@ -494,9 +494,9 @@ function MessageContextMenu({
               onStarToggle(message);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-[#3b4a54] dark:text-[#d1d7db] hover:bg-[#f5f6f6] dark:hover:bg-[#182229] transition-colors"
+            className="flex w-full items-center gap-3 px-4 py-2 text-left text-[13.5px] text-muted dark:text-text/90 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
           >
-            <Sparkles className="h-4 w-4 text-[#667781] dark:text-[#8696a0] shrink-0" />
+            <Sparkles className="h-4 w-4 text-muted shrink-0" />
             <span>{message.starred_at ? "Unstar" : "Star"}</span>
           </button>
         )}
@@ -1640,7 +1640,7 @@ export function Composer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="relative z-20 shrink-0 border-t border-border bg-[#f0f2f5] dark:bg-[#202c33] px-3 py-2 shadow-sm"
+      className="relative z-20 shrink-0 border-t border-border bg-[#f0f2f5] dark:bg-[#121516] px-3 py-2 shadow-sm"
     >
       {isNoteMode && (
         <p className="mb-1 text-xs font-medium text-amber-500 dark:text-amber-400">
@@ -1657,7 +1657,7 @@ export function Composer({
       {!isNoteMode && replyTo && (
         <div
           key={replyTo.id}
-          className="mb-1.5 flex items-stretch overflow-hidden rounded-lg border border-border bg-surface dark:bg-[#111b21] shadow-sm animate-in slide-in-from-bottom-1 fade-in duration-150"
+          className="mb-1.5 flex items-stretch overflow-hidden rounded-lg border border-border bg-surface dark:bg-[#0e1112] shadow-sm animate-in slide-in-from-bottom-1 fade-in duration-150"
         >
           <div
             className={cn(
@@ -1689,7 +1689,7 @@ export function Composer({
       )}
 
       {!isNoteMode && attachment && (
-        <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-border bg-surface dark:bg-[#111b21] px-3 py-1.5 text-xs text-text">
+        <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-border bg-surface dark:bg-[#0e1112] px-3 py-1.5 text-xs text-text">
           {attachment.previewUrl ? (
             <img
               src={attachment.previewUrl}
@@ -1870,7 +1870,7 @@ export function Composer({
             }}
             rows={1}
             placeholder={isNoteMode ? "Write an internal note..." : "Type a message"}
-            className="min-h-[40px] max-h-[100px] w-full min-w-0 resize-none overflow-y-auto rounded-lg border border-border bg-surface dark:bg-[#2a3942] dark:border-transparent px-3 py-2 pr-8 text-[13.5px] text-text placeholder:text-muted leading-normal outline-none transition focus:border-accent focus:ring-1 focus:ring-accent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="min-h-[40px] max-h-[100px] w-full min-w-0 resize-none overflow-y-auto rounded-lg border border-border bg-surface dark:bg-[#0e1112] dark:border-transparent px-3 py-2 pr-8 text-[13.5px] text-text placeholder:text-muted leading-normal outline-none transition focus:border-accent focus:ring-1 focus:ring-accent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
         </div>
 
@@ -2015,7 +2015,7 @@ export function HeaderIconButton({
     >
       <Icon className="h-4 w-4" />
       {badge != null && badge > 0 && (
-        <span className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-white">
+        <span className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
           {badge > 9 ? "9+" : String(badge)}
         </span>
       )}
@@ -2468,7 +2468,7 @@ export function ChatPanel({
               <div key={message.id}>
                 {showSeparator && message.sent_at && (
                   <div className="my-3 flex justify-center sticky top-2 z-10">
-                    <span className="rounded-lg border border-black/[0.08] bg-white/95 text-[#667781] dark:border-[#222d34]/60 dark:bg-[#182229]/95 dark:text-[#8696a0] px-3 py-1 text-[11.5px] font-medium shadow-sm uppercase tracking-wider">
+                    <span className="rounded-lg border border-black/[0.08] bg-white/95 text-[#667781] dark:border-border/60 dark:bg-[#0e1112]/95 text-muted px-3 py-1 text-[11.5px] font-medium shadow-sm uppercase tracking-wider">
                       {formatInboxDateSeparator(message.sent_at, workspace?.timezone)}
                     </span>
                   </div>

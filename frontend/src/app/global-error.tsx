@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { RotateCcw } from "lucide-react";
 
@@ -16,7 +16,7 @@ export default function GlobalError({ reset }: { error: Error & { digest?: strin
             <button
               type="button"
               onClick={reset}
-              className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark"
+              className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-dark"
             >
               <RotateCcw className="size-4" aria-hidden="true" />
               Retry

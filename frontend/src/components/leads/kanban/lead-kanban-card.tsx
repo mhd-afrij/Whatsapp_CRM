@@ -245,7 +245,7 @@ export function LeadKanbanCard({
             {hasUnread && (
               <span
                 title={`${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`}
-                className="absolute -right-1 -bottom-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-success px-1 text-[9px] font-bold text-white ring-2 ring-surface"
+                className="absolute -right-1 -bottom-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-success px-1 text-[9px] font-bold text-primary-foreground ring-2 ring-surface"
               >
                 {clampUnread(unreadCount)}
               </span>
