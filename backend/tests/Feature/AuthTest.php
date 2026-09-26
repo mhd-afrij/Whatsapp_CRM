@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Invitation;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -48,6 +49,24 @@ class AuthTest extends TestCase
         $response->assertStatus(422)->assertJsonPath('success', false);
 
         $this->assertDatabaseHas('audit_logs', ['action' => 'auth.login.failed', 'workspace_id' => $user->workspace_id]);
+    }
+
+    public function test_login_fails_for_unknown_email_on_an_unseeded_install(): void
+    {
+        // No seedRbac(): the workspaces table is empty, so nothing can supply a
+        // workspace_id for an email that matches no user.
+        $response = $this->postJson('/api/v1/auth/login', [
+            'email' => 'admin@example.com',
+            'password' => 'Secret123!',
+        ]);
+
+        $response->assertStatus(422)->assertJsonPath('success', false);
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'auth.login.failed',
+            'user_id' => null,
+            'workspace_id' => Workspace::query()->value('id'),
+        ]);
     }
 
     public function test_login_is_throttled_after_too_many_attempts(): void
@@ -194,7 +213,6 @@ class AuthTest extends TestCase
             ->patchJson("/api/v1/users/{$agent->id}", ['role_id' => $adminRole->id])
             ->assertStatus(403);
     }
-
 
     public function test_users_manage_permission_can_suspend_and_reactivate_a_user(): void
     {
