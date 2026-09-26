@@ -32,6 +32,18 @@ class ReportExportController extends Controller
 
     private const TYPES = ['contacts', 'deals', 'tasks'];
 
+    /**
+     * Pending exports that make no progress for this long are failed out instead of
+     * spinning as "Queued"/"Preparing" forever.
+     *
+     * Generation only happens while a queue worker is alive; if the worker is down
+     * (common in bare-metal dev, where nothing runs `queue:work`), the record would
+     * never move. Failing it surfaces the problem with the Retry button; should a
+     * worker pick the job up later anyway, the job transitions the record straight
+     * through processing -> ready as normal.
+     */
+    private const STALE_AFTER_MINUTES = 15;
+
     /** POST /api/v1/reports/export {type, from, to} */
     public function store(Request $request)
     {
@@ -88,6 +100,8 @@ class ReportExportController extends Controller
     /** GET /api/v1/reports/exports - the requesting user's own exports (newest first). */
     public function index(Request $request)
     {
+        $this->failStaleExports($request->user()->id);
+
         return $this->success(
             ReportExport::query()
                 ->where('user_id', $request->user()->id)
@@ -95,6 +109,23 @@ class ReportExportController extends Controller
                 ->limit(20)
                 ->get()
         );
+    }
+
+    /** Fail this user's queued/processing exports that have not progressed for 15+ minutes. */
+    private function failStaleExports(int $userId): void
+    {
+        ReportExport::query()
+            ->where('user_id', $userId)
+            ->whereIn('status', [ReportExport::STATUS_QUEUED, ReportExport::STATUS_PROCESSING])
+            ->where('updated_at', '<', now()->subMinutes(self::STALE_AFTER_MINUTES))
+            ->get()
+            ->each(fn (ReportExport $export) => $export->update([
+                'status' => ReportExport::STATUS_FAILED,
+                'error_message' => sprintf(
+                    'No progress for %d minutes - the queue worker may be offline. Start `php artisan queue:work` and retry.',
+                    self::STALE_AFTER_MINUTES
+                ),
+            ]));
     }
 
     /** POST /api/v1/reports/exports {type, from, to} */

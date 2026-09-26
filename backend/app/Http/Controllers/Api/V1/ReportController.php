@@ -24,7 +24,21 @@ class ReportController extends Controller
 
     public function overview(Request $request)
     {
-        $validator = Validator::make($request->all(), [
+        // Query-string values always arrive as strings, but Laravel's `boolean`
+        // rule only accepts true/false/1/0/"1"/"0" (strict comparison), so
+        // `?compare=true` - what the web client serialises - would 422. Coerce
+        // the textual forms ("true"/"false"/"on"/"off"/"yes"/"no") to real
+        // booleans before validating; leave anything unparseable untouched so
+        // it still fails validation with a 422.
+        $payload = $request->all();
+        if (is_string($payload['compare'] ?? null)) {
+            $coerced = filter_var($payload['compare'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($coerced !== null) {
+                $payload['compare'] = $coerced;
+            }
+        }
+
+        $validator = Validator::make($payload, [
             'range' => 'sometimes|string|in:7d,30d,90d,custom',
             'from' => 'required_if:range,custom|nullable|date',
             'to' => 'required_if:range,custom|nullable|date|after_or_equal:from',

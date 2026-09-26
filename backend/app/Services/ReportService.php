@@ -96,7 +96,11 @@ class ReportService
             : null;
 
         [$from, $to] = $this->resolvePeriod($filters);
-        $compare = array_key_exists('compare', $filters) ? (bool) $filters['compare'] : (bool) ($preferences['compare_previous'] ?? true);
+        // filter_var instead of a (bool) cast: `(bool) "false"` is true, so a
+        // string "false" from a query-string caller must be coerced properly.
+        $compare = array_key_exists('compare', $filters)
+            ? filter_var($filters['compare'], FILTER_VALIDATE_BOOLEAN)
+            : (bool) ($preferences['compare_previous'] ?? true);
 
         $current = $this->snapshot($from, $to, $user->workspace_id, $agentUserId, $accountId, $settings, true);
 
@@ -159,7 +163,11 @@ class ReportService
         $agentUserId = $claim === 'OWN' ? $user->id : (isset($filters['agent_user_id']) ? (int) $filters['agent_user_id'] : null);
         $accountId = isset($filters['whatsapp_account_id']) && $filters['whatsapp_account_id'] !== '' ? (int) $filters['whatsapp_account_id'] : null;
         [$from, $to] = $this->resolvePeriod($filters);
-        $compare = array_key_exists('compare', $filters) ? (bool) $filters['compare'] : (bool) ($preferences['compare_previous'] ?? true);
+        // filter_var instead of a (bool) cast: `(bool) "false"` is true, so a
+        // string "false" from a query-string caller must be coerced properly.
+        $compare = array_key_exists('compare', $filters)
+            ? filter_var($filters['compare'], FILTER_VALIDATE_BOOLEAN)
+            : (bool) ($preferences['compare_previous'] ?? true);
 
         $current = $this->snapshot($from, $to, $user->workspace_id, $agentUserId, $accountId, $settings, true);
 

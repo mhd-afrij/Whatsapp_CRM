@@ -48,9 +48,14 @@ composer install
 cp .env.example .env
 php artisan key:generate
 php artisan migrate --seed   # creates schema + seeds workspace/roles/permissions/admin user/pipeline
-php artisan serve            # http://localhost:8000
+php artisan serve            # terminal 1 - http://localhost:8000
+php artisan queue:work       # terminal 2 - report exports/campaigns/webhooks stall without a worker
 php artisan test             # 298 tests
 ```
+
+Local (non-Docker) dev queues jobs on the database connection, so the worker above is
+required alongside `serve`. The Docker stack starts its own worker via
+`backend/docker/start.sh` (Redis queue) and needs no extra step.
 
 ### frontend/
 ```bash

@@ -168,6 +168,30 @@ class ReportsModuleTest extends TestCase
         $this->assertNull($data['metrics']['conversations']['previous']);
     }
 
+    public function test_compare_accepts_textual_booleans_from_the_query_string(): void
+    {
+        $this->seedRbac();
+        $manager = $this->userWithRole('Manager');
+        Conversation::factory()->create(['workspace_id' => $manager->workspace_id]);
+
+        // The web client serialises the compare toggle as "true"/"false".
+        // Laravel's boolean rule rejects those strings (it only accepts
+        // true/false/1/0/"1"/"0"), so the controller must coerce them first -
+        // otherwise every /reports page load 422s ("Couldn't load ...").
+        $data = $this->asUser($manager)
+            ->getJson('/api/v1/reports/overview?compare=true')
+            ->assertOk()
+            ->json('data');
+        $this->assertNotNull($data['comparison_period']);
+
+        $data = $this->asUser($manager)
+            ->getJson('/api/v1/reports/overview?compare=false')
+            ->assertOk()
+            ->json('data');
+        $this->assertNull($data['comparison_period']);
+        $this->assertNull($data['metrics']['conversations']['previous']);
+    }
+
     public function test_change_is_null_when_previous_period_was_empty(): void
     {
         $this->seedRbac();
@@ -446,4 +470,55 @@ class ReportsModuleTest extends TestCase
         $this->assertSame(ReportExport::STATUS_READY, $export->status);
         $this->assertTrue($export->completed_at->gte($completedAt));
     }
+
+    public function test_stale_pending_exports_fail_instead_of_spinning_forever(): void
+    {
+        $this->seedRbac();
+        $manager = $this->userWithRole('Manager');
+        $otherManager = $this->userWithRole('Manager');
+
+        $filters = ['range' => 'custom', 'from' => now()->subDays(6)->toDateString(), 'to' => now()->toDateString()];
+
+        $stale = ReportExport::query()->create([
+            'workspace_id' => $manager->workspace_id,
+            'user_id' => $manager->id,
+            'type' => 'daily_metrics',
+            'filters' => $filters,
+            'status' => ReportExport::STATUS_QUEUED,
+        ]);
+        // Backdate last progress so the sweeper sees it as abandoned.
+        ReportExport::query()->whereKey($stale->id)->update(['updated_at' => now()->subHour()]);
+
+        $fresh = ReportExport::query()->create([
+            'workspace_id' => $manager->workspace_id,
+            'user_id' => $manager->id,
+            'type' => 'agent_summary',
+            'filters' => $filters,
+            'status' => ReportExport::STATUS_QUEUED,
+        ]);
+
+        // Another user's stale export must not be touched by this user's listing.
+        $foreignStale = ReportExport::query()->create([
+            'workspace_id' => $otherManager->workspace_id,
+            'user_id' => $otherManager->id,
+            'type' => 'daily_metrics',
+            'filters' => $filters,
+            'status' => ReportExport::STATUS_QUEUED,
+        ]);
+        ReportExport::query()->whereKey($foreignStale->id)->update(['updated_at' => now()->subHour()]);
+
+        $rows = $this->asUser($manager)->getJson('/api/v1/reports/exports')
+            ->assertOk()
+            ->json('data');
+
+        $staleRow = collect($rows)->firstWhere('id', $stale->id);
+        $this->assertSame(ReportExport::STATUS_FAILED, $staleRow['status']);
+        $this->assertStringContainsString('queue worker', $staleRow['error_message']);
+
+        $freshRow = collect($rows)->firstWhere('id', $fresh->id);
+        $this->assertSame(ReportExport::STATUS_QUEUED, $freshRow['status']);
+
+        $this->assertSame(ReportExport::STATUS_QUEUED, $foreignStale->fresh()->status);
+    }
+
 }
