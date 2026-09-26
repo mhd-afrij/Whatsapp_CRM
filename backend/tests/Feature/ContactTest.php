@@ -113,7 +113,7 @@ class ContactTest extends TestCase
         ])->assertStatus(403);
     }
 
-    public function test_creating_a_contact_with_a_duplicate_phone_number_is_flagged_not_blocked(): void
+    public function test_creating_a_contact_with_a_duplicate_phone_number_reuses_the_existing_contact(): void
     {
         $this->seedRbac();
         $agent = $this->userWithRole('Agent');
@@ -123,11 +123,14 @@ class ContactTest extends TestCase
         $response = $this->asUser($agent)->postJson('/api/v1/contacts', [
             'full_name' => 'Duplicate Guy',
             'phone_number' => '+254711111111',
-        ])->assertCreated();
+        ])->assertOk();
 
+        // Spec §2/§4: same number = same identity - the stored contact is
+        // reused (idempotent create), never duplicated. The (workspace,
+        // active_phone_key) unique index is the DB-level backstop.
+        $this->assertSame($existing->id, $response->json('data.contact.id'));
         $this->assertSame($existing->id, $response->json('data.duplicate_of.id'));
-        // The new contact was still created, not silently rejected.
-        $this->assertSame(2, Contact::query()->where('phone_number', '+254711111111')->count());
+        $this->assertSame(1, Contact::query()->where('phone_number', '+254711111111')->count());
     }
 
     public function test_owner_can_update_their_own_contact_without_blanket_edit_permission(): void
@@ -220,10 +223,12 @@ class ContactTest extends TestCase
             ->assertOk();
 
         $data = $response->json('data');
-        $this->assertCount(2, $data['created']); // Valid Person + Dup Person
+        $this->assertCount(1, $data['created']); // Valid Person only
         $this->assertCount(2, $data['failed']); // Bad Email + empty row
-        $this->assertCount(1, $data['duplicates']);
+        $this->assertCount(1, $data['duplicates']); // Dup Person reported, not re-created
         $this->assertSame($existing->id, $data['duplicates'][0]['duplicate_of_contact_id']);
+        // Spec §4: the duplicate row never became a second contact.
+        $this->assertSame(1, Contact::query()->where('normalized_phone_number', '254722222222')->count());
     }
 
     public function test_viewer_cannot_import_contacts(): void
@@ -273,14 +278,16 @@ class ContactTest extends TestCase
         $this->assertSame('94771234567', $first->normalized_phone_number);
 
         // "0771234567" (national format) and "+94771234567" (E.164) both
-        // normalize to the same key, so the second create must be flagged as
-        // a duplicate of the first even though the raw strings differ (spec §4).
+        // normalize to the same key, so the second create must REUSE the first
+        // contact even though the raw strings differ (spec §2/§4).
         $response = $this->asUser($agent)->postJson('/api/v1/contacts', [
             'full_name' => 'Local Format',
             'phone_number' => '0771234567',
-        ])->assertCreated();
+        ])->assertOk();
 
         $this->assertSame($first->id, $response->json('data.duplicate_of.id'));
+        $this->assertSame($first->id, $response->json('data.contact.id'));
+        $this->assertSame(1, Contact::query()->where('normalized_phone_number', '94771234567')->count());
     }
 
     public function test_search_matches_normalized_phone_numbers(): void
