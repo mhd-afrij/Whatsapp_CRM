@@ -54,6 +54,9 @@ export class MessageRepository {
   /**
    * Finds (or creates) the whatsapp_contact for an inbound/outbound jid.
    *
+   * Returns `created: false` when a pre-existing row was reused so callers can
+   * log `contact_found` for identity-resolution debugging (spec §7).
+   *
    * WhatsApp LID (Linked ID) jids are the privacy-preserving identity used by
    * contacts whose phone-number privacy is on: the inbound `remoteJid` is an
    * opaque `@lid` value (e.g. "176974261706752@lid") whose numeric part is NOT
@@ -75,7 +78,7 @@ export class MessageRepository {
     workspaceId: number,
     waJid: string,
     pushName: string | null,
-  ): Promise<{ id: number }> {
+  ): Promise<{ id: number; created: boolean }> {
     const isLidJid = waJid.endsWith('@lid');
 
     if (isLidJid) {
@@ -108,7 +111,7 @@ export class MessageRepository {
           [pushName, rows[0].id],
         );
       }
-      return { id: rows[0].id as number };
+      return { id: rows[0].id as number, created: false };
     }
 
     const phoneNumber = isLidJid ? null : waJid.split('@')[0] ?? null;
@@ -137,7 +140,7 @@ export class MessageRepository {
            WHERE id = ?`,
           [waJid, pushName, phoneRows[0].id],
         );
-        return { id: phoneRows[0].id as number };
+        return { id: phoneRows[0].id as number, created: false };
       }
     }
 
@@ -147,12 +150,30 @@ export class MessageRepository {
     // shares the lid -> phone mapping; the backend's ContactAutoLinker
     // refuses to create CRM contacts from @lid rows, so no junk contact is
     // produced in the meantime.
-    const result = await execute(
-      `INSERT INTO whatsapp_contacts (workspace_id, wa_jid, push_name, phone_number, lid_jid, last_seen_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, NULL, NOW(), NOW(), NOW())`,
-      [workspaceId, waJid, pushName, phoneNumber],
-    );
-    return { id: result.insertId };
+    try {
+      const result = await execute(
+        `INSERT INTO whatsapp_contacts (workspace_id, wa_jid, push_name, phone_number, lid_jid, last_seen_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, NOW(), NOW(), NOW())`,
+        [workspaceId, waJid, pushName, phoneNumber],
+      );
+      return { id: result.insertId, created: true };
+    } catch (err) {
+      // A concurrent message for the same jid may have won the row between our
+      // SELECT above and this INSERT (the only contact key is (workspace_id,
+      // wa_jid)). Fall back to the winner so one human stays one row - the
+      // same idempotency contract as the message insert.
+      if (!isDuplicateEntryError(err)) {
+        throw err;
+      }
+      const [rows] = await query<RowDataPacket[]>(
+        'SELECT id FROM whatsapp_contacts WHERE workspace_id = ? AND wa_jid = ? LIMIT 1',
+        [workspaceId, waJid],
+      );
+      if (rows.length === 0) {
+        throw err;
+      }
+      return { id: rows[0].id as number, created: false };
+    }
   }
 
   /**
@@ -166,6 +187,15 @@ export class MessageRepository {
    */
   async setLidJid(workspaceId: number, waJid: string, lidJid: string): Promise<void> {
     if (!lidJid.endsWith('@lid')) {
+      return;
+    }
+
+    // waJid must be the canonical phone-number jid the alias maps to. Mapping
+    // a @lid onto itself (a payload whose "real" jid is actually the alias)
+    // would write a self-referencing row with phone_number = fake LID digits -
+    // the same poison upsertContactName guards against. Refuse it; without the
+    // real number there is nothing to map yet.
+    if (waJid.endsWith('@lid')) {
       return;
     }
 
@@ -263,18 +293,58 @@ export class MessageRepository {
     );
   }
 
-  /** Resolves the conversation for a whatsapp_contact, creating it (gateway-owned columns only) if absent. */
+  /**
+   * Resolves the conversation for a whatsapp_contact (gateway-owned columns
+   * only), creating it only when NEITHER identity key already owns a thread.
+   *
+   * Lookup order (spec §3 - the phone number is the only unique identity):
+   *   1. The whatsapp_contact's own thread: one jid always maps to exactly one
+   *      conversation, no matter how the pushName/profile name changed between
+   *      messages.
+   *   2. An ACTIVE conversation (status open/pending - the schema has no
+   *      'waiting' value) of the same CRM contact
+   *      (whatsapp_contacts.contact_id). This catches the legacy case where one
+   *      human owns several whatsapp_contacts rows: instead of fabricating yet
+   *      another thread, the message attaches to the existing active one and
+   *      the row is re-keyed onto it (claim), so the next message hits step 1.
+   *   3. Only when neither exists is a new conversation created.
+   *
+   * `created` lets callers log `conversation_found` for identity-resolution
+   * debugging (spec §7).
+   */
   async findOrCreateConversation(
     workspaceId: number,
     whatsappContactId: number,
     accountId: number | null = null,
   ): Promise<{ id: number; created: boolean }> {
-    const [rows] = await query<RowDataPacket[]>(
+    const [ownRows] = await query<RowDataPacket[]>(
       'SELECT id FROM conversations WHERE workspace_id = ? AND whatsapp_contact_id = ? LIMIT 1',
       [workspaceId, whatsappContactId],
     );
-    if (rows.length > 0) {
-      return { id: rows[0].id as number, created: false };
+    if (ownRows.length > 0) {
+      return { id: ownRows[0].id as number, created: false };
+    }
+
+    const [contactRows] = await query<RowDataPacket[]>(
+      'SELECT contact_id FROM whatsapp_contacts WHERE workspace_id = ? AND id = ? LIMIT 1',
+      [workspaceId, whatsappContactId],
+    );
+    const contactId = (contactRows[0]?.contact_id as number | null | undefined) ?? null;
+    if (contactId !== null) {
+      const [activeRows] = await query<RowDataPacket[]>(
+        `SELECT id FROM conversations
+         WHERE workspace_id = ? AND contact_id = ? AND status IN ('open', 'pending')
+         ORDER BY COALESCE(last_message_at, created_at) DESC
+         LIMIT 1`,
+        [workspaceId, contactId],
+      );
+      if (activeRows.length > 0) {
+        await execute(
+          'UPDATE conversations SET whatsapp_contact_id = ?, updated_at = NOW() WHERE id = ? AND workspace_id = ?',
+          [whatsappContactId, activeRows[0].id, workspaceId],
+        );
+        return { id: activeRows[0].id as number, created: false };
+      }
     }
 
     const result = await execute(

@@ -27,7 +27,15 @@ export async function handleContactsUpsert(
 ): Promise<void> {
   for (const contact of payload) {
     const contactName = contact.name?.trim();
-    const jid = contact.jid ?? (contact.id && !contact.id.endsWith('@lid') ? contact.id : null);
+    // Only a real phone-number jid (~"9475...@s.whatsapp.net" or bare digits)
+    // identifies who this contact is. Baileys can surface the privacy alias
+    // (`@lid`) on either field - storing that as wa_jid creates a second
+    // whatsapp_contacts row for the same human, poisoning phone_number with
+    // fake LID digits (see upsertContactName/setLidJid). When only the alias
+    // is known, let the later LID->phone mapping (contacts.upsert /
+    // chats.phoneNumberShare) bridge it instead of inventing a row here.
+    const rawJid = contact.jid ?? contact.id;
+    const jid = rawJid && !rawJid.endsWith('@lid') ? rawJid : null;
 
     if (!jid) {
       continue;

@@ -4,6 +4,8 @@ import type { ResultSetHeader } from 'mysql2/promise';
 /** Captures the SQL+values handed to the (mocked) mysql layer per call. */
 let calls: { sql: string; values?: unknown[] }[] = [];
 let nextInsertId = 900;
+/** When true, the next whatsapp_contacts INSERT throws a duplicate-key error (simulates a concurrent insert winning the row). */
+let failNextContactInsertDup = false;
 const table: Record<string, { id: number; wa_jid: string; lid_jid: string | null; phone_number: string | null }[]> =
   {};
 /** conversation id ("ws:convId") -> whatsapp_contact_id, for getConversationJid lookups. */
@@ -49,6 +51,18 @@ vi.mock('../lib/mysql', () => ({
   execute: vi.fn(async (sql: string, values?: unknown[]) => {
     calls.push({ sql, values });
     if (sql.trimStart().startsWith('INSERT INTO whatsapp_contacts')) {
+      if (failNextContactInsertDup) {
+        // Simulate a concurrent request that committed this row first.
+        nextInsertId += 1;
+        table[`ws:${values?.[0]}`] ??= [];
+        table[`ws:${values?.[0]}`].push({
+          id: nextInsertId,
+          wa_jid: values?.[1] as string,
+          lid_jid: null,
+          phone_number: (values?.[3] as string | null) ?? null,
+        });
+        throw { code: 'ER_DUP_ENTRY' };
+      }
       nextInsertId += 1;
       return { insertId: nextInsertId, affectedRows: 1 } as ResultSetHeader;
     }
@@ -76,6 +90,7 @@ const repo = new MessageRepository();
 beforeEach(() => {
   calls = [];
   nextInsertId = 900;
+  failNextContactInsertDup = false;
   for (const k of Object.keys(table)) delete table[k];
   for (const k of Object.keys(convToContact)) delete convToContact[k];
   // Seed: PN row for the saved contact + its LID alias mapped via lid_jid.
@@ -145,6 +160,20 @@ describe('findOrCreateWhatsappContact LID resolution', () => {
     expect(insert).toBeDefined();
     expect(result.id).not.toBe(2);
   });
+
+  it('falls back to the concurrent winner when the INSERT loses a same-jid race', async () => {
+    // Reconnect/fanout can deliver two messages for the same new jid at once.
+    // The second INSERT hits the unique (workspace_id, wa_jid) key - it must
+    // recover the winner instead of crashing, keeping one human as one row.
+    failNextContactInsertDup = true;
+    table['ws:1'] = [];
+
+    const result = await repo.findOrCreateWhatsappContact(1, '94750144774@s.whatsapp.net', 'Aazik Ahmed');
+
+    expect(result.id).toBe(901);
+    const retries = calls.filter((c) => c.sql.includes('SELECT id FROM whatsapp_contacts'));
+    expect(retries.length).toBeGreaterThan(0);
+  });
 });
 
 describe('setLidJid', () => {
@@ -153,6 +182,16 @@ describe('setLidJid', () => {
 
     const update = calls.find((c) => c.sql.includes('UPDATE whatsapp_contacts SET lid_jid'));
     expect(update?.values).toEqual(['176974261706752@lid', 2]);
+  });
+
+  it('refuses to map an @lid waJid onto itself (no self-referencing poison row)', async () => {
+    // Pre-fix, a payload whose "real" jid was itself the alias created a row
+    // with wa_jid = lid_jid = X@lid and phone_number = fake LID digits - the
+    // exact duplicate-contact root cause. Must be a no-op now.
+    await repo.setLidJid(1, '176974261706752@lid', '176974261706752@lid');
+
+    expect(calls.some((c) => c.sql.includes('UPDATE whatsapp_contacts SET lid_jid'))).toBe(false);
+    expect(calls.some((c) => c.sql.includes('INSERT INTO whatsapp_contacts'))).toBe(false);
   });
 
   it('re-keys conversations stranded on a LID-only row onto the PN row', async () => {

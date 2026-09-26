@@ -2,6 +2,7 @@ import { logger } from '../lib/logger';
 import { emitMessageCreated } from '../lib/socket-server';
 import { notifyNewMessage } from '../lib/laravel-client';
 import { normalizeInboundMessage } from './message-normalizer';
+import { normalizePhoneToJid } from './jid';
 import { MessageRepository, isDuplicateEntryError } from './message-repository';
 import { enqueueMediaDownload } from '../queues/media-download.queue';
 import type { BaileysMessagesUpsert, BaileysRawMessage } from './baileys-socket';
@@ -30,6 +31,49 @@ export interface ProcessOneMessageOptions {
    * thousands-of-events flood. Defaults to true (live).
    */
   live?: boolean;
+}
+
+/**
+ * Spec §7 debugging log: one structured line per inbound message documenting
+ * how the phone-number identity resolved (contact found? conversation reused?).
+ * The pushName/profile name is deliberately ABSENT as a matching key - the
+ * normalized phone number is the only identity (spec §1).
+ */
+function logIdentityResolution(params: {
+  workspaceId: number;
+  whatsappMessageId: string;
+  waJid: string;
+  contact: { id: number; created: boolean };
+  conversation: { id: number; created: boolean };
+}): void {
+  const { workspaceId, whatsappMessageId, waJid, contact, conversation } = params;
+  const isPhoneJid = waJid.endsWith('@s.whatsapp.net');
+  const phoneReceived = isPhoneJid ? (waJid.split('@')[0] ?? null) : null;
+
+  let normalizedPhone: string | null = null;
+  if (phoneReceived) {
+    try {
+      normalizedPhone = normalizePhoneToJid(phoneReceived).split('@')[0] ?? null;
+    } catch {
+      normalizedPhone = null;
+    }
+  }
+
+  logger.info(
+    {
+      phone_received: phoneReceived,
+      normalized_phone: normalizedPhone,
+      contact_found: !contact.created,
+      contact_id: contact.id,
+      conversation_found: !conversation.created,
+      conversation_id: conversation.id,
+      action: conversation.created ? 'create_new_conversation' : 'reuse_existing_conversation',
+      workspaceId,
+      whatsappMessageId,
+      waJid,
+    },
+    'Inbound WhatsApp identity resolution',
+  );
 }
 
 /**
@@ -64,6 +108,7 @@ export async function processOneMessage(
       try {
         const contact = await repository.findOrCreateWhatsappContact(workspaceId, waJid, raw.pushName ?? null);
         const conversation = await repository.findOrCreateConversation(workspaceId, contact.id, accountId);
+        logIdentityResolution({ workspaceId, whatsappMessageId, waJid, contact, conversation });
         const inserted = await repository.insertInboundMessage(
           workspaceId,
           conversation.id,
@@ -96,6 +141,7 @@ export async function processOneMessage(
     const isFromMe = Boolean(raw.key.fromMe);
     const contact = await repository.findOrCreateWhatsappContact(workspaceId, waJid, raw.pushName ?? null);
     const conversation = await repository.findOrCreateConversation(workspaceId, contact.id, accountId);
+    logIdentityResolution({ workspaceId, whatsappMessageId, waJid, contact, conversation });
 
     let insertResult: { messageId: number } | null = null;
     try {

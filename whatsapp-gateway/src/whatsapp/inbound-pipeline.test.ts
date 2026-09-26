@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const loggerInfo = vi.fn();
+vi.mock('../lib/logger', () => ({
+  logger: {
+    info: (...args: unknown[]) => loggerInfo(...args),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: () => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  },
+}));
+
 const emitMessageCreated = vi.fn();
 vi.mock('../lib/socket-server', () => ({
   emitMessageCreated: (...args: unknown[]) => emitMessageCreated(...args),
@@ -124,6 +135,24 @@ describe('inbound pipeline', () => {
       1,
       10,
       expect.objectContaining({ message: expect.objectContaining({ body: 'hello there' }) }),
+    );
+  });
+
+  it('logs the phone-based identity resolution payload (spec §7)', async () => {
+    await handleMessagesUpsert(1, textMessage('MSG-LOG-1'));
+
+    expect(loggerInfo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phone_received: '2547000000',
+        // 10 digits < 11 -> the configured country code is prefixed (jid.ts rules).
+        normalized_phone: '942547000000',
+        contact_found: true,
+        contact_id: 1,
+        conversation_found: true,
+        conversation_id: 10,
+        action: 'reuse_existing_conversation',
+      }),
+      'Inbound WhatsApp identity resolution',
     );
   });
 
