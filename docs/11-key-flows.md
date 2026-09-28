@@ -57,11 +57,13 @@ sequenceDiagram
 
     Q->>GW: worker picks up job
     GW->>DB: mark message_dispatch_queue.status = processing
+    GW->>DB: insert messages (status=queued)
     GW->>WA: Baileys sendMessage()
     alt send succeeds
-        WA-->>GW: ack
-        GW->>DB: insert messages (status=sent), update dispatch_queue.status=sent
-        GW->>SIO: emit message.created (status=sent)
+        WA-->>GW: message id returned
+        GW->>DB: set messages.whatsapp_message_id, dispatch_queue.status=sent
+        GW->>SIO: emit message.updated (whatsapp_message_id only)
+        Note over GW,WA: status stays 'queued' - sendMessage() resolving is not<br/>a receipt. The SERVER_ACK arrives separately (see receipts below).
     else send fails after retries
         GW->>DB: insert message_processing_failures, dispatch_queue.status=failed
         GW->>SIO: emit message.failed
@@ -69,13 +71,16 @@ sequenceDiagram
     SIO-->>FE: message.created / message.failed
     FE->>FE: replace optimistic bubble with confirmed state or error + retry action
 
+    WA-->>GW: server ack (async, Baileys messages.update code 2)
+    GW->>DB: insert message_status_events(status=sent), update messages.status
+    GW->>SIO: emit message.updated
     WA-->>GW: delivery receipt (async)
     GW->>DB: insert message_status_events(status=delivered), update messages.status
     GW->>SIO: emit message.updated
     WA-->>GW: read receipt (async)
     GW->>DB: insert message_status_events(status=read), update messages.status
     GW->>SIO: emit message.updated
-    SIO-->>FE: message.updated (double-check marks)
+    SIO-->>FE: message.updated (ticks follow the real receipts only)
 ```
 
 ## 3. QR Connection Lifecycle

@@ -17,9 +17,10 @@ services:
       MYSQL_USER: ${DB_USERNAME:-crm_user}
       MYSQL_PASSWORD: ${DB_PASSWORD:-crm_password}
     ports:
-      # Published on localhost only, so the DB is not reachable from the LAN.
-      # Services still reach this DB over the compose network as 'mysql:3306'.
-      - "127.0.0.1:3306:3306"
+      # Published on localhost only, and off the default 3306 because a native
+      # (non-Docker) MySQL already holds it. Services still reach this DB over
+      # the compose network as 'mysql:3306', so the container port is unchanged.
+      - "127.0.0.1:3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -36,7 +37,9 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_PASSWORD:-}"]
     ports:
-      - "127.0.0.1:6379:6379"
+      # Off the default 6379 because a native (non-Docker) Redis already holds
+      # it. Reached in-network as 'redis:6379'; container port unchanged.
+      - "127.0.0.1:6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:

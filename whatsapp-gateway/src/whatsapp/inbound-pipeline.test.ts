@@ -143,13 +143,17 @@ describe('inbound pipeline', () => {
 
     expect(loggerInfo).toHaveBeenCalledWith(
       expect.objectContaining({
-        phone_received: '2547000000',
-        // 10 digits < 11 -> the configured country code is prefixed (jid.ts rules).
+        raw_jid: '2547000000@s.whatsapp.net',
+        // The canonical phone the identity keyed on - raw_jid above keeps the
+        // digits exactly as WhatsApp sent them.
+        phone_received: '942547000000',
         normalized_phone: '942547000000',
         contact_found: true,
-        contact_id: 1,
+        resolved_contact_id: 1,
         conversation_found: true,
-        conversation_id: 10,
+        resolved_conversation_id: 10,
+        direction: 'inbound',
+        workspace_id: 1,
         action: 'reuse_existing_conversation',
       }),
       'Inbound WhatsApp identity resolution',

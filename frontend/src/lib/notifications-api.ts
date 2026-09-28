@@ -110,6 +110,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   "whatsapp.qr_required": "WhatsApp QR code needs re-scanning",
   "import.completed": "A contact import finished",
   "export.completed": "A contact export finished",
+  "report.export_ready": "Your report export is ready",
   "sla.warning": "A conversation is close to breaching SLA",
   "sla.breached": "A conversation breached SLA",
 };
@@ -134,7 +135,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   {
     key: "tasks",
     label: "Tasks & notes",
-    types: ["task.assigned", "task.reminder", "task.overdue", "task.comment_mention", "note.mention"],
+    types: ["task.assigned", "task.reminder", "task.overdue", "task.comment_mention", "note.mention", "calendar_event.reminder"],
   },
   {
     key: "deals",
@@ -161,7 +162,7 @@ export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   {
     key: "tools",
     label: "Imports & exports",
-    types: ["import.completed", "export.completed"],
+    types: ["import.completed", "export.completed", "report.export_ready"],
   },
   {
     key: "sla",

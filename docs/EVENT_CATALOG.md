@@ -136,6 +136,10 @@ rooms (another workspace's IDs, or a conversation the user has no access to) are
   `POST /conversations/{id}/read` on backend which calls the gateway internal API to reset the
   counter, or directly by gateway when it detects a WhatsApp-side read receipt from the agent's
   linked device.
+- **Also acknowledges to WhatsApp**: the same route sends a real `read` receipt via
+  `Baileys readMessages()` for the conversation's inbound messages, which is what produces the
+  customer's blue double tick. This is best-effort: the CRM counter is reset first, so a
+  disconnected session reports `acknowledgedToWhatsapp: false` without failing the agent's request.
 - **Rooms**: `workspace:{workspaceId}:inbox`, `workspace:{workspaceId}:conversation:{conversationId}`
 - **Payload**: `{ "conversationId": 45, "readByUserId": 7, "readAt": "..." }`
 

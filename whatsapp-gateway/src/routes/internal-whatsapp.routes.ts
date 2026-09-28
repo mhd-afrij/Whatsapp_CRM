@@ -1137,7 +1137,9 @@ export function createInternalWhatsappRouter(): Router {
    * POST /internal/whatsapp/conversations/:conversationId/read
    * Resets the gateway-owned unread_count to 0 when an agent opens/reads the
    * thread (the Laravel markRead endpoint only records the per-user
-   * last_read_message_id and delegates the counter reset here).
+   * last_read_message_id and delegates the counter reset here), and sends a
+   * real WhatsApp `read` receipt for the inbound messages so the customer's
+   * phone shows the blue double tick.
    */
   router.post('/conversations/:conversationId/read', async (req: Request, res: Response) => {
     const conversationId = z.coerce.number().int().positive().safeParse(req.params.conversationId);
@@ -1154,6 +1156,34 @@ export function createInternalWhatsappRouter(): Router {
         return;
       }
 
+      // Real read acknowledgement over the live Baileys socket. Best-effort:
+      // the CRM unread counter is already reset above, so a disconnected
+      // session or a WhatsApp-side failure must not fail the agent's request.
+      let acknowledgedToWhatsapp = false;
+      try {
+        const ctx = await conversationContext(
+          parsed.data.workspaceId,
+          conversationId.data,
+          req,
+          'acknowledge conversation read',
+        );
+        if (ctx.socket) {
+          const keys = await messageRepository.listInboundReadReceiptKeys(
+            conversationId.data,
+            parsed.data.workspaceId,
+          );
+          if (keys.length > 0) {
+            await ctx.socket.readMessages(keys);
+            acknowledgedToWhatsapp = true;
+          }
+        }
+      } catch (ackErr) {
+        logger.warn(
+          { err: ackErr, conversationId: conversationId.data },
+          'CRM unread cleared but WhatsApp read acknowledgement failed',
+        );
+      }
+
       emitConversationEvent('conversation.updated', parsed.data.workspaceId, conversationId.data, {
         unreadCount: 0,
       });
@@ -1161,7 +1191,11 @@ export function createInternalWhatsappRouter(): Router {
       res.status(200).json({
         success: true,
         message: 'Conversation marked as read',
-        data: { conversationId: conversationId.data, unreadCount: result.unreadCount },
+        data: {
+          conversationId: conversationId.data,
+          unreadCount: result.unreadCount,
+          acknowledgedToWhatsapp,
+        },
       });
     } catch (err) {
       logger.error({ err, conversationId: conversationId.data }, 'Failed to mark conversation read');
@@ -1351,7 +1385,8 @@ export function createInternalWhatsappRouter(): Router {
         whatsappMessageId,
         body: source.body,
         messageType,
-        status: 'sent',
+        // No status: sendContent() resolving is not a receipt. The row stays
+        // 'queued' until a real Baileys messages.update (code 2) confirms it.
       }, accountContext.accountId);
       if (!inserted) {
         throw new Error('Failed to persist forwarded message row');
@@ -1373,7 +1408,7 @@ export function createInternalWhatsappRouter(): Router {
           direction: 'outbound',
           messageType,
           body: source.body,
-          status: 'sent',
+          status: inserted.status,
           senderType: 'user',
           sentAt: new Date().toISOString(),
         },

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\NotificationPreference;
 use App\Traits\ApiResponse;
+use App\Support\NotificationTypes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -18,19 +19,12 @@ class NotificationPreferenceController extends Controller
 {
     use ApiResponse;
 
-    /** Every trigger type NotificationService::notify() is called with across the app. */
-    private const KNOWN_TYPES = [
-        'conversation.assigned',
-        'conversation.new_message',
-        'task.assigned',
-        'task.reminder',
-        'calendar_event.reminder',
-        'task.overdue',
-        'task.comment_mention',
-        'note.mention',
-        'whatsapp.connection.failed',
-        'whatsapp.connection.reauth_required',
-    ];
+    /**
+     * Every trigger type NotificationService::notify() is called with across the app.
+     * Delegates to NotificationTypes so this controller and
+     * NotificationSettingsController cannot drift apart.
+     */
+    private const KNOWN_TYPES = NotificationTypes::KNOWN_TYPES;
 
     /**
      * GET /api/v1/notification-preferences

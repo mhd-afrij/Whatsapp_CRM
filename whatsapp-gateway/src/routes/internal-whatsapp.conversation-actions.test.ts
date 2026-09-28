@@ -18,11 +18,13 @@ vi.mock('../lib/storage', () => ({
 const manager = vi.hoisted(() => ({
   sendContent: vi.fn().mockResolvedValue({ id: 'forwarded-wa-id-1' }),
   sendPresenceUpdate: vi.fn().mockResolvedValue(undefined),
+  getSocket: vi.fn().mockReturnValue(null),
+  readMessages: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../whatsapp/manager-instance', () => ({
   connectionManager: {
     getSnapshot: vi.fn().mockReturnValue({ status: 'connected' }),
-    getSocket: vi.fn().mockReturnValue(null),
+    getSocket: manager.getSocket,
     sendContent: manager.sendContent,
     sendPresenceUpdate: manager.sendPresenceUpdate,
   },
@@ -55,6 +57,7 @@ vi.mock('../lib/socket-server', () => socket);
 const repo = vi.hoisted(() => ({
   markConversationUnread: vi.fn(),
   resetConversationUnread: vi.fn(),
+  listInboundReadReceiptKeys: vi.fn().mockResolvedValue([]),
   findMessageById: vi.fn(),
   setMessageStarred: vi.fn(),
   markMessageDeletedForMe: vi.fn(),
@@ -97,7 +100,7 @@ describe('conversation actions (mark-unread, read, star, forward)', () => {
     // flowing through the legacy workspace manager (compat path). Ownership
     // tests override this per case.
     repo.getConversationAccount.mockResolvedValue({ id: 10, whatsappAccountId: null });
-    repo.insertOutboundMessage.mockResolvedValue({ messageId: 77 });
+    repo.insertOutboundMessage.mockResolvedValue({ messageId: 77, status: 'queued' });
 
     const app = express();
     app.use(express.json());
@@ -166,6 +169,50 @@ describe('conversation actions (mark-unread, read, star, forward)', () => {
       repo.resetConversationUnread.mockResolvedValueOnce(null);
       const res = await call('POST', '/conversations/10/read', { workspaceId: 1 });
       expect(res.status).toBe(404);
+    });
+
+    it('sends a real WhatsApp read receipt for the inbound messages', async () => {
+      repo.resetConversationUnread.mockResolvedValueOnce({ unreadCount: 0 });
+      const keys = [
+        { remoteJid: '2547000000@s.whatsapp.net', fromMe: false, id: 'WA_IN_1' },
+        { remoteJid: '2547000000@s.whatsapp.net', fromMe: false, id: 'WA_IN_2' },
+      ];
+      repo.listInboundReadReceiptKeys.mockResolvedValueOnce(keys);
+      manager.getSocket.mockReturnValueOnce({ readMessages: manager.readMessages });
+
+      const res = await call('POST', '/conversations/10/read', { workspaceId: 1 });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { data: { acknowledgedToWhatsapp: boolean } };
+      expect(body.data.acknowledgedToWhatsapp).toBe(true);
+      // This is the receipt that puts the blue double tick on the customer's
+      // phone, so it must be addressed at the canonical jid with fromMe false.
+      expect(manager.readMessages).toHaveBeenCalledWith(keys);
+    });
+
+    it('still clears the CRM unread count when the WhatsApp acknowledgement fails', async () => {
+      repo.resetConversationUnread.mockResolvedValueOnce({ unreadCount: 0 });
+      repo.listInboundReadReceiptKeys.mockResolvedValueOnce([
+        { remoteJid: '2547000000@s.whatsapp.net', fromMe: false, id: 'WA_IN_1' },
+      ]);
+      manager.getSocket.mockReturnValueOnce({
+        readMessages: vi.fn().mockRejectedValue(new Error('socket closed')),
+      });
+
+      const res = await call('POST', '/conversations/10/read', { workspaceId: 1 });
+      // The agent's request must not fail because WhatsApp was unreachable.
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { data: { unreadCount: number; acknowledgedToWhatsapp: boolean } };
+      expect(body.data.unreadCount).toBe(0);
+      expect(body.data.acknowledgedToWhatsapp).toBe(false);
+    });
+
+    it('skips the acknowledgement entirely when the socket is not connected', async () => {
+      repo.resetConversationUnread.mockResolvedValueOnce({ unreadCount: 0 });
+      manager.getSocket.mockReturnValueOnce(null);
+
+      const res = await call('POST', '/conversations/10/read', { workspaceId: 1 });
+      expect(res.status).toBe(200);
+      expect(manager.readMessages).not.toHaveBeenCalled();
     });
   });
 
@@ -282,10 +329,17 @@ describe('conversation actions (mark-unread, read, star, forward)', () => {
         whatsappMessageId: 'forwarded-wa-id-1',
         body: 'forward me',
         messageType: 'text',
-        status: 'sent',
       }, null);
       expect(repo.insertMessageMedia).not.toHaveBeenCalled();
-      expect(socket.emitMessageCreated).toHaveBeenCalledTimes(1);
+      // No status is asserted on the insert: sendContent() resolving is not a
+      // receipt, and the emit reports whatever the row actually persisted.
+      expect(socket.emitMessageCreated).toHaveBeenCalledWith(
+        1,
+        10,
+        expect.objectContaining({
+          message: expect.objectContaining({ id: 77, status: 'queued' }),
+        }),
+      );
     });
 
     it('forwards a media message by re-reading stored bytes', async () => {

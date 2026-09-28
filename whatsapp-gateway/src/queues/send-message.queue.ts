@@ -338,7 +338,12 @@ export async function processSendMessage(
   }
 
   await messageRepository.setOutboundWhatsappId(messageId, whatsappMessageId);
-  await messageRepository.updateMessageStatus(messageId, 'sent');
+  // The row stays 'queued' here on purpose. sendContent() resolving only means
+  // Baileys handed the message to WhatsApp's servers - the SERVER_ACK that
+  // actually proves 'sent' arrives later as a Baileys messages.update (code 2)
+  // and is applied by status-pipeline. Advancing it now showed a single grey
+  // tick before WhatsApp had acknowledged anything. The id swap is the only
+  // fact we can report immediately.
   await dispatchRepository.markSent(dispatchId, messageId);
 
   const media = mediaRef
@@ -348,7 +353,6 @@ export async function processSendMessage(
   emitMessageUpdated(workspaceId, conversationId, {
     messageId,
     changes: {
-      status: 'sent',
       whatsapp_message_id: whatsappMessageId,
       media: media
         ? {
