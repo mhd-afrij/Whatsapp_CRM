@@ -37,7 +37,10 @@ export function useMoveLead() {
       await queryClient.cancelQueries({ queryKey: ['leads'] });
       const previous = queryClient.getQueriesData<{ data: Lead[] }>({ queryKey: ['leads'] });
       queryClient.setQueriesData<{ data: Lead[] }>({ queryKey: ['leads'] }, (current) => {
-        if (!current) return current;
+        // The ['leads'] prefix also matches the single-lead detail query
+        // (['leads', id]), whose cache value is a bare Lead object — not a
+        // { data: Lead[] } list — so only rewrite list-shaped entries.
+        if (!current || !Array.isArray(current.data)) return current;
         return { ...current, data: current.data.map((lead) => (lead.id === id ? { ...lead, stage } : lead)) };
       });
       return { previous };

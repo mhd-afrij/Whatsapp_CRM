@@ -602,7 +602,7 @@ function ReportsContent() {
                 <SlidersHorizontal className="size-3.5 text-muted" />
                 Filters
                 {activeChips.length > 0 && (
-                  <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white">
+                  <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
                     {activeChips.length}
                   </span>
                 )}
@@ -657,7 +657,7 @@ function ReportsContent() {
                 <Popover open={exportOpen} onOpenChange={setExportOpen}>
                   <PopoverTrigger
                     disabled={exportsBusy}
-                    className="inline-flex h-[34px] items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-white shadow-xs transition hover:bg-primary-dark disabled:opacity-60"
+                    className="inline-flex h-[34px] items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground shadow-xs transition hover:bg-primary-dark disabled:opacity-60"
                   >
                     {exportsBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
                     Export

@@ -10,6 +10,8 @@ use App\Services\ContactDeduplicator;
 use App\Services\GatewayClient;
 use App\Support\AuditLogger;
 use App\Support\PhoneNumber;
+use Illuminate\Database\QueryException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -136,7 +138,10 @@ class ContactController extends Controller
 
     /**
      * POST /api/v1/contacts
-     * Flags (does not block) duplicate phone numbers within the workspace.
+     * Spec §2/§4: the phone number is the customer's only unique identity - a
+     * create for an existing number REUSES the stored contact (idempotent
+     * upsert) instead of duplicating it; the (workspace, active_phone_key)
+     * unique index is the backstop against races.
      */
     public function store(Request $request)
     {
@@ -153,13 +158,33 @@ class ContactController extends Controller
 
         $duplicate = $this->findDuplicate($workspaceId, $data['phone_number'] ?? null);
 
-        $contact = Contact::create(array_merge($data, [
-            'workspace_id' => $workspaceId,
-            'owner_user_id' => $data['owner_user_id'] ?? $request->user()->id,
-            'status' => $data['status'] ?? Contact::STATUS_ACTIVE,
-            'source' => $data['source'] ?? Contact::SOURCE_MANUAL,
-            'last_contacted_at' => $data['last_contacted_at'] ?? now(),
-        ]));
+        if ($duplicate) {
+            return $this->reuseExistingContact($duplicate, $data);
+        }
+
+        try {
+            $contact = Contact::create(array_merge($data, [
+                'workspace_id' => $workspaceId,
+                'owner_user_id' => $data['owner_user_id'] ?? $request->user()->id,
+                'status' => $data['status'] ?? Contact::STATUS_ACTIVE,
+                'source' => $data['source'] ?? Contact::SOURCE_MANUAL,
+                'last_contacted_at' => $data['last_contacted_at'] ?? now(),
+            ]));
+        } catch (QueryException $e) {
+            // Lost a race against a concurrent create of the same number: the
+            // unique index (spec §4) rejected the insert - reuse whichever row
+            // won instead of surfacing a 500.
+            if (($e->errorInfo[0] ?? null) !== '23000') {
+                throw $e;
+            }
+
+            $winner = $this->findDuplicate($workspaceId, $data['phone_number'] ?? null);
+            if (! $winner) {
+                throw $e;
+            }
+
+            return $this->reuseExistingContact($winner, $data);
+        }
 
         $this->logActivity($contact, 'other', 'Contact created', $request->user()->id);
         AuditLogger::log('contact.created', $request->user(), $contact, $data, $request);
@@ -167,8 +192,25 @@ class ContactController extends Controller
 
         return $this->success([
             'contact' => $contact->fresh(['owner', 'whatsappContact', 'labels']),
-            'duplicate_of' => $duplicate?->only(['id', 'full_name', 'phone_number']),
-        ], $duplicate ? 'Contact created (possible duplicate detected)' : 'Contact created', null, 201);
+            'duplicate_of' => null,
+        ], 'Contact created', null, 201);
+    }
+
+    /**
+     * Spec §2: reuse the existing contact for an already-known phone number.
+     * The stored name is only replaced when it is empty - names are editable
+     * display fields, never identity.
+     */
+    protected function reuseExistingContact(Contact $existing, array $data): JsonResponse
+    {
+        if (blank($existing->full_name) && filled($data['full_name'] ?? null)) {
+            $existing->update(['full_name' => $data['full_name']]);
+        }
+
+        return $this->success([
+            'contact' => $existing->fresh(['owner', 'whatsappContact', 'labels']),
+            'duplicate_of' => $existing->only(['id', 'full_name', 'phone_number']),
+        ], 'Existing contact reused (same phone number)', null, 200);
     }
 
     /**
@@ -264,8 +306,9 @@ class ContactController extends Controller
      * POST /api/v1/contacts/import
      * CSV columns: full_name,email,company,job_title,phone_number,address,city,
      * country,timezone,status,source.
-     * Returns a per-row validation report; duplicates are flagged, not silently
-     * created or rejected - the caller decides via the report.
+     * Returns a per-row validation report; duplicate phone numbers are reported
+     * without creating a second row (spec §2/§4 - the phone number is the
+     * unique identity and the unique index is the backstop).
      */
     public function import(Request $request)
     {
@@ -325,23 +368,44 @@ class ContactController extends Controller
 
             $duplicate = $this->findDuplicate($workspaceId, $data['phone_number'] ?? null);
 
-            $contact = Contact::create(array_merge($data, [
-                'workspace_id' => $workspaceId,
-                'owner_user_id' => $request->user()->id,
-                'status' => $data['status'] ?? Contact::STATUS_ACTIVE,
-                'source' => $data['source'] ?? Contact::SOURCE_IMPORT,
-            ]));
-
-            $this->logActivity($contact, 'other', 'Contact imported', $request->user()->id);
-
             if ($duplicate) {
+                // Spec §2/§4: same phone = same customer. The row is reported
+                // as a duplicate, never created (the unique index is the
+                // backstop against races).
                 $report['duplicates'][] = [
                     'row' => $rowNumber,
-                    'contact_id' => $contact->id,
+                    'contact_id' => $duplicate->id,
                     'duplicate_of_contact_id' => $duplicate->id,
                     'phone_number' => $data['phone_number'] ?? null,
                 ];
+
+                continue;
             }
+
+            try {
+                $contact = Contact::create(array_merge($data, [
+                    'workspace_id' => $workspaceId,
+                    'owner_user_id' => $request->user()->id,
+                    'status' => $data['status'] ?? Contact::STATUS_ACTIVE,
+                    'source' => $data['source'] ?? Contact::SOURCE_IMPORT,
+                ]));
+            } catch (QueryException $e) {
+                if (($e->errorInfo[0] ?? null) !== '23000') {
+                    throw $e;
+                }
+
+                $winner = $this->findDuplicate($workspaceId, $data['phone_number'] ?? null);
+                $report['duplicates'][] = [
+                    'row' => $rowNumber,
+                    'contact_id' => $winner?->id,
+                    'duplicate_of_contact_id' => $winner?->id,
+                    'phone_number' => $data['phone_number'] ?? null,
+                ];
+
+                continue;
+            }
+
+            $this->logActivity($contact, 'other', 'Contact imported', $request->user()->id);
 
             $report['created'][] = ['row' => $rowNumber, 'contact_id' => $contact->id];
         }
@@ -355,7 +419,7 @@ class ContactController extends Controller
         ], $request);
 
         return $this->success($report, sprintf(
-            'Import complete: %d created (%d flagged as possible duplicates), %d failed.',
+            'Import complete: %d created, %d duplicate(s) skipped, %d failed.',
             count($report['created']),
             count($report['duplicates']),
             count($report['failed'])

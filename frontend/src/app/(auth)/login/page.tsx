@@ -1,21 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { ArrowRight, CircleCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useAuth } from "@/context/auth-context";
 import { ApiError } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
+import {
+  AuthCheckbox,
+  AuthInput,
+  AuthSubmitButton,
+  PasswordInput,
+} from "@/components/auth/auth-input";
+import { AuthCard, AuthHeader } from "@/components/auth/auth-card";
+import { AuthFooter } from "@/components/auth/auth-footer";
+import { AuthLayout } from "@/components/auth/auth-layout";
+import { AuthLogo } from "@/components/auth/auth-logo";
 import { loginSchema, type LoginSchemaValues } from "@/lib/schemas";
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuth();
   const [formError, setFormError] = useState<string | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const {
     register,
@@ -30,6 +39,7 @@ export default function LoginPage() {
     setFormError(null);
     try {
       await login(values.email, values.password, values.remember_me);
+      setSuccess(true);
       router.push("/inbox");
     } catch (error) {
       const message =
@@ -39,97 +49,87 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg px-4">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-surface p-8 shadow-sm">
-        <div className="mb-6 text-center">
-          <h1 className="text-xl font-semibold text-text">Sign in</h1>
-          <p className="mt-1 text-sm text-muted">Access your WhatsApp CRM workspace</p>
+    <AuthLayout>
+      <div className="mb-7 flex items-center gap-3 lg:hidden">
+        <AuthLogo className="h-9 w-9" />
+        <div>
+          <p className="text-auth-text text-[15px] font-semibold">WhatsCRM</p>
+          <p className="text-auth-subtle text-[11px]">Conversation operations</p>
         </div>
+      </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
-          <div className="space-y-1">
-            <label htmlFor="email" className="text-sm font-medium text-text">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              className={cn(
-                "w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary",
-                errors.email && "border-danger focus:border-danger focus:ring-danger"
-              )}
-              {...register("email")}
-            />
-            {errors.email && <p className="text-xs text-danger">{errors.email.message}</p>}
-          </div>
+      <AuthCard>
+        <AuthHeader
+          badge="WELCOME BACK"
+          title="Welcome back"
+          description="Sign in to continue to your WhatsCRM workspace."
+        />
 
-          <div className="space-y-1">
-            <label htmlFor="password" className="text-sm font-medium text-text">
-              Password
-            </label>
-            <div className="relative">
-              <input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                className={cn(
-                  "w-full rounded-md border border-border bg-surface px-3 py-2 pr-10 text-sm text-text outline-none focus:border-primary focus:ring-1 focus:ring-primary",
-                  errors.password && "border-danger focus:border-danger focus:ring-danger"
-                )}
-                {...register("password")}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((value) => !value)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                aria-pressed={showPassword}
-                className="absolute inset-y-0 right-0 flex items-center px-3 text-muted transition-colors hover:text-text"
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            {errors.password && (
-              <p className="text-xs text-danger">{errors.password.message}</p>
-            )}
-          </div>
+        <form className="mt-7 space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+          <AuthInput
+            id="email"
+            label="Email address"
+            type="email"
+            autoComplete="email"
+            placeholder="you@company.com"
+            error={errors.email?.message}
+            staggerIndex={0}
+            {...register("email")}
+          />
 
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-sm text-muted">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
-                {...register("remember_me")}
-              />
-              Remember me
-            </label>
-            <Link href="/forgot-password" className="text-sm font-medium text-primary hover:underline">
+          <PasswordInput
+            id="password"
+            label="Password"
+            autoComplete="current-password"
+            placeholder="Enter your password"
+            error={errors.password?.message}
+            staggerIndex={1}
+            {...register("password")}
+          />
+
+          <div className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1">
+            <AuthCheckbox label="Remember me" {...register("remember_me")} />
+            <Link
+              href="/forgot-password"
+              className="text-auth-green focus-visible:outline-auth-green flex min-h-11 items-center text-sm font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
               Forgot password?
             </Link>
           </div>
 
           {formError && (
-            <p className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">{formError}</p>
+            <p
+              role="alert"
+              className="border-auth-danger/35 bg-auth-danger/10 text-auth-danger rounded-lg border px-3 py-2.5 text-sm"
+            >
+              {formError}
+            </p>
           )}
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+          <AuthSubmitButton
+            loading={isSubmitting}
+            loadingText="Signing in..."
+            disabled={success}
+            staggerIndex={3}
           >
-            {isSubmitting ? "Signing in..." : "Sign in"}
-          </button>
-
-          <div className="text-center">
-            <p className="text-sm text-muted">
-              Don&apos;t have an account?{" "}
-              <Link href="/signup" className="font-medium text-primary hover:underline">
-                Create Account
-              </Link>
-            </p>
-          </div>
+            {success ? (
+              <>
+                <CircleCheck aria-hidden="true" className="h-4 w-4" />
+                Signed in
+              </>
+            ) : (
+              <>
+                Sign in
+                <ArrowRight aria-hidden="true" className="h-4 w-4" />
+              </>
+            )}
+          </AuthSubmitButton>
         </form>
-      </div>
-    </div>
+
+        <div className="border-auth-border mt-7 border-t pt-6">
+          <AuthFooter text="New to WhatsCRM?" linkHref="/signup" linkLabel="Create an account" />
+        </div>
+      </AuthCard>
+    </AuthLayout>
   );
 }

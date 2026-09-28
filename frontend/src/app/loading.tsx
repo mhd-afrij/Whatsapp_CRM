@@ -1,4 +1,4 @@
-﻿export default function Loading() {
+export default function Loading() {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-bg px-6 text-text">
       <div className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-surface p-6 shadow-sm">

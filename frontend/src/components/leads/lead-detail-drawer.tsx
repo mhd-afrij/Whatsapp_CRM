@@ -303,7 +303,7 @@ export function LeadDetailDrawer({ leadId, open, onOpenChange }: LeadDetailDrawe
               <Link
                 href={`/leads/${lead.id}`}
                 onClick={() => onOpenChange(false)}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-sm font-semibold text-white hover:bg-primary-dark"
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary-dark"
               >
                 <ExternalLink className="size-4" />
                 Open lead page

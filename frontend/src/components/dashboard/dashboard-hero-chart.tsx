@@ -18,9 +18,10 @@ interface DashboardHeroChartProps {
   data?: WonVsLostPoint[];
   isLoading: boolean;
   isError: boolean;
+  notTracked?: boolean;
 }
 
-export function DashboardHeroChart({ data, isLoading, isError }: DashboardHeroChartProps) {
+export function DashboardHeroChart({ data, isLoading, isError, notTracked }: DashboardHeroChartProps) {
   const hasData = data?.some((point) => point.won_value > 0 || point.lost_value > 0);
   const totals = (data ?? []).reduce((result, point) => ({ won: result.won + (point.won_value ?? 0), lost: result.lost + (point.lost_value ?? 0) }), { won: 0, lost: 0 });
 
@@ -42,6 +43,8 @@ export function DashboardHeroChart({ data, isLoading, isError }: DashboardHeroCh
           <div className="h-32 animate-pulse rounded-lg bg-border/60" />
         ) : isError ? (
           <div className="flex h-24 items-center justify-center text-xs text-danger">Unable to load pipeline performance.</div>
+        ) : notTracked ? (
+          <div className="flex h-24 items-center justify-center text-xs text-muted">Analytics tracking is off for won/lost deal data.</div>
         ) : !hasData ? (
           <div className="flex h-24 items-center justify-center text-xs text-muted">No closed deal value for this period yet.</div>
         ) : (

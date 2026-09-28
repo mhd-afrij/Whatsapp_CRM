@@ -27,7 +27,7 @@ function NewContactContent() {
         setDuplicateNotice(
           `Heads up: this phone number matches an existing contact (#${result.duplicate_of.id}${
             result.duplicate_of.full_name ? `, ${result.duplicate_of.full_name}` : ""
-          }). Both contacts were kept — merge manually if needed.`
+          }). The existing contact was reused — no duplicate was created.`
         );
         router.push(`/contacts/${result.contact.id}`);
         return;

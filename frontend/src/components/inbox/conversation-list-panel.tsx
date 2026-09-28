@@ -273,7 +273,7 @@ export function ConversationListPanel() {
             <button
               type="button"
               onClick={() => router.push("/contacts/new")}
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-dark"
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary-dark"
             >
               <PenSquare className="h-4 w-4" />
               <span className="hidden sm:inline">New Chat</span>
@@ -321,7 +321,7 @@ export function ConversationListPanel() {
               className={cn(
                 "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-all duration-150",
                 tabFilter === filter.key
-                  ? "border-primary bg-primary text-white shadow-sm font-semibold"
+                  ? "border-primary bg-primary text-primary-foreground shadow-sm font-semibold"
                   : "border-border bg-bg text-muted hover:border-primary/40 hover:text-text"
               )}
             >

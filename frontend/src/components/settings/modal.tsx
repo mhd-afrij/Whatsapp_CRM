@@ -45,10 +45,15 @@ export function Modal({
 }
 
 function ModalOverlay({ open, onClose, children, className }: Pick<ModalProps, "open" | "onClose" | "children" | "className"> & { children: React.ReactNode }) {
+  // The wrapper is `fixed inset-0 z-50`, so it must never stay mounted while
+  // closed: an always-rendered transparent wrapper silently swallows every
+  // click on the page underneath (no backdrop, no content, pointer-events on).
+  if (!open) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {open && <div className="absolute inset-0 bg-black/40" onClick={onClose} />}
-      {open && children}
+    <div className={cn("fixed inset-0 z-50 flex items-center justify-center p-4", className)}>
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      {children}
     </div>
   );
 }

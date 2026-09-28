@@ -55,7 +55,7 @@ export default function FailedJobsPage() {
         <button
           onClick={() => retryAllMutation.mutate()}
           disabled={retryAllMutation.isPending || items.length === 0}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
+          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           Retry All ({data?.total ?? 0})
         </button>

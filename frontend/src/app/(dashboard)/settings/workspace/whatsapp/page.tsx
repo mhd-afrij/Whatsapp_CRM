@@ -283,7 +283,7 @@ export default function WorkspaceWhatsappPage() {
                         className={cn(
                           "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
                           filter === option.key
-                            ? "border-primary bg-primary text-white"
+                            ? "border-primary bg-primary text-primary-foreground"
                             : "border-border bg-bg text-muted hover:border-primary/40 hover:text-text",
                         )}
                       >

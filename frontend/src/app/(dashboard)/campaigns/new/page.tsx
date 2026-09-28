@@ -437,7 +437,7 @@ function NewCampaignWizard() {
                 i < step
                   ? "bg-success/15 text-success"
                   : i === step
-                    ? "bg-primary text-white"
+                    ? "bg-primary text-primary-foreground"
                     : "bg-bg text-muted"
               )}
             >
@@ -509,7 +509,7 @@ function NewCampaignWizard() {
           <button
             type="submit"
             disabled={!canContinue || createMutation.isPending}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-dark disabled:opacity-50"
           >
             {step < STEPS.length - 1 ? (
               <>

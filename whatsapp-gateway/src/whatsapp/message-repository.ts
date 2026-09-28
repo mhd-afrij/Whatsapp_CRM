@@ -1,6 +1,7 @@
 import type { PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { query, execute, transaction } from '../lib/mysql';
 import { getStorageProviderName } from '../lib/storage';
+import type { BaileysMessageKey } from './baileys-socket';
 
 export type MessageType =
   | 'text'
@@ -54,6 +55,9 @@ export class MessageRepository {
   /**
    * Finds (or creates) the whatsapp_contact for an inbound/outbound jid.
    *
+   * Returns `created: false` when a pre-existing row was reused so callers can
+   * log `contact_found` for identity-resolution debugging (spec §7).
+   *
    * WhatsApp LID (Linked ID) jids are the privacy-preserving identity used by
    * contacts whose phone-number privacy is on: the inbound `remoteJid` is an
    * opaque `@lid` value (e.g. "176974261706752@lid") whose numeric part is NOT
@@ -75,7 +79,7 @@ export class MessageRepository {
     workspaceId: number,
     waJid: string,
     pushName: string | null,
-  ): Promise<{ id: number }> {
+  ): Promise<{ id: number; created: boolean }> {
     const isLidJid = waJid.endsWith('@lid');
 
     if (isLidJid) {
@@ -108,7 +112,7 @@ export class MessageRepository {
           [pushName, rows[0].id],
         );
       }
-      return { id: rows[0].id as number };
+      return { id: rows[0].id as number, created: false };
     }
 
     const phoneNumber = isLidJid ? null : waJid.split('@')[0] ?? null;
@@ -137,7 +141,7 @@ export class MessageRepository {
            WHERE id = ?`,
           [waJid, pushName, phoneRows[0].id],
         );
-        return { id: phoneRows[0].id as number };
+        return { id: phoneRows[0].id as number, created: false };
       }
     }
 
@@ -147,12 +151,30 @@ export class MessageRepository {
     // shares the lid -> phone mapping; the backend's ContactAutoLinker
     // refuses to create CRM contacts from @lid rows, so no junk contact is
     // produced in the meantime.
-    const result = await execute(
-      `INSERT INTO whatsapp_contacts (workspace_id, wa_jid, push_name, phone_number, lid_jid, last_seen_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, NULL, NOW(), NOW(), NOW())`,
-      [workspaceId, waJid, pushName, phoneNumber],
-    );
-    return { id: result.insertId };
+    try {
+      const result = await execute(
+        `INSERT INTO whatsapp_contacts (workspace_id, wa_jid, push_name, phone_number, lid_jid, last_seen_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, NOW(), NOW(), NOW())`,
+        [workspaceId, waJid, pushName, phoneNumber],
+      );
+      return { id: result.insertId, created: true };
+    } catch (err) {
+      // A concurrent message for the same jid may have won the row between our
+      // SELECT above and this INSERT (the only contact key is (workspace_id,
+      // wa_jid)). Fall back to the winner so one human stays one row - the
+      // same idempotency contract as the message insert.
+      if (!isDuplicateEntryError(err)) {
+        throw err;
+      }
+      const [rows] = await query<RowDataPacket[]>(
+        'SELECT id FROM whatsapp_contacts WHERE workspace_id = ? AND wa_jid = ? LIMIT 1',
+        [workspaceId, waJid],
+      );
+      if (rows.length === 0) {
+        throw err;
+      }
+      return { id: rows[0].id as number, created: false };
+    }
   }
 
   /**
@@ -166,6 +188,15 @@ export class MessageRepository {
    */
   async setLidJid(workspaceId: number, waJid: string, lidJid: string): Promise<void> {
     if (!lidJid.endsWith('@lid')) {
+      return;
+    }
+
+    // waJid must be the canonical phone-number jid the alias maps to. Mapping
+    // a @lid onto itself (a payload whose "real" jid is actually the alias)
+    // would write a self-referencing row with phone_number = fake LID digits -
+    // the same poison upsertContactName guards against. Refuse it; without the
+    // real number there is nothing to map yet.
+    if (waJid.endsWith('@lid')) {
       return;
     }
 
@@ -263,27 +294,96 @@ export class MessageRepository {
     );
   }
 
-  /** Resolves the conversation for a whatsapp_contact, creating it (gateway-owned columns only) if absent. */
+  /**
+   * Resolves the conversation for a whatsapp_contact (gateway-owned columns
+   * only), creating it only when NEITHER identity key already owns a thread.
+   *
+   * Lookup order (spec §3 - the phone number is the only unique identity):
+   *   1. The whatsapp_contact's own thread: one jid always maps to exactly one
+   *      conversation, no matter how the pushName/profile name changed between
+   *      messages.
+   *   2. An ACTIVE conversation (status open/pending - the schema has no
+   *      'waiting' value) of the same CRM contact
+   *      (whatsapp_contacts.contact_id). This catches the legacy case where one
+   *      human owns several whatsapp_contacts rows: instead of fabricating yet
+   *      another thread, the message attaches to the existing active one and
+   *      the row is re-keyed onto it (claim), so the next message hits step 1.
+   *   3. Only when neither exists is a new conversation created.
+   *
+   * `created` lets callers log `conversation_found` for identity-resolution
+   * debugging (spec §7).
+   *
+   * The lookups are deliberately NOT account-scoped (unchanged behaviour): a
+   * thread that already exists for this identity is reused whichever connection
+   * it was opened on, so the insert below is the only path that can race. When
+   * it does, the canonical-identity migration's UNIQUE (workspace_id,
+   * whatsapp_contact_id, COALESCE(whatsapp_account_id, 0)) key rejects the
+   * loser with ER_DUP_ENTRY and the catch block re-reads the winner - the
+   * database, not this method, is the final arbiter of one-identity-one-thread.
+   */
   async findOrCreateConversation(
     workspaceId: number,
     whatsappContactId: number,
     accountId: number | null = null,
   ): Promise<{ id: number; created: boolean }> {
-    const [rows] = await query<RowDataPacket[]>(
+    const [ownRows] = await query<RowDataPacket[]>(
       'SELECT id FROM conversations WHERE workspace_id = ? AND whatsapp_contact_id = ? LIMIT 1',
       [workspaceId, whatsappContactId],
     );
-    if (rows.length > 0) {
-      return { id: rows[0].id as number, created: false };
+    if (ownRows.length > 0) {
+      return { id: ownRows[0].id as number, created: false };
     }
 
-    const result = await execute(
-      `INSERT INTO conversations
-         (workspace_id, whatsapp_contact_id, whatsapp_account_id, status, unread_count, created_at, updated_at)
-       VALUES (?, ?, ?, 'open', 0, NOW(), NOW())`,
-      [workspaceId, whatsappContactId, accountId],
+    const [contactRows] = await query<RowDataPacket[]>(
+      'SELECT contact_id FROM whatsapp_contacts WHERE workspace_id = ? AND id = ? LIMIT 1',
+      [workspaceId, whatsappContactId],
     );
-    return { id: result.insertId, created: true };
+    const contactId = (contactRows[0]?.contact_id as number | null | undefined) ?? null;
+    if (contactId !== null) {
+      const [activeRows] = await query<RowDataPacket[]>(
+        `SELECT id FROM conversations
+         WHERE workspace_id = ? AND contact_id = ? AND status IN ('open', 'pending')
+         ORDER BY COALESCE(last_message_at, created_at) DESC
+         LIMIT 1`,
+        [workspaceId, contactId],
+      );
+      if (activeRows.length > 0) {
+        await execute(
+          'UPDATE conversations SET whatsapp_contact_id = ?, updated_at = NOW() WHERE id = ? AND workspace_id = ?',
+          [whatsappContactId, activeRows[0].id, workspaceId],
+        );
+        return { id: activeRows[0].id as number, created: false };
+      }
+    }
+
+    try {
+      const result = await execute(
+        `INSERT INTO conversations
+           (workspace_id, whatsapp_contact_id, whatsapp_account_id, status, unread_count, created_at, updated_at)
+         VALUES (?, ?, ?, 'open', 0, NOW(), NOW())`,
+        [workspaceId, whatsappContactId, accountId],
+      );
+      return { id: result.insertId, created: true };
+    } catch (err) {
+      // Two messages for the same identity arriving at once can both miss the
+      // lookups above. The canonical-identity migration's UNIQUE
+      // (workspace_id, whatsapp_contact_id, COALESCE(whatsapp_account_id, 0))
+      // key - which folds a NULL account onto 0, so NULL accounts collide too
+      // - makes the loser fail with ER_DUP_ENTRY. Re-read the winner instead of
+      // surfacing the error: a second thread for one identity is exactly the
+      // duplicate that key exists to prevent.
+      if (!isDuplicateEntryError(err)) {
+        throw err;
+      }
+      const [rows] = await query<RowDataPacket[]>(
+        'SELECT id FROM conversations WHERE workspace_id = ? AND whatsapp_contact_id = ? LIMIT 1',
+        [workspaceId, whatsappContactId],
+      );
+      if (rows.length === 0) {
+        throw err;
+      }
+      return { id: rows[0].id as number, created: false };
+    }
   }
 
   /**
@@ -332,7 +432,7 @@ export class MessageRepository {
     normalized: NormalizedInboundMessage,
     opts: { incrementUnread?: boolean } = {},
     accountId: number | null = null,
-  ): Promise<{ messageId: number } | null> {
+  ): Promise<{ messageId: number; status: MessageStatus } | null> {
     const incrementUnread = opts.incrementUnread ?? true;
     return transaction(async (conn: PoolConnection) => {
       let repliedToId: number | null = null;
@@ -372,7 +472,11 @@ export class MessageRepository {
         [normalized.sentAt, normalized.sentAt, preview, incrementUnread ? 1 : 0, conversationId],
       );
 
-      return { messageId: result.insertId };
+      // 'sent' is literal and honest here: an inbound message's own arrival IS
+      // the event. There is no outbound receipt for it, and inbound bubbles
+      // never render a tick. See the outbound counterpart above for why an
+      // outbound insert must NOT default to 'sent'.
+      return { messageId: result.insertId, status: 'sent' };
     });
   }
 
@@ -394,7 +498,7 @@ export class MessageRepository {
       sentAt?: Date;
     },
     accountId: number | null = null,
-  ): Promise<{ messageId: number } | null> {
+  ): Promise<{ messageId: number; status: MessageStatus } | null> {
     return transaction(async (conn: PoolConnection) => {
       let repliedToId: number | null = null;
       if (params.repliedToWhatsappMessageId) {
@@ -406,7 +510,12 @@ export class MessageRepository {
       }
 
       const messageType = params.messageType ?? 'text';
-      const status = params.status ?? 'sent';
+      // 'queued', not 'sent': inserting the row proves we handed the message to
+      // Baileys, NOT that WhatsApp accepted it. Only a real receipt (Baileys
+      // messages.update code 2 SERVER_ACK) may advance this to 'sent'. Callers
+      // get the persisted status back so the Socket.IO emit can never claim a
+      // state the row does not have.
+      const status = params.status ?? 'queued';
       const sentAt = params.sentAt ?? new Date();
       const [result] = await conn.query<ResultSetHeader>(
         `INSERT INTO messages
@@ -436,7 +545,7 @@ export class MessageRepository {
         [sentAt, sentAt, preview || null, conversationId],
       );
 
-      return { messageId: result.insertId };
+      return { messageId: result.insertId, status };
     });
   }
 
@@ -740,6 +849,42 @@ export class MessageRepository {
       [conversationId, workspaceId],
     );
     return rows.length > 0 ? { unreadCount: rows[0].unread_count as number } : null;
+  }
+
+  /**
+   * Builds the WhatsApp `read` receipt keys for the inbound messages in a
+   * conversation, so an agent opening the thread can acknowledge them to the
+   * customer via Baileys readMessages(). Only inbound rows are returned - an
+   * outbound message is never acknowledged back to its own sender. The remote
+   * jid comes from the conversation's whatsapp_contacts row, which is the
+   * canonical (phone-number) identity, so the receipt is addressed correctly
+   * even when the message originally arrived on a @lid jid.
+   */
+  async listInboundReadReceiptKeys(
+    conversationId: number,
+    workspaceId: number,
+  ): Promise<BaileysMessageKey[]> {
+    const [rows] = await query<RowDataPacket[]>(
+      `SELECT m.whatsapp_message_id, wc.wa_jid AS remote_jid
+         FROM messages m
+         INNER JOIN conversations c ON c.id = m.conversation_id
+         LEFT JOIN whatsapp_contacts wc
+           ON wc.id = c.whatsapp_contact_id AND wc.workspace_id = c.workspace_id
+        WHERE m.conversation_id = ?
+          AND m.workspace_id = ?
+          AND m.direction = 'inbound'
+          AND m.whatsapp_message_id IS NOT NULL
+          AND wc.wa_jid IS NOT NULL
+        ORDER BY m.id DESC
+        LIMIT 50`,
+      [conversationId, workspaceId],
+    );
+
+    return rows.map((row) => ({
+      remoteJid: row.remote_jid as string,
+      fromMe: false,
+      id: row.whatsapp_message_id as string,
+    }));
   }
 
   /**

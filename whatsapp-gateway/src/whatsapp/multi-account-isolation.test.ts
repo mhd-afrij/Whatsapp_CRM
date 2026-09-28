@@ -50,6 +50,7 @@ function makeFakeSocket(): FakeSocketHandle {
     requestPairingCode: vi.fn().mockResolvedValue('AB12CD34'),
     sendMessage: vi.fn().mockResolvedValue({ key: { id: 'MSG-ID' } }),
     sendPresenceUpdate: vi.fn().mockResolvedValue(undefined),
+    readMessages: vi.fn().mockResolvedValue(undefined),
   };
 
   return {

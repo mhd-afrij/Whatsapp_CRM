@@ -144,7 +144,7 @@ function SearchResultsPage() {
           <button
             type="button"
             onClick={() => goToCategory(null)}
-            className={`rounded-full px-3 py-1 text-sm font-medium ${!categoryParam ? "bg-primary text-white" : "border border-border text-muted hover:text-text"}`}
+            className={`rounded-full px-3 py-1 text-sm font-medium ${!categoryParam ? "bg-primary text-primary-foreground" : "border border-border text-muted hover:text-text"}`}
           >
             All
           </button>
@@ -153,7 +153,7 @@ function SearchResultsPage() {
               key={cat}
               type="button"
               onClick={() => goToCategory(cat)}
-              className={`rounded-full px-3 py-1 text-sm font-medium ${categoryParam === cat ? "bg-primary text-white" : "border border-border text-muted hover:text-text"}`}
+              className={`rounded-full px-3 py-1 text-sm font-medium ${categoryParam === cat ? "bg-primary text-primary-foreground" : "border border-border text-muted hover:text-text"}`}
             >
               {SEARCH_CATEGORY_LABELS[cat]}
               {categories[cat] ? ` (${categories[cat]!.total})` : ""}

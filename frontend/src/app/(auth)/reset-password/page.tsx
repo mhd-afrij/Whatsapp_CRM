@@ -130,7 +130,7 @@ function ResetPasswordForm() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSubmitting ? "Resetting..." : "Reset password"}
           </button>

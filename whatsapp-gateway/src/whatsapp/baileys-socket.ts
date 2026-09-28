@@ -40,8 +40,24 @@ export interface IBaileysSocket {
     content: { text: string } | Record<string, unknown>,
   ): Promise<{ key: { id?: string | null } } | undefined>;
   sendPresenceUpdate(presence: string, to: string): Promise<void>;
+  /**
+   * Real WhatsApp read acknowledgement: sends a `read` receipt IQ to the
+   * remote party for the given message keys (verified against the installed
+   * @whiskeysockets/baileys 6.7.24, lib/Socket/messages-send.js). This is what
+   * makes the customer's phone show the blue double tick when an agent opens
+   * the thread. Distinct from the CRM-side unread reset, which only touches our
+   * own database.
+   */
+  readMessages(keys: BaileysMessageKey[]): Promise<void>;
   downloadMediaMessage?: (message: unknown) => Promise<Buffer>;
 }
+
+export type BaileysMessageKey = {
+  remoteJid: string | null;
+  fromMe: boolean | null;
+  id: string | null;
+  participant?: string | null;
+};
 
 export interface BaileysMessagingHistorySet {
   chats?: unknown[];
@@ -60,7 +76,27 @@ export interface BaileysMessagesUpsert {
 }
 
 export interface BaileysRawMessage {
-  key: { id?: string | null; remoteJid?: string | null; fromMe?: boolean | null };
+  /**
+   * `senderPn`/`participantPn` are Baileys' carrier of the sender's REAL
+   * phone-number jid, which is present on every message but is not the same
+   * thing as `remoteJid`: when a contact has WhatsApp phone-number privacy
+   * enabled, `remoteJid` is their opaque `@lid` alias while `senderPn` still
+   * carries "94766695316@s.whatsapp.net".
+   *
+   * Reading `remoteJid` alone is what splits one person into two
+   * whatsapp_contacts rows / two conversations / two CRM contacts, because the
+   * `@lid` -> phone mapping only reaches us via `contacts.upsert` /
+   * `chats.phoneNumberShare` - events that never fire for a privacy-on
+   * contact who never shares their number. `senderPn` is authoritative and
+   * needs no such event. `participantPn` is the group-chat equivalent.
+   */
+  key: {
+    id?: string | null;
+    remoteJid?: string | null;
+    fromMe?: boolean | null;
+    senderPn?: string | null;
+    participantPn?: string | null;
+  };
   pushName?: string | null;
   messageTimestamp?: number | string | null;
   message?: Record<string, unknown> | null;

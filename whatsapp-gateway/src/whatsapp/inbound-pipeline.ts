@@ -2,7 +2,8 @@ import { logger } from '../lib/logger';
 import { emitMessageCreated } from '../lib/socket-server';
 import { notifyNewMessage } from '../lib/laravel-client';
 import { normalizeInboundMessage } from './message-normalizer';
-import { MessageRepository, isDuplicateEntryError } from './message-repository';
+import { normalizePhoneToJid, phoneFromJid, resolveCanonicalJid } from './jid';
+import { MessageRepository, isDuplicateEntryError, type MessageStatus } from './message-repository';
 import { enqueueMediaDownload } from '../queues/media-download.queue';
 import type { BaileysMessagesUpsert, BaileysRawMessage } from './baileys-socket';
 
@@ -33,6 +34,97 @@ export interface ProcessOneMessageOptions {
 }
 
 /**
+ * Spec §7 debugging log: one structured line per inbound message documenting
+ * how the phone-number identity resolved (contact found? conversation reused?).
+ * The pushName/profile name is deliberately ABSENT as a matching key - the
+ * normalized phone number is the only identity (spec §1).
+ *
+ * Carries every field needed to audit identity resolution end to end: the raw
+ * jid WhatsApp sent, the canonical jid/normalized phone it resolved to, the
+ * workspace + account, and the contact/conversation/message ids the row landed
+ * on. Verifying "every message for one WhatsApp identity resolves to the same
+ * contact_id and conversation_id" is a grep over these lines.
+ */
+function logIdentityResolution(params: {
+  workspaceId: number;
+  accountId: number | null;
+  whatsappMessageId: string;
+  rawJid: string;
+  canonicalJid: string;
+  contact: { id: number; created: boolean };
+  conversation: { id: number; created: boolean };
+  messageId: number | null;
+  direction: 'inbound' | 'outbound';
+}): void {
+  const { workspaceId, accountId, whatsappMessageId, rawJid, canonicalJid, contact, conversation, messageId, direction } =
+    params;
+  // The canonical phone the identity actually keyed on (raw_jid keeps the digits
+  // exactly as WhatsApp sent them).
+  const phoneReceived = phoneFromJid(canonicalJid);
+
+  let normalizedPhone: string | null = null;
+  if (phoneReceived) {
+    try {
+      normalizedPhone = normalizePhoneToJid(phoneReceived).split('@')[0] ?? null;
+    } catch {
+      normalizedPhone = null;
+    }
+  }
+
+  logger.info(
+    {
+      raw_jid: rawJid,
+      canonical_jid: canonicalJid,
+      phone_received: phoneReceived,
+      normalized_phone: normalizedPhone,
+      contact_found: !contact.created,
+      resolved_contact_id: contact.id,
+      conversation_found: !conversation.created,
+      resolved_conversation_id: conversation.id,
+      message_id: messageId,
+      direction,
+      workspace_id: workspaceId,
+      whatsapp_account_id: accountId,
+      action: conversation.created ? 'create_new_conversation' : 'reuse_existing_conversation',
+      workspaceId,
+      whatsappMessageId,
+      waJid: canonicalJid,
+    },
+    'Inbound WhatsApp identity resolution',
+  );
+}
+
+/**
+ * Resolves the whatsapp_contact for one message's canonical jid, first
+ * persisting any newly-learned `@lid` -> phone alias.
+ *
+ * Persisting the alias (rather than only using senderPn for this one message)
+ * is what makes the identity durable: a later message from the same person may
+ * carry no senderPn, and without the alias it would fall back to the `@lid`
+ * remoteJid and strand a second row/conversation all over again. setLidJid
+ * also folds any conversation already stranded on the LID row, so a thread that
+ * was split before this fix is reunited on the next message.
+ *
+ * Best-effort: a failure to persist the alias must not drop the message, so the
+ * contact lookup proceeds either way.
+ */
+async function resolveContact(
+  workspaceId: number,
+  canonicalJid: string,
+  lidJid: string | null,
+  pushName: string | null,
+): Promise<{ id: number; created: boolean }> {
+  if (lidJid) {
+    try {
+      await repository.setLidJid(workspaceId, canonicalJid, lidJid);
+    } catch (err) {
+      logger.warn({ err, workspaceId, canonicalJid, lidJid }, 'Failed to persist LID alias; continuing with senderPn identity');
+    }
+  }
+  return repository.findOrCreateWhatsappContact(workspaceId, canonicalJid, pushName);
+}
+
+/**
  * Normalizes and persists a single inbound/historical WhatsApp message. Never
  * throws for one bad message: per-message failures are logged (and recorded in
  * message_processing_failures where applicable) and reported via the returned
@@ -48,10 +140,15 @@ export async function processOneMessage(
   const whatsappMessageId = raw.key.id ?? 'unknown';
 
   try {
-    const waJid = raw.key.remoteJid;
-    if (!waJid || waJid === 'status@broadcast' || waJid.endsWith('@broadcast')) {
+    const rawJid = raw.key.remoteJid;
+    if (!rawJid || rawJid === 'status@broadcast' || rawJid.endsWith('@broadcast')) {
       return { status: 'skipped' };
     }
+
+    // Identity first, before anything reads the jid: the canonical jid is the
+    // sender's real phone jid (key.senderPn) when available, falling back to
+    // remoteJid. An @lid alias never becomes an identity of its own.
+    const { jid: waJid, lidJid } = resolveCanonicalJid(raw);
 
     const result = normalizeInboundMessage(raw);
 
@@ -62,7 +159,7 @@ export async function processOneMessage(
       }
       logger.warn({ workspaceId, whatsappMessageId, reason: result.reason }, 'Recording unsupported message');
       try {
-        const contact = await repository.findOrCreateWhatsappContact(workspaceId, waJid, raw.pushName ?? null);
+        const contact = await resolveContact(workspaceId, waJid, lidJid, raw.pushName ?? null);
         const conversation = await repository.findOrCreateConversation(workspaceId, contact.id, accountId);
         const inserted = await repository.insertInboundMessage(
           workspaceId,
@@ -77,6 +174,17 @@ export async function processOneMessage(
           },
           { incrementUnread: live },
         );
+        logIdentityResolution({
+          workspaceId,
+          accountId,
+          whatsappMessageId,
+          rawJid,
+          canonicalJid: waJid,
+          contact,
+          conversation,
+          messageId: inserted?.messageId ?? null,
+          direction: 'inbound',
+        });
         if (!inserted) {
           return { status: 'duplicate' };
         }
@@ -94,18 +202,21 @@ export async function processOneMessage(
     }
 
     const isFromMe = Boolean(raw.key.fromMe);
-    const contact = await repository.findOrCreateWhatsappContact(workspaceId, waJid, raw.pushName ?? null);
+    const contact = await resolveContact(workspaceId, waJid, lidJid, raw.pushName ?? null);
     const conversation = await repository.findOrCreateConversation(workspaceId, contact.id, accountId);
 
-    let insertResult: { messageId: number } | null = null;
+    let insertResult: { messageId: number; status: MessageStatus } | null = null;
     try {
       if (isFromMe) {
+        // No status is asserted here. A message echoed back through
+        // messages.upsert (sent from another linked device, or pulled by
+        // history sync) carries no receipt in the upsert payload, so the row
+        // stays 'queued' until a real Baileys messages.update advances it.
         insertResult = await repository.insertOutboundMessage(workspaceId, conversation.id, {
           whatsappMessageId,
           body: result.normalized.body,
           messageType: result.normalized.messageType,
           repliedToWhatsappMessageId: result.normalized.repliedToWhatsappMessageId,
-          status: 'delivered',
           sentAt: result.normalized.sentAt,
         }, accountId);
       } else {
@@ -125,6 +236,18 @@ export async function processOneMessage(
     }
 
     if (!insertResult) return { status: 'duplicate' };
+
+    logIdentityResolution({
+      workspaceId,
+      accountId,
+      whatsappMessageId,
+      rawJid,
+      canonicalJid: waJid,
+      contact,
+      conversation,
+      messageId: insertResult.messageId,
+      direction: isFromMe ? 'outbound' : 'inbound',
+    });
 
     if (result.normalized.media && !isFromMe) {
       await enqueueMediaDownload({
@@ -147,7 +270,7 @@ export async function processOneMessage(
           direction: isFromMe ? 'outbound' : 'inbound',
           messageType: result.normalized.messageType,
           body: result.normalized.body,
-          status: isFromMe ? 'delivered' : 'sent',
+          status: insertResult.status,
           senderType: isFromMe ? 'user' : 'contact',
           sentAt: result.normalized.sentAt.toISOString(),
         },

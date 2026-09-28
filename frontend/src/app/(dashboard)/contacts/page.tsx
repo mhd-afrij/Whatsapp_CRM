@@ -56,7 +56,7 @@ function ImportReportPanel({ report, onClose }: { report: ImportReport; onClose:
         </div>
         <div className="rounded-md bg-warning/10 p-3">
           <p className="text-lg font-semibold text-warning">{report.duplicates.length}</p>
-          <p className="text-xs text-muted">Possible duplicates</p>
+          <p className="text-xs text-muted">Duplicates skipped</p>
         </div>
         <div className="rounded-md bg-danger/10 p-3">
           <p className="text-lg font-semibold text-danger">{report.failed.length}</p>
@@ -79,11 +79,11 @@ function ImportReportPanel({ report, onClose }: { report: ImportReport; onClose:
 
       {report.duplicates.length > 0 && (
         <div className="mt-4">
-          <p className="mb-1 text-xs font-medium text-text">Flagged duplicates (still created)</p>
+          <p className="mb-1 text-xs font-medium text-text">Skipped duplicates (same phone number)</p>
           <ul className="max-h-40 space-y-1 overflow-y-auto text-xs text-muted">
             {report.duplicates.map((row, i) => (
               <li key={i}>
-                Row {row.row}: contact #{row.contact_id} duplicates existing contact #
+                Row {row.row}: skipped — phone matches existing contact #
                 {row.duplicate_of_contact_id} (phone {row.phone_number})
               </li>
             ))}
@@ -244,7 +244,7 @@ function ContactsTable() {
           {!archived && canCreate && (
             <Link
               href="/contacts/new"
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary-dark"
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-dark"
             >
               <Plus className="h-4 w-4" />
               New contact
@@ -282,7 +282,7 @@ function ContactsTable() {
             }}
             className={cn(
               "px-3 py-2 text-sm font-medium",
-              !archived ? "bg-primary text-white" : "bg-surface text-muted hover:text-text"
+              !archived ? "bg-primary text-primary-foreground" : "bg-surface text-muted hover:text-text"
             )}
           >
             Active
@@ -295,7 +295,7 @@ function ContactsTable() {
             }}
             className={cn(
               "px-3 py-2 text-sm font-medium",
-              archived ? "bg-primary text-white" : "bg-surface text-muted hover:text-text"
+              archived ? "bg-primary text-primary-foreground" : "bg-surface text-muted hover:text-text"
             )}
           >
             Archived

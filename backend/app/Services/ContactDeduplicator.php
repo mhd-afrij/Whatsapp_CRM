@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Contact;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Merges duplicate CRM contacts - same (workspace_id, normalized_phone_number)
@@ -76,6 +77,40 @@ class ContactDeduplicator
     }
 
     /**
+     * Merges one specific victim contact into one specific survivor, re-pointing
+     * every linked record, folding labels, enriching missing fields, then
+     * hard-deleting the victim. Used by the duplicate-cleanup migration for
+     * pairs the phone-based grouping can't see (e.g. a contact fabricated from
+     * a poisoned @lid phone number). Both rows must belong to the same
+     * workspace; a catch-all guard falls back to re-selecting by id otherwise.
+     */
+    public function mergeContacts(int $survivorId, int $victimId, bool $dryRun = false): bool
+    {
+        if ($survivorId === $victimId) {
+            return false;
+        }
+
+        $survivor = Contact::withTrashed()->find($survivorId);
+        $victim = Contact::withTrashed()->find($victimId);
+
+        if (! $survivor || ! $victim) {
+            return false;
+        }
+
+        if ($survivor->workspace_id !== $victim->workspace_id) {
+            return false;
+        }
+
+        if ($dryRun) {
+            return true;
+        }
+
+        $this->mergeInto($survivor, $victim);
+
+        return true;
+    }
+
+    /**
      * Re-points every record that references the victim onto the survivor,
      * copies missing CRM fields over, then hard-deletes the victim.
      */
@@ -97,6 +132,11 @@ class ContactDeduplicator
             foreach ($mappings as $table => $column) {
                 DB::table($table)->where($column, $victim->id)->update([$column => $survivor->id]);
             }
+
+            // Spec §3/§6: one contact must own exactly ONE conversation. After
+            // re-pointing, the survivor can hold both threads of a merged pair -
+            // fold them so no duplicate conversation survives the merge.
+            $this->foldConversations((int) $survivor->id);
 
             // contact_label is keyed on (label_id, contact_id) - fold the
             // victim's labels into the survivor, skipping pairs it already has.
@@ -131,6 +171,73 @@ class ContactDeduplicator
 
             $victim->forceDelete();
         });
+    }
+
+    /**
+     * Folds every conversation a contact owns down to a single survivor
+     * (spec §3/§6: same phone number = one active conversation). Keeps the
+     * fittest row - an open/pending thread first, then the most recently
+     * active - moves the other rows' messages and conversation-scoped
+     * references onto it, and hard-deletes them (assignments/participants/
+     * reactions cascade with the row). Mirrors the gateway's setLidJid
+     * conversation merge (whatsapp-gateway/src/whatsapp/message-repository.ts).
+     */
+    protected function foldConversations(int $contactId): void
+    {
+        $conversations = DB::table('conversations')
+            ->where('contact_id', $contactId)
+            ->orderByRaw("CASE WHEN status IN ('open', 'pending') THEN 0 ELSE 1 END")
+            ->orderByRaw('COALESCE(last_message_at, created_at) DESC')
+            ->orderBy('id')
+            ->get();
+
+        if ($conversations->count() < 2) {
+            return;
+        }
+
+        $keeper = $conversations->shift();
+
+        // Conversation-scoped references that would otherwise be nulled or
+        // cascade-deleted follow the messages onto the keeper.
+        $referenceTables = [
+            'leads', 'tasks', 'internal_notes', 'campaign_messages',
+            'message_processing_failures', 'message_dispatch_queue', 'sla_events',
+        ];
+
+        foreach ($conversations as $duplicate) {
+            foreach ($referenceTables as $table) {
+                if (Schema::hasTable($table) && Schema::hasColumn($table, 'conversation_id')) {
+                    DB::table($table)
+                        ->where('conversation_id', $duplicate->id)
+                        ->update(['conversation_id' => $keeper->id]);
+                }
+            }
+
+            if (Schema::hasTable('conversation_label')) {
+                foreach (DB::table('conversation_label')->where('conversation_id', $duplicate->id)->get() as $row) {
+                    DB::table('conversation_label')->updateOrInsert(
+                        ['label_id' => $row->label_id, 'conversation_id' => $keeper->id],
+                        ['created_at' => $row->created_at],
+                    );
+                }
+                DB::table('conversation_label')->where('conversation_id', $duplicate->id)->delete();
+            }
+
+            $duplicateUnread = max((int) ($duplicate->unread_count ?? 0), 0);
+
+            DB::table('messages')
+                ->where('conversation_id', $duplicate->id)
+                ->update(['conversation_id' => $keeper->id]);
+
+            DB::table('conversations')->where('id', $keeper->id)->update([
+                'last_message_at' => DB::raw("GREATEST(COALESCE(last_message_at, '1970-01-01'), COALESCE((SELECT MAX(sent_at) FROM messages WHERE conversation_id = {$keeper->id}), last_message_at))"),
+                'last_message_preview' => DB::raw("COALESCE((SELECT body FROM messages WHERE conversation_id = {$keeper->id} ORDER BY sent_at DESC LIMIT 1), last_message_preview)"),
+                'unread_count' => DB::raw('unread_count + '.$duplicateUnread),
+                'updated_at' => now(),
+            ]);
+
+            DB::table('conversations')->where('id', $duplicate->id)->delete();
+        }
     }
 
     /**

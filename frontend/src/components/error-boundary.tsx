@@ -54,7 +54,7 @@ export class ErrorBoundary extends React.Component<
           <p className="text-muted">{this.state.error?.message}</p>
           <button
             onClick={() => window.location.reload()}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary-dark"
           >
             Reload
           </button>
