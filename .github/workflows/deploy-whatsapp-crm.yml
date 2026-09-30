@@ -1,0 +1,64 @@
+name: Deploy WhatsApp CRM Gateway
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+
+concurrency:
+  group: deploy-whatsapp-crm-gateway
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build and deploy WhatsApp gateway
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: whatsapp-gateway
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: whatsapp-gateway/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build production gateway
+        run: npm run build
+
+      - name: Assemble App Service package
+        run: |
+          npm prune --omit=dev
+          mkdir -p release
+          cp package.json package-lock.json release/
+          cp -R dist release/dist
+          cp -R node_modules release/node_modules
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: whatsapp-crm
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_FDBEB97F216341E28831DD2C14E20AD3 }}
+          package: whatsapp-gateway/release
+          startup-command: node dist/index.js
