@@ -75,6 +75,10 @@ services:
       # non-docker local dev, so it is overridden explicitly here.
       WHATSAPP_GATEWAY_URL: http://whatsapp-gateway:4000
       WHATSAPP_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:-change-me-to-a-long-random-secret}
+      # Backend-side storage selector. Interpolated from the SAME root .env that
+      # feeds the gateway's STORAGE_PROVIDER below, so the two cannot silently
+      # diverge; backend/docker/start.sh runs `storage:verify` at boot.
+      FILESYSTEM_DISK: ${FILESYSTEM_DISK:-local}
       AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:-}

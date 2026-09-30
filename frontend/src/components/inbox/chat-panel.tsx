@@ -60,6 +60,7 @@ import { useCreateNote } from "@/hooks/use-notes";
 import { useCreateDeal, useDealPipelines } from "@/hooks/use-deals";
 import { useComposerDraft } from "@/hooks/use-composer-draft";
 import { useWorkspaceSettings } from "@/hooks/use-workspace-settings";
+import { useInboxSettings } from "@/hooks/use-inbox-settings";
 import { ApiError } from "@/lib/api-client";
 import { isGatewayRecoverableError } from "@/lib/whatsapp-connection";
 import type { ConversationPriority, Message, OutboundMessageType } from "@/lib/conversations-api";
@@ -683,6 +684,7 @@ export function MessageBubble({
   onDeleteForMe: (message: Message) => void;
 }) {
   const { user } = useAuth();
+  const { data: inboxSettings } = useInboxSettings();
   const [deleteTarget, setDeleteTarget] = useState<Message | null>(null);
   const isOutbound = message.direction === "outbound";
   const repliedTo = message.replied_to_message_id
@@ -703,8 +705,8 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "self-center opacity-0 group-hover:opacity-100 transition-opacity duration-150 px-1",
-          isOutbound ? "order-first" : "order-last"
+          "pointer-events-none absolute top-1/2 z-20 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100",
+          isOutbound ? "right-full mr-1" : "left-full ml-1"
         )}
       >
         <MessageHoverBar
@@ -716,7 +718,7 @@ export function MessageBubble({
 
       <div
         className={cn(
-          "relative max-w-[85%] sm:max-w-[70%] min-w-[72px] px-2.5 pt-1.5 pb-1 text-[14.2px] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]",
+          "relative max-w-[85%] sm:max-w-[70%] min-w-[72px] rounded-[12px] px-3 py-2 text-[14px] leading-5 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]",
           isOutbound
             ? "rounded-lg rounded-tr-none bg-outgoing-bubble text-outgoing-text"
             : "rounded-lg rounded-tl-none bg-incoming-bubble text-text",
@@ -779,6 +781,7 @@ export function MessageBubble({
                 status={message.status}
                 deliveredAt={message.delivered_at}
                 readAt={message.read_at}
+                readReceiptsEnabled={inboxSettings?.settings.general.read_receipts ?? true}
               />
             )}
           </span>
@@ -1355,11 +1358,13 @@ export function Composer({
   const [isUploading, setIsUploading] = useState(false);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showActionMenu, setShowActionMenu] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const discardRecordingRef = useRef(false);
@@ -1396,6 +1401,26 @@ export function Composer({
     return () => document.removeEventListener("mousedown", listener);
   }, [showEmojiPicker]);
 
+  // Keep the compact action menu dismissible without interfering with the
+  // existing emoji/template popovers.
+  useEffect(() => {
+    if (!showActionMenu) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
+        setShowActionMenu(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowActionMenu(false);
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showActionMenu]);
+
   // Let the chat header's "Add note" action flip this composer into internal-note mode.
   useEffect(() => {
     const handler = (event: Event) => {
@@ -1430,6 +1455,20 @@ export function Composer({
     setBody(`${body}${emoji}`);
     setShowEmojiPicker(false);
     textareaRef.current?.focus();
+  };
+
+  const closeActionMenu = () => setShowActionMenu(false);
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+    closeActionMenu();
+  };
+  const toggleEmojiPicker = () => {
+    setShowEmojiPicker((open) => !open);
+    setShowTemplatePicker(false);
+  };
+  const toggleTemplatePicker = () => {
+    setShowTemplatePicker((open) => !open);
+    setShowEmojiPicker(false);
   };
 
   const startRecording = async () => {
@@ -1640,11 +1679,11 @@ export function Composer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="relative z-20 shrink-0 border-t border-border bg-[#f0f2f5] dark:bg-[#121516] px-3 py-2 shadow-sm"
+      className="relative z-20 shrink-0 border-t border-border bg-surface/95 px-3 py-2.5 backdrop-blur"
     >
       {isNoteMode && (
-        <p className="mb-1 text-xs font-medium text-amber-500 dark:text-amber-400">
-          Internal note mode. Only your team can see this.
+        <p className="mb-1 text-xs font-medium text-info">
+          Internal Note · Only your team can see this.
         </p>
       )}
 
@@ -1747,99 +1786,67 @@ export function Composer({
         </div>
       )}
 
-      <div className="flex min-w-0 items-center gap-2">
-        {canCreateNote && (
-          <button
-            type="button"
-            onClick={() => setMode(isNoteMode ? "reply" : "note")}
-            aria-label={isNoteMode ? "Switch to reply mode" : "Switch to internal note mode"}
-            title={isNoteMode ? "Switch to Reply" : "Switch to Internal Note"}
-            className={cn(
-              "flex h-8 shrink-0 items-center justify-center gap-1 rounded-full border px-2.5 text-xs font-medium transition",
-              isNoteMode
-                ? "border-amber-500/50 bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                : "border-border bg-surface text-muted hover:text-text hover:bg-border/60"
-            )}
-          >
-            <Lock className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{isNoteMode ? "Note" : "Note"}</span>
-          </button>
-        )}
-
-        {canReply && (
-          <>
-            <div className="relative" ref={emojiRef}>
-              <button
-                type="button"
-                onClick={() => setShowEmojiPicker((open) => !open)}
-                disabled={isNoteMode || isUploading || isRecording}
-                aria-label="Insert emoji"
-                aria-expanded={showEmojiPicker}
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
-                  showEmojiPicker && "text-accent bg-accent/10"
-                )}
-              >
-                <SmilePlus className="h-4 w-4" />
-              </button>
-              {showEmojiPicker && (
-                <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-xl border border-border bg-surface p-2 shadow-2xl animate-in slide-in-from-bottom-2 fade-in duration-100">
-                  <div className="grid grid-cols-8 gap-0.5">
-                    {QUICK_EMOJIS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        onClick={() => insertEmoji(emoji)}
-                        className="rounded-lg p-1.5 text-lg transition-transform hover:scale-110 hover:bg-border"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+      <div className={cn("flex min-h-[50px] min-w-0 items-center gap-2 rounded-full border px-2 py-1.5 shadow-[0_2px_12px_rgba(0,0,0,0.14)]", isNoteMode ? "border-info/35 bg-info/5" : "border-white/[0.10] bg-[#101514]")}>
+        {(canReply || canCreateNote) && (
+          <div ref={actionMenuRef} className="relative shrink-0">
+            <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 z-40 flex -translate-x-1/2 flex-wrap-reverse justify-center gap-2 sm:w-[220px]">
+              {[
+                { label: "Add Note", icon: Lock, onClick: () => { setMode(isNoteMode ? "reply" : "note"); closeActionMenu(); }, enabled: canCreateNote, active: isNoteMode },
+                { label: "Emoji", icon: SmilePlus, onClick: () => { toggleEmojiPicker(); closeActionMenu(); }, enabled: !isNoteMode && !isUploading && !isRecording, active: showEmojiPicker },
+                { label: "Upload File", icon: FileText, onClick: openFilePicker, enabled: !isNoteMode && !isUploading && !isRecording, active: Boolean(attachment) },
+                { label: "Attachment", icon: Paperclip, onClick: openFilePicker, enabled: !isNoteMode && !isUploading && !isRecording, active: Boolean(attachment) },
+                { label: "Auto Reply", icon: Zap, onClick: () => { toggleTemplatePicker(); closeActionMenu(); }, enabled: !isNoteMode && !isUploading && !isRecording, active: showTemplatePicker },
+                { label: "Voice note", icon: Mic, onClick: () => { startRecording(); closeActionMenu(); }, enabled: !isNoteMode && !isUploading && !isRecording, active: isRecording },
+              ].map(({ label, icon: Icon, onClick, enabled, active }, index) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={onClick}
+                  disabled={!showActionMenu || !enabled}
+                  aria-label={label}
+                  title={label}
+                  className={cn(
+                    "pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface text-muted shadow-lg transition duration-200 hover:scale-105 hover:border-accent/50 hover:bg-accent/10 hover:text-accent active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:pointer-events-none disabled:opacity-0",
+                    showActionMenu ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-75 opacity-0",
+                    active && "border-accent/50 bg-accent/10 text-accent",
+                    index === 0 && "delay-0",
+                    index === 1 && "delay-[40ms]",
+                    index === 2 && "delay-[80ms]",
+                    index === 3 && "delay-[120ms]",
+                    index === 4 && "delay-[160ms]",
+                    index === 5 && "delay-[200ms]"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                </button>
+              ))}
             </div>
-
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isNoteMode || isUploading || isRecording}
-              aria-label="Attach media"
-              className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-text disabled:cursor-not-allowed disabled:opacity-40",
-                attachment && "text-accent bg-accent/10"
-              )}
+              onClick={() => setShowActionMenu((open) => !open)}
+              aria-label={showActionMenu ? "Close composer actions" : "Open composer actions"}
+              aria-expanded={showActionMenu}
+              className={cn("flex h-9 w-9 items-center justify-center rounded-full text-muted transition duration-200 hover:scale-105 hover:bg-accent/10 hover:text-accent active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent", showActionMenu && "rotate-45 bg-accent/10 text-accent")}
             >
-              <Paperclip className="h-4 w-4" />
+              <span className="text-xl leading-none">+</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => setShowTemplatePicker((open) => !open)}
-              disabled={isNoteMode || isUploading || isRecording}
-              aria-label="Saved replies"
-              aria-expanded={showTemplatePicker}
-              className={cn(
-                "hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-text disabled:cursor-not-allowed disabled:opacity-40 md:flex",
-                showTemplatePicker && "text-accent bg-accent/10"
-              )}
-            >
-              <Zap className="h-4 w-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={startRecording}
-              disabled={isNoteMode || isUploading || isRecording}
-              aria-label="Record a voice message"
-              className={cn(
-                "hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-text disabled:cursor-not-allowed disabled:opacity-40 lg:flex",
-                isRecording && "text-rose-500"
-              )}
-            >
-              <Mic className="h-4 w-4" />
-            </button>
-          </>
+            {showEmojiPicker && (
+              <div ref={emojiRef} className="absolute bottom-[calc(100%+10px)] left-0 z-50 w-64 rounded-xl border border-border bg-surface p-2 shadow-2xl animate-in slide-in-from-bottom-2 fade-in duration-150">
+                <div className="grid grid-cols-8 gap-0.5">
+                  {QUICK_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => insertEmoji(emoji)}
+                      className="rounded-lg p-1.5 text-lg transition-transform hover:scale-110 hover:bg-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         <div className="relative min-w-0 flex-1">
@@ -1849,7 +1856,7 @@ export function Composer({
           {!isNoteMode && (
             <button
               type="button"
-              onClick={() => aiDraftMutation.mutate()}
+                onClick={() => aiDraftMutation.mutate()}
               disabled={aiDraftMutation.isPending || isUploading}
               aria-label="Draft a reply with AI"
               title="Draft a reply with AI"
@@ -1869,7 +1876,7 @@ export function Composer({
               }
             }}
             rows={1}
-            placeholder={isNoteMode ? "Write an internal note..." : "Type a message"}
+            placeholder={isNoteMode ? "Write an internal note..." : "Type a message..."}
             className="min-h-[40px] max-h-[100px] w-full min-w-0 resize-none overflow-y-auto rounded-lg border border-border bg-surface dark:bg-[#0e1112] dark:border-transparent px-3 py-2 pr-8 text-[13.5px] text-text placeholder:text-muted leading-normal outline-none transition focus:border-accent focus:ring-1 focus:ring-accent [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
         </div>
@@ -2040,37 +2047,11 @@ export function ChatHeader({
   onTogglePin?: () => void;
   isPinned?: boolean;
 }) {
-  const online = conversation?.whatsapp_contact?.is_online === true;
-  const name = contactLabel(conversation, contact);
-  const subtitle = contactSubtitle(conversation, contact);
-
   return (
-    <header className="flex h-[58px] shrink-0 items-center justify-between gap-2 border-b border-border bg-surface px-4 z-20">
-      <div className="flex min-w-0 items-center gap-2">
-        <Link
-          href="/inbox"
-          aria-label="Back to conversation list"
-          className="-ml-1 rounded-xl p-2 text-muted transition hover:bg-border hover:text-text md:hidden"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        {children && <div className="flex min-w-0 items-center gap-2">{children}</div>}
-      </div>
-
-      <div className="flex shrink-0 items-center justify-end gap-2">
-        {onTogglePin && (
-          <HeaderIconButton
-            icon={isPinned ? Pin : PinOff}
-            label={isPinned ? "Unpin conversation" : "Pin conversation"}
-            onClick={onTogglePin}
-            active={isPinned}
-            hideOnSmall
-            className={cn(isPinned && "text-primary")}
-          />
-        )}
-
+    <header className="flex min-h-[60px] min-w-0 shrink-0 items-center justify-end border-b border-border bg-surface/95 px-3 py-2 backdrop-blur z-20">
+      <div className="flex items-center gap-2">
+        {children}
         {actionMenu}
-
         {onOpenContactInfo && (
           <HeaderIconButton
             icon={Info}
@@ -2097,7 +2078,7 @@ export function MessageList({
     <section
       ref={scrollRef}
       onScroll={onScroll}
-      className="message-list-bg min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-5 [scrollbar-color:rgba(148,163,184,.28)_transparent] [scrollbar-width:thin]"
+      className="message-list-bg min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 sm:px-6 [scrollbar-color:rgba(148,163,184,.28)_transparent] [scrollbar-width:thin]"
     >
       {children}
     </section>

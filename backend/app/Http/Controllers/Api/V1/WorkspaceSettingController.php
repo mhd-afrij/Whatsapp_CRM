@@ -302,7 +302,9 @@ class WorkspaceSettingController extends Controller
 
         return [
             'driver' => $diskConfig['driver'] ?? $disk,
-            'bucket' => $diskConfig['bucket'] ?? null,
+            // Azure disks carry the container under 'container' (S3 uses 'bucket');
+            // surface either so the settings UI shows the storage target.
+            'bucket' => $diskConfig['bucket'] ?? $diskConfig['container'] ?? null,
             'endpoint' => $diskConfig['endpoint'] ?? null,
         ];
     }

@@ -16,9 +16,15 @@ interface MessageStatusTickProps {
   deliveredAt?: string | null;
   /** When the recipient reported reading the message (tooltip: "Read at ..."). */
   readAt?: string | null;
+  readReceiptsEnabled?: boolean;
 }
 
 const STATUS_CONFIG: Record<MessageStatus, { icon: React.ReactNode; label: string; color: string }> = {
+  sending: {
+    icon: <Clock className="h-3.5 w-3.5 animate-pulse" />,
+    label: "Sending",
+    color: "text-muted",
+  },
   queued: {
     icon: <Clock className="h-3.5 w-3.5" />,
     label: "Queued",
@@ -50,14 +56,15 @@ function formatClockTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-export function MessageStatusTick({ status, onRetry, isFailed, deliveredAt, readAt }: MessageStatusTickProps) {
-  const config = STATUS_CONFIG[status] || STATUS_CONFIG.queued;
+export function MessageStatusTick({ status, onRetry, isFailed, deliveredAt, readAt, readReceiptsEnabled = true }: MessageStatusTickProps) {
+  const effectiveStatus = status === "read" && !readReceiptsEnabled ? "delivered" : status;
+  const config = STATUS_CONFIG[effectiveStatus] || STATUS_CONFIG.queued;
 
   // Mirror WhatsApp: 1 grey tick = sent, 2 grey ticks = delivered, 2 blue = read.
   const label =
-    status === "read" && readAt
+    effectiveStatus === "read" && readAt
       ? `Read at ${formatClockTime(readAt)}`
-      : status === "delivered" && deliveredAt
+      : effectiveStatus === "delivered" && deliveredAt
         ? `Delivered at ${formatClockTime(deliveredAt)}`
         : config.label;
 

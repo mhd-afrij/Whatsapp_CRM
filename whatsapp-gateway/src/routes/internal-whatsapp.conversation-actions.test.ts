@@ -13,6 +13,7 @@ vi.mock('../lib/storage', () => ({
     putObject: vi.fn(),
     getObject: vi.fn().mockResolvedValue(Buffer.from('bytes')),
   }),
+  getStorageProviderName: vi.fn().mockReturnValue('azure'),
 }));
 
 const manager = vi.hoisted(() => ({
@@ -367,6 +368,7 @@ describe('conversation actions (mark-unread, read, star, forward)', () => {
         fileSizeBytes: 1024,
         storagePath: '1/inbound/abc.jpg',
         checksumSha256: 'cafe',
+        storageProvider: 'azure',
       });
     });
 

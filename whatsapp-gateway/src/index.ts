@@ -13,6 +13,17 @@ import { connectionRegistry } from './whatsapp/manager-instance';
 async function main() {
   const app = createApp();
 
+  // Surface the storage target at boot so a FILESYSTEM_DISK / STORAGE_PROVIDER
+  // mismatch in the shared .env is visible in the logs immediately, rather than
+  // discovered later when media fails to upload. Config only - no secrets.
+  logger.info(
+    {
+      storageProvider: env.STORAGE_PROVIDER,
+      storageContainer: env.STORAGE_PROVIDER === 'azure' ? env.AZURE_STORAGE_CONTAINER_NAME : env.MEDIA_LOCAL_STORAGE_DIR,
+    },
+    'whatsapp-gateway storage target resolved',
+  );
+
   const server: HttpServer = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, env: env.NODE_ENV }, 'whatsapp-gateway HTTP server listening');
   });

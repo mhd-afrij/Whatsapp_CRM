@@ -2,7 +2,7 @@ import { Queue, Worker, type Job } from 'bullmq';
 import { getQueueConnectionOptions } from './connection';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
-import { getStorageClient } from '../lib/storage';
+import { getStorageClient, getStorageProviderName } from '../lib/storage';
 import { connectionRegistry, connectionManager } from '../whatsapp/manager-instance';
 import { AccountContextError } from '../whatsapp/account-context';
 import type { ConnectionManager } from '../whatsapp/connection-manager';
@@ -297,6 +297,7 @@ export async function processSendMessage(
         fileSizeBytes: mediaSizeBytes ?? null,
         storagePath: mediaRef,
         checksumSha256: mediaChecksumSha256 ?? null,
+        storageProvider: getStorageProviderName(),
       });
     }
   }
@@ -338,12 +339,10 @@ export async function processSendMessage(
   }
 
   await messageRepository.setOutboundWhatsappId(messageId, whatsappMessageId);
-  // The row stays 'queued' here on purpose. sendContent() resolving only means
-  // Baileys handed the message to WhatsApp's servers - the SERVER_ACK that
-  // actually proves 'sent' arrives later as a Baileys messages.update (code 2)
-  // and is applied by status-pipeline. Advancing it now showed a single grey
-  // tick before WhatsApp had acknowledged anything. The id swap is the only
-  // fact we can report immediately.
+  // A resolved Baileys send is the real transport result for the outbound
+  // request. Mark only `sent` here; delivered/read remain exclusively driven
+  // by later WhatsApp receipt events in status-pipeline.ts.
+  await messageRepository.updateMessageStatus(messageId, 'sent', new Date());
   await dispatchRepository.markSent(dispatchId, messageId);
 
   const media = mediaRef
@@ -354,6 +353,7 @@ export async function processSendMessage(
     messageId,
     changes: {
       whatsapp_message_id: whatsappMessageId,
+      status: 'sent',
       media: media
         ? {
             id: media.id,

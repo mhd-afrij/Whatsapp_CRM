@@ -4,6 +4,7 @@ use App\Http\Middleware\Authenticate;
 use App\Http\Middleware\EnsureInternalSecret;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\RequirePermission;
+use App\Console\Commands\VerifyStorageConfig;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -21,6 +22,9 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withCommands([
+        VerifyStorageConfig::class,
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         // This API is Bearer-token (Sanctum personal access tokens) only, not
         // SPA cookie/session auth — the frontend never fetches a CSRF cookie

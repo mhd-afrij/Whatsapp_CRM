@@ -103,7 +103,7 @@ describe('send-message queue processor', () => {
     content: 'hi',
   };
 
-  it('persists the queued row before the send, then waits for a real receipt to advance it', async () => {
+  it('persists queued first, then marks sent only after Baileys returns a real message id', async () => {
     sendContent.mockResolvedValue({ id: 'WA-1' });
     insertOutboundMessage.mockResolvedValue({ messageId: 55 });
 
@@ -118,10 +118,7 @@ describe('send-message queue processor', () => {
       null,
     );
     expect(setOutboundWhatsappId).toHaveBeenCalledWith(55, 'WA-1');
-    // sendContent() resolving only means Baileys handed the message to
-    // WhatsApp. The SERVER_ACK that proves 'sent' arrives later as a real
-    // messages.update, so nothing may claim 'sent' here.
-    expect(updateMessageStatus).not.toHaveBeenCalledWith(55, 'sent');
+    expect(updateMessageStatus).toHaveBeenCalledWith(55, 'sent', expect.any(Date));
     expect(markSent).toHaveBeenCalledWith(1, 55);
     expect(emitMessageCreated).toHaveBeenCalledTimes(1);
     expect(emitMessageUpdated).toHaveBeenCalledWith(
@@ -129,7 +126,7 @@ describe('send-message queue processor', () => {
       10,
       expect.objectContaining({
         messageId: 55,
-        changes: expect.not.objectContaining({ status: 'sent' }),
+        changes: expect.objectContaining({ status: 'sent', whatsapp_message_id: 'WA-1' }),
       }),
     );
   });

@@ -103,13 +103,16 @@ Use persistent Redis for production. Configure an eviction policy that does not 
 
 ## Azure Blob Storage
 
-Create one private container for CRM uploads and exports. Grant access through account credentials or a managed secret provider. Configure:
+Create one private container for CRM uploads and exports. Grant access through account credentials or a managed secret provider. Configure at the **repo root** (docker-compose `environment:` interpolation reads the root `.env`; a service's own `.env` is overridden by its compose `environment:` block):
 
 ```env
+STORAGE_PROVIDER=azure        # gateway message media
+FILESYSTEM_DISK=azure         # backend logos + report exports
+AZURE_STORAGE_CONNECTION_STRING=<connection string>   # OR account key below
 AZURE_STORAGE_ACCOUNT_NAME=<account>
 AZURE_STORAGE_ACCOUNT_KEY=<key>
-AZURE_STORAGE_CONTAINER=<container>
+AZURE_STORAGE_CONTAINER_NAME=whatsapp-media
 AZURE_STORAGE_URL=https://<account>.blob.core.windows.net
 ```
 
-Workspace logos and report exports are written by Laravel through `App\Services\AzureBlobService`. WhatsApp message media remains gateway-owned and is tracked with provider/path/url metadata in `message_media`.
+Workspace logos and report exports are written by Laravel through `App\Services\AzureBlobService` (Flysystem `azure` disk, `azure-oss/storage-blob-laravel`; private containers receive signed SAS URLs). WhatsApp message media remains gateway-owned and is tracked with provider/path/url metadata in `message_media`.

@@ -28,6 +28,7 @@ const { putObjectMock } = vi.hoisted(() => ({
 }));
 vi.mock('../lib/storage', () => ({
   getStorageClient: () => ({ putObject: (...args: unknown[]) => putObjectMock(...args) }),
+  getStorageProviderName: () => 'azure',
 }));
 
 const { emitConversationEvent, emitNotificationCreated, emitContactEvent } = vi.hoisted(() => ({

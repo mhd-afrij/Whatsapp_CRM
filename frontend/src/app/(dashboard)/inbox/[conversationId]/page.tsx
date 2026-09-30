@@ -28,7 +28,7 @@ export default function ConversationPage() {
       </div>
 
       {/* Right-side docked contact details */}
-      <aside className="hidden h-full min-h-0 w-[330px] 2xl:w-[360px] shrink-0 border-l border-border bg-surface overflow-y-auto xl:flex xl:flex-col">
+      <aside className="hidden h-full min-h-0 w-[clamp(320px,26vw,400px)] shrink-0 border-l border-border bg-surface overflow-y-auto xl:flex xl:flex-col">
         <ContactContextPanel conversationId={conversationId} />
       </aside>
 

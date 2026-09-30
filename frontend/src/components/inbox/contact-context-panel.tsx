@@ -65,7 +65,7 @@ function CollapsibleSection({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <section className="mb-3 overflow-hidden rounded-xl border border-border bg-bg">
+    <section className="mb-3 overflow-hidden rounded-xl border border-border/80 bg-bg/60 shadow-sm">
       <div className="flex items-center gap-2 px-4 py-3">
         <button
           type="button"
@@ -142,10 +142,10 @@ function CustomerProfileHeader({
   const formattedPhone = formatDisplayPhone(phoneNumber);
 
   return (
-    <div className="border-b border-border bg-surface/95 px-4 py-4 backdrop-blur">
+    <div className="border-b border-border bg-surface/95 px-4 py-3.5 backdrop-blur">
       <div className="flex items-center gap-3">
         <div className="relative shrink-0">
-          <Avatar name={name} size="lg" className="rounded-xl" />
+          <Avatar name={name} size="lg" className="h-12 w-12 rounded-full" />
           <span
             className={cn(
               "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface",
@@ -165,11 +165,11 @@ function CustomerProfileHeader({
           )}
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="mt-3 grid grid-cols-[1fr_1fr] gap-2">
         <button
           type="button"
           onClick={onCall}
-          className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-bg px-3 py-2 text-xs font-semibold text-text transition hover:bg-border hover:text-text"
+          className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-accent/30 bg-accent px-3 py-2 text-xs font-semibold text-accent-text transition hover:bg-accent/90"
         >
           <Phone className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">Call</span>
@@ -177,7 +177,7 @@ function CustomerProfileHeader({
         <button
           type="button"
           onClick={onMessage}
-          className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-border bg-bg px-3 py-2 text-xs font-semibold text-text transition hover:bg-border hover:text-text"
+          className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-xs font-semibold text-accent transition hover:bg-accent/15 hover:text-accent"
         >
           <MessageSquare className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">WhatsApp</span>

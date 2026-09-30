@@ -110,9 +110,70 @@ const envSchema = z.object({
 
   SEND_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(1),
   SEND_RATE_LIMIT_DURATION_MS: z.coerce.number().int().positive().default(1000),
-});
+})
+  // Storage config drift guard. createStorageClient() already refuses to build
+  // an Azure client without credentials, but that check only runs on the first
+  // media operation - a gateway booted with STORAGE_PROVIDER=azure and no
+  // credentials looks healthy, then silently fails every download/send hours
+  // later. Validate here so the container refuses to start instead.
+  .superRefine((value, ctx) => {
+    if (value.STORAGE_PROVIDER !== 'azure') return;
+
+    const hasSharedKey = Boolean(
+      value.AZURE_STORAGE_ACCOUNT_NAME && value.AZURE_STORAGE_ACCOUNT_KEY && value.AZURE_STORAGE_URL,
+    );
+
+    if (!value.AZURE_STORAGE_CONNECTION_STRING && !hasSharedKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['STORAGE_PROVIDER'],
+        message:
+          'STORAGE_PROVIDER=azure requires AZURE_STORAGE_CONNECTION_STRING, or AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY + AZURE_STORAGE_URL',
+      });
+    }
+
+    if (!value.AZURE_STORAGE_CONTAINER_NAME) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['AZURE_STORAGE_CONTAINER_NAME'],
+        message: 'STORAGE_PROVIDER=azure requires AZURE_STORAGE_CONTAINER_NAME',
+      });
+    }
+
+    const configuredHost = (() => {
+      try {
+        return new URL(value.AZURE_STORAGE_URL).hostname.toLowerCase();
+      } catch {
+        return '';
+      }
+    })();
+    if (value.AZURE_STORAGE_ACCOUNT_NAME && configuredHost) {
+      const expectedHost = `${value.AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net`.toLowerCase();
+      if (configuredHost !== expectedHost) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['AZURE_STORAGE_URL'],
+          message: 'AZURE_STORAGE_URL must match AZURE_STORAGE_ACCOUNT_NAME',
+        });
+      }
+    }
+
+    if (value.AZURE_STORAGE_CONNECTION_STRING) {
+      const accountName = /(?:^|;)AccountName=([^;]+)/i.exec(value.AZURE_STORAGE_CONNECTION_STRING)?.[1]?.trim();
+      if (accountName && value.AZURE_STORAGE_ACCOUNT_NAME && accountName.toLowerCase() !== value.AZURE_STORAGE_ACCOUNT_NAME.toLowerCase()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['AZURE_STORAGE_CONNECTION_STRING'],
+          message: 'connection-string AccountName must match AZURE_STORAGE_ACCOUNT_NAME',
+        });
+      }
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
+
+/** Exported so the storage drift guard can be unit tested without booting. */
+export const storageEnvSchema = envSchema;
 
 function loadEnv(): Env {
   const result = envSchema.safeParse(process.env);

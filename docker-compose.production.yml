@@ -29,41 +29,32 @@ services:
       APP_ENV: production
       APP_DEBUG: "false"
     volumes: [] # no source bind mount in prod - image contains built code
+    restart: unless-stopped
     deploy:
       resources:
         limits:
           memory: 1g
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 5
 
   whatsapp-gateway:
     environment:
       NODE_ENV: production
+    restart: unless-stopped
     volumes:
       - gateway_sessions:/app/sessions # keep session persistence volume only
     deploy:
       resources:
         limits:
           memory: 512m
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 5
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    restart: unless-stopped
     deploy:
       resources:
         limits:
           memory: 512m
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 5
 
   nginx:
     ports:
