@@ -7,7 +7,7 @@ import { z } from 'zod';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
-import { getStorageClient } from '../lib/storage';
+import { getStorageClient, getStorageProviderName } from '../lib/storage';
 import { execute, query, transaction } from '../lib/mysql';
 import { normalizePhoneToJid } from '../whatsapp/jid';
 import { connectionManager, connectionRegistry, PairingCodeError } from '../whatsapp/manager-instance';
@@ -1398,6 +1398,7 @@ export function createInternalWhatsappRouter(): Router {
           fileSizeBytes: media.file_size_bytes,
           storagePath: media.storage_path,
           checksumSha256: media.checksum_sha256,
+          storageProvider: getStorageProviderName(),
         });
       }
 

@@ -55,6 +55,12 @@ backend/node_modules/
 # DB backup dumps (created by infrastructure/scripts/mysql-backup.sh)
 storage/backups/
 
+# Runtime WhatsApp media and session/auth state
+storage/media/*
+!storage/media/.gitkeep
+storage/sessions/*
+!storage/sessions/.gitkeep
+
 # Ad-hoc temp/scratch files
 /tmp-*
 /scratch-*

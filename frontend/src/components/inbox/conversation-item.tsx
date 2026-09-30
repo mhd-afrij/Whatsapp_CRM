@@ -85,7 +85,7 @@ export function ConversationItem({
       onClick={onClick}
       onContextMenu={onContextMenu}
       className={cn(
-        "group flex items-center gap-3 px-3 py-3 cursor-pointer transition-colors border-b border-border hover:bg-primary-soft/10",
+        "group flex min-w-0 items-center gap-3 px-4 py-3.5 cursor-pointer transition-colors border-b border-border hover:bg-primary-soft/10",
         isSelected ? "bg-primary-soft/20" : ""
       )}
     >
@@ -127,7 +127,7 @@ export function ConversationItem({
       </div>
 
       {/* Unread indicator + Actions (hover) */}
-      <div className="flex items-center gap-1 flex-shrink-0">
+      <div className="flex shrink-0 items-center gap-1">
         {hasUnread && (
           <span className="w-2.5 h-2.5 rounded-full bg-primary" />
         )}

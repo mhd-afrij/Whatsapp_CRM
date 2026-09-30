@@ -14,6 +14,11 @@ shutdown() {
 }
 trap shutdown TERM INT
 
+# Refuse to boot on inconsistent storage configuration (missing azure
+# credential, FILESYSTEM_DISK pointing at an undefined disk). Running anyway
+# would look healthy while every upload fails, so fail loudly and early.
+php artisan storage:verify || exit 1
+
 php artisan serve --host=0.0.0.0 --port=8000 &
 
 # Restart loop instead of a bare worker: queue:work exits after --max-time

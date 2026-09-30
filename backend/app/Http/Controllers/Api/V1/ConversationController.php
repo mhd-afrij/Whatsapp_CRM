@@ -9,7 +9,6 @@ use App\Models\ConversationAssignment;
 use App\Models\ConversationParticipant;
 use App\Models\Label;
 use App\Models\Message;
-use App\Models\MessageDispatchQueue;
 use App\Models\User;
 use App\Models\UserPresence;
 use App\Models\WhatsappAccount;
@@ -412,46 +411,8 @@ class ConversationController extends Controller
         $message = null;
 
         if ($messageId) {
-            // Backwards compatibility for older gateway responses that returned the message row
-            // immediately.
-            for ($attempt = 0; $attempt < 3; $attempt++) {
-                $message = Message::query()->with(['media', 'sender'])->find($messageId);
-                if ($message) {
-                    break;
-                }
-                usleep(50_000);
-            }
-        } elseif ($dispatchId) {
-            // The gateway now enqueues sends asynchronously and persists the outbound message
-            // once the BullMQ worker finishes. Poll briefly (max ~500 ms) so the user gets the
-            // real persisted message when the worker is fast, but fall through to a 202 queued
-            // response instead of blocking the PHP process for seconds.
-            for ($attempt = 0; $attempt < 5 && ! $message; $attempt++) {
-                $dispatch = MessageDispatchQueue::query()->find($dispatchId);
-
-                if (! $dispatch) {
-                    usleep(100_000);
-
-                    continue;
-                }
-
-                if ($dispatch->status === 'failed') {
-                    return $this->failure(
-                        'The gateway reported that the message failed to send.',
-                        'message_failed',
-                        502
-                    );
-                }
-
-                if ($dispatch->message_id) {
-                    $message = Message::query()->with(['media', 'sender'])->find($dispatch->message_id);
-                    if ($message) {
-                        break;
-                    }
-                }
-
-                usleep(100_000);
-            }
+            // Backwards-compatible synchronous gateway responses are read once.
+            $message = Message::query()->with(['media', 'sender'])->find($messageId);
         }
 
         if (! $message) {
@@ -1530,44 +1491,12 @@ class ConversationController extends Controller
     protected function resolveSendResult(array $result): ?Message
     {
         $messageId = $result['data']['message']['id'] ?? $result['data']['id'] ?? null;
-        $dispatchId = $result['data']['dispatchId'] ?? $result['data']['dispatch_id'] ?? null;
-
         if ($messageId) {
-            for ($attempt = 0; $attempt < 3; $attempt++) {
-                $message = Message::query()->with(['media', 'sender'])->find($messageId);
-                if ($message) {
-                    return $message;
-                }
-                usleep(50_000);
-            }
-
-            return null;
+            return Message::query()->with(['media', 'sender'])->find($messageId);
         }
 
-        if ($dispatchId) {
-            for ($attempt = 0; $attempt < 5; $attempt++) {
-                $dispatch = MessageDispatchQueue::query()->find($dispatchId);
-
-                if (! $dispatch) {
-                    usleep(100_000);
-
-                    continue;
-                }
-
-                if ($dispatch->status === 'failed') {
-                    return null;
-                }
-
-                if ($dispatch->message_id) {
-                    $message = Message::query()->with(['media', 'sender'])->find($dispatch->message_id);
-                    if ($message) {
-                        return $message;
-                    }
-                }
-
-                usleep(100_000);
-            }
-        }
+        // Queued sends are finalized and broadcast by the gateway. Never poll
+        // the dispatch table here; the frontend already renders optimistically.
 
         return null;
     }

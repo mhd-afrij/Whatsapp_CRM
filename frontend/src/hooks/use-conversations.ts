@@ -276,10 +276,48 @@ export function useMessages(conversationId: number | null) {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     };
 
-    // `message.created` carries a minimal camelCase payload ({message, conversation});
-    // refetching the real rows guarantees the full Message shape (sender, media, etc.).
-    const handleCreated = () => {
-      refresh();
+    // `message.created` is applied directly so the open thread does not wait
+    // for a full-list refetch before showing the persisted message.
+    const handleCreated = (payload: {
+      message?: Partial<Message> & { id?: number; conversationId?: number };
+    }) => {
+      const incoming = payload?.message;
+      if (!incoming || typeof incoming.id !== "number") return;
+      const incomingId = incoming.id;
+      queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
+        const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
+        if (!typedCurrent) return current;
+        if (typedCurrent.data.some((message) => message.id === incomingId)) return current;
+
+        // Reconcile the optimistic outbound bubble with the persisted row. The
+        // gateway event is authoritative, so remove only the matching pending
+        // body and keep all unrelated optimistic messages intact.
+        const pendingIndex = incoming.direction === "outbound"
+          ? typedCurrent.data.findIndex((message) => message.id < 0 && message.body === incoming.body)
+          : -1;
+        const data = pendingIndex >= 0
+          ? typedCurrent.data.filter((_, index) => index !== pendingIndex)
+          : typedCurrent.data;
+        const normalized: Message = {
+          id: incomingId,
+          conversation_id: incoming.conversation_id ?? conversationId,
+          whatsapp_message_id: incoming.whatsapp_message_id ?? `realtime:${incoming.id}`,
+          direction: incoming.direction ?? "inbound",
+          sender_type: incoming.sender_type ?? "contact",
+          sender: incoming.sender ?? null,
+          message_type: incoming.message_type ?? "text",
+          body: incoming.body ?? null,
+          status: incoming.status ?? "queued",
+          replied_to_message_id: incoming.replied_to_message_id ?? null,
+          sent_at: incoming.sent_at ?? null,
+          delivered_at: incoming.delivered_at ?? null,
+          read_at: incoming.read_at ?? null,
+          created_at: incoming.created_at ?? new Date().toISOString(),
+          media: incoming.media ?? null,
+          reactions: incoming.reactions ?? [],
+        };
+        return { ...typedCurrent, data: [normalized, ...data] };
+      });
     };
 
     // `message.updated` is `{ messageId, changes: { status } }` from the gateway's
@@ -442,7 +480,7 @@ export function useSendMessage(conversationId: number | null) {
         sender: user ? { id: Number(user.id), name: user.name, email: user.email } : null,
         message_type: payload.message_type ?? "text",
         body: payload.body ?? null,
-        status: "queued",
+        status: "sending",
         replied_to_message_id: payload.replied_to_message_id ?? null,
         sent_at: new Date().toISOString(),
         delivered_at: null,
@@ -468,14 +506,8 @@ export function useSendMessage(conversationId: number | null) {
         typeof value === "object" && value !== null && "dispatchId" in value;
 
       if (isQueuedAck(result)) {
-        // The gateway persists the queued row right after enqueueing and emits
-        // message.created; that socket event (or the next poll) swaps the
-        // optimistic bubble for the real row. Delay the invalidate slightly so
-        // the first refetch is likely to find the server row rather than an
-        // empty page that would make the just-sent message flicker away.
-        window.setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: messagesKey(conversationId) });
-        }, 1500);
+        // The gateway persists the queued row and emits message.created. The
+        // socket handler reconciles the optimistic bubble without a refetch.
       } else {
         queryClient.setQueryData(messagesKey(conversationId), (current: unknown) => {
           const typedCurrent = current as { data: Message[]; meta: Record<string, unknown> } | undefined;
@@ -683,7 +715,8 @@ export function useMessageStar(conversationId: number | null) {
     },
     onSuccess: () => {
       if (!conversationId) return;
-      queryClient.invalidateQueries({ queryKey: messagesKey(conversationId) });
+      // The authoritative message.created event reconciles the optimistic row.
+      // Do not refetch the whole thread on the interactive send path.
     },
   });
 }

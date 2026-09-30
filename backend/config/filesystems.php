@@ -47,6 +47,28 @@ return [
             'report' => false,
         ],
 
+        // Azure Blob Storage via azure-oss/storage-blob-laravel. Selected by
+        // setting FILESYSTEM_DISK=azure (default disk). Auth uses the connection
+        // string when present; the driver rejects connection_string combined
+        // with account_name/credential, so shared-key fields are only passed
+        // when there is no connection string. AZURE_STORAGE_URL (CDN/custom
+        // domain) overrides generated URLs when set; private containers then
+        // get SAS URLs from the adapter instead.
+        'azure' => [
+            'driver' => 'azure-storage-blob',
+            ...((string) env('AZURE_STORAGE_CONNECTION_STRING') !== '' ? [
+                'connection_string' => env('AZURE_STORAGE_CONNECTION_STRING'),
+            ] : [
+                'account_name' => env('AZURE_STORAGE_ACCOUNT_NAME'),
+                'account_key' => env('AZURE_STORAGE_ACCOUNT_KEY'),
+                'credential' => 'shared_key',
+            ]),
+            'container' => env('AZURE_STORAGE_CONTAINER_NAME', 'whatsapp-media'),
+            'url' => env('AZURE_STORAGE_URL') ?: null,
+            'timeout' => (int) env('AZURE_STORAGE_TIMEOUT', 30),
+            'throw' => false,
+        ],
+
     ],
 
     /*

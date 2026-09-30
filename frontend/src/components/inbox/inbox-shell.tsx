@@ -28,7 +28,7 @@ export function InboxLayout({
       <aside
         className={cn(
           "h-full min-h-0 shrink-0 border-r border-border bg-surface transition-all duration-200",
-          "w-full md:w-[320px] lg:w-[340px] xl:w-[360px]",
+          "w-full md:w-[300px] lg:w-[320px] xl:w-[clamp(320px,25vw,380px)]",
           isThreadOpen ? "hidden md:flex flex-col" : "flex flex-col"
         )}
       >

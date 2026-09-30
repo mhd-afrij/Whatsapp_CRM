@@ -90,7 +90,7 @@ export interface MessageReaction {
   reacted_at: string;
 }
 
-export type MessageStatus = "queued" | "sent" | "delivered" | "read" | "failed";
+export type MessageStatus = "sending" | "queued" | "sent" | "delivered" | "read" | "failed";
 export type MessageDirection = "inbound" | "outbound";
 
 export interface Message {

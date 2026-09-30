@@ -229,8 +229,8 @@ export function ConversationListPanel() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage, conversations.length]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden border-r border-border bg-surface">
-      <header className="border-b border-border px-3 py-3">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-surface">
+      <header className="border-b border-border px-4 py-3.5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-text">WhatsApp Inbox</p>
@@ -280,7 +280,7 @@ export function ConversationListPanel() {
             </button>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted">
+        <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-muted">
           <span className="inline-flex items-center gap-1 rounded-full border border-border bg-bg px-2 py-1">
             <MessageCircleMore className="h-3 w-3" />
             <span className="capitalize">{whatsappGatewayUnavailable ? "gateway unavailable" : (whatsappStatus?.status ?? "idle")}</span>
@@ -293,7 +293,7 @@ export function ConversationListPanel() {
         </div>
       </header>
 
-      <div className="border-b border-border p-3">
+      <div className="border-b border-border px-4 py-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
