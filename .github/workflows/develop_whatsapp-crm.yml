@@ -1,55 +1,90 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
-name: Build and deploy Node.js app to Azure Web App - whatsapp-crm
+name: Build and deploy WhatsApp Gateway to Azure Web App
 
 on:
   push:
     branches:
       - develop
+    paths:
+      - "whatsapp-gateway/**"
+      - ".github/workflows/deploy-whatsapp-crm.yml"
+
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
+
     permissions:
-      contents: read #This is required for actions/checkout
+      contents: read
+
+    defaults:
+      run:
+        working-directory: whatsapp-gateway
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up Node.js version
-        uses: actions/setup-node@v3
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
         with:
-          node-version: '24.x'
+          node-version: "20.x"
+          cache: npm
+          cache-dependency-path: whatsapp-gateway/package-lock.json
 
-      - name: npm install, build, and test
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build production gateway
+        run: npm run build
+
+      - name: Remove development dependencies
+        run: npm prune --omit=dev
+
+      - name: Prepare deployment package
+        shell: bash
         run: |
-          npm install
-          npm run build --if-present
-          npm run test --if-present
-      
-      - name: Upload artifact for deployment job
+          mkdir -p ../azure-package
+          cp package.json ../azure-package/
+          cp package-lock.json ../azure-package/
+          cp -r dist ../azure-package/
+          cp -r node_modules ../azure-package/
+
+      - name: Upload deployment artifact
         uses: actions/upload-artifact@v4
         with:
-          name: node-app
-          path: .
+          name: whatsapp-gateway
+          path: azure-package
+          if-no-files-found: error
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    
+
+    environment:
+      name: Production
+
     steps:
-      - name: Download artifact from build job
+      - name: Download deployment artifact
         uses: actions/download-artifact@v4
         with:
-          name: node-app
-      
-      - name: 'Deploy to Azure Web App'
-        uses: azure/webapps-deploy@v3
+          name: whatsapp-gateway
+          path: app
+
+      - name: Deploy WhatsApp Gateway to Azure Web App
         id: deploy-to-webapp
+        uses: azure/webapps-deploy@v3
         with:
-          app-name: 'whatsapp-crm'
-          slot-name: 'Production'
-          package: .
+          app-name: "whatsapp-crm"
+          slot-name: "Production"
+          package: app
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_FDBEB97F216341E28831DD2C14E20AD3 }}
