@@ -125,7 +125,9 @@ services:
       # up. Kept here so the container still boots (Zod validation fails hard
       # on a missing value) rather than being silently dropped.
       INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-change-me-shared-secret}
-      SOCKET_CORS_ORIGIN: ${FRONTEND_URL:-http://localhost:3000}
+      # Socket.IO requires one explicit origin in Access-Control-Allow-Origin;
+      # FRONTEND_URL may be a comma-separated list for Laravel's HTTP CORS.
+      SOCKET_CORS_ORIGIN: ${SOCKET_CORS_ORIGIN:-http://localhost:3000}
       WHATSAPP_SESSION_DIR: /app/sessions
       # Must match WHATSAPP_GATEWAY_TOKEN sent by the backend service above.
       INTERNAL_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:-change-me-to-a-long-random-secret}
