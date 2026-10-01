@@ -132,13 +132,12 @@ class ConversationTest extends TestCase
         $this->assertTrue($response->json('meta.has_more'));
     }
 
-    public function test_sending_a_message_calls_the_gateway_and_returns_the_persisted_row(): void
+    public function test_sending_a_message_calls_the_gateway_and_returns_the_queued_dispatch(): void
     {
         $this->seedRbac();
         $agent = $this->userWithRole('Agent');
         $conversation = Conversation::factory()->create(['workspace_id' => $agent->workspace_id, 'assigned_user_id' => $agent->id]);
 
-        $messageId = $this->insertMessage($conversation, ['direction' => 'outbound', 'sender_type' => 'user', 'status' => 'queued']);
         $dispatchId = DB::table('message_dispatch_queue')->insertGetId([
             'workspace_id' => $conversation->workspace_id,
             'conversation_id' => $conversation->id,
@@ -146,7 +145,6 @@ class ConversationTest extends TestCase
             'payload' => json_encode(['content' => 'Hi there']),
             'status' => 'sent',
             'attempts' => 1,
-            'message_id' => $messageId,
             'bullmq_job_id' => 'job-1',
             'created_at' => now(),
             'updated_at' => now(),
@@ -164,12 +162,17 @@ class ConversationTest extends TestCase
             ], 202),
         ]);
 
+        // The send is asynchronous: the gateway enqueues a BullMQ job and
+        // returns a dispatch id, so there is no persisted message row to return
+        // yet. The 202 carries the dispatch handle the worker will fill in.
         $response = $this->asUser($agent)->postJson("/api/v1/conversations/{$conversation->id}/messages", [
             'message_type' => 'text',
             'body' => 'Hi there',
-        ])->assertCreated();
+        ])->assertStatus(202);
 
-        $response->assertJsonPath('data.id', $messageId);
+        $response->assertJsonPath('data.dispatchId', $dispatchId);
+        $response->assertJsonPath('data.status', 'pending');
+        $response->assertJsonPath('data.bullmqJobId', 'job-1');
 
         Http::assertSent(function ($request) {
             return str_contains($request->url(), '/internal/whatsapp/messages/send')
@@ -202,7 +205,6 @@ class ConversationTest extends TestCase
             'assigned_user_id' => $agent->id,
         ]);
 
-        $messageId = $this->insertMessage($conversation, ['direction' => 'outbound', 'sender_type' => 'user', 'status' => 'queued']);
         $dispatchId = DB::table('message_dispatch_queue')->insertGetId([
             'workspace_id' => $conversation->workspace_id,
             'conversation_id' => $conversation->id,
@@ -210,7 +212,6 @@ class ConversationTest extends TestCase
             'payload' => json_encode(['mediaRef' => '1/outbound/abc-123.png']),
             'status' => 'sent',
             'attempts' => 1,
-            'message_id' => $messageId,
             'bullmq_job_id' => 'job-2',
             'created_at' => now(),
             'updated_at' => now(),
@@ -237,7 +238,7 @@ class ConversationTest extends TestCase
                 'size_bytes' => 1024,
                 'checksum_sha256' => str_repeat('a', 64),
             ],
-        ])->assertCreated()->assertJsonPath('data.id', $messageId);
+        ])->assertStatus(202)->assertJsonPath('data.dispatchId', $dispatchId);
 
         Http::assertSent(function ($request) {
             return str_contains($request->url(), '/internal/whatsapp/messages/send')

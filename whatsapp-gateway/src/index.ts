@@ -8,6 +8,7 @@ import { createSendMessageWorker, sendMessageQueue } from './queues/send-message
 import { createMediaDownloadWorker, mediaDownloadQueue } from './queues/media-download.queue';
 import { createSocketServer, closeSocketServer } from './lib/socket-server';
 import { markShuttingDown } from './lib/lifecycle';
+import { drainWorkersAndStopManagers } from './lib/shutdown';
 import { connectionRegistry } from './whatsapp/manager-instance';
 
 async function main() {
@@ -95,24 +96,32 @@ async function main() {
     try {
       markShuttingDown();
 
-      const workers = [sendMessageWorker, mediaDownloadWorker];
-      const managers = connectionRegistry.getAll();
-
-      await Promise.allSettled([
-        ...workers.map((worker) =>
-          worker.close().catch((err) => {
-            logger.warn({ err }, 'Failed to close queue worker during shutdown');
-          }),
-        ),
+      // Steps 2 and 3 delegate to drainWorkersAndStopManagers so the ordering
+      // contract (drain every worker BEFORE stopping any account socket) is
+      // enforced in one tested place instead of being re-implemented here. The
+      // previous inline version ran both in a single Promise.allSettled, which
+      // closed sockets while jobs were still draining.
+      //
+      // The helper reports failures rather than throwing, so a single broken
+      // WhatsApp session cannot abort the rest of the sequence; this block owns
+      // the exit policy and still exits 0, exactly as before.
+      const { errors } = await drainWorkersAndStopManagers(
+        [sendMessageWorker, mediaDownloadWorker],
         // Release all session locks / stop reconnect timers (if held) before
         // tearing down Redis/MySQL so a peer gateway instance can take over
         // each account's session cleanly, and so credentials are preserved.
-        ...managers.map((manager) =>
-          manager.stop().catch((err) => {
-            logger.warn({ err }, 'Failed to stop WhatsApp connection during shutdown');
-          }),
-        ),
-      ]);
+        () => connectionRegistry.getAll(),
+      );
+
+      for (const { step, error } of errors) {
+        logger.warn({ err: error, step }, 'Graceful shutdown step failed during shutdown');
+      }
+      if (errors.length) {
+        logger.warn(
+          { failedSteps: errors.length },
+          'Graceful shutdown completed with failures; continuing teardown',
+        );
+      }
 
       await closeSocketServer().catch((err) => {
         logger.warn({ err }, 'Failed to close Socket.IO server during shutdown');

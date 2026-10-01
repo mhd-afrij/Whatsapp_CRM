@@ -8,11 +8,11 @@ use App\Models\WhatsappAccount;
 use App\Services\ContactAutoLinker;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\CreatesWorkspaceUsers;
 use Tests\TestCase;
+use Tests\TruncatesDatabaseBetweenTests;
 
 /**
  * Guards the canonical-identity contract (spec §3/§7): one real WhatsApp
@@ -29,10 +29,13 @@ use Tests\TestCase;
  * transaction (stranding the test's rows and defeating its cleanup), so this
  * file uses DatabaseTruncation instead: the schema is migrated once per
  * process and each test starts from truncated tables with no open transaction.
+ *
+ * It also truncates on tearDown (TruncatesDatabaseBetweenTests) so this class
+ * commits nothing that the next RefreshDatabase class would see as fixture data.
  */
 class CanonicalIdentityMergeTest extends TestCase
 {
-    use CreatesWorkspaceUsers, DatabaseTruncation;
+    use CreatesWorkspaceUsers, TruncatesDatabaseBetweenTests;
 
     private const CONVERSATION_INDEX = 'conversations_ws_wcid_acct_unique';
 

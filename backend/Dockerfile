@@ -1,9 +1,13 @@
 # Backend (Laravel 12) - PHP-FPM based image
 FROM php:8.2-fpm-alpine AS base
 
+# `redis` is REQUIRED, not optional: config/database.php defaults REDIS_CLIENT to
+# `phpredis` and every env file pins it, so without this extension the queue
+# worker and cache fail to boot with "The PhpRedis extension is not installed".
 RUN apk add --no-cache \
     bash git curl libpng-dev libzip-dev zip unzip oniguruma-dev mysql-client \
-    && docker-php-ext-install pdo_mysql mbstring zip gd bcmath opcache
+    && docker-php-ext-install pdo_mysql mbstring zip gd bcmath opcache redis \
+    && docker-php-ext-enable redis
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 

@@ -50,7 +50,7 @@ php artisan key:generate
 php artisan migrate --seed   # creates schema + seeds workspace/roles/permissions/admin user/pipeline
 php artisan serve            # terminal 1 - http://localhost:8000
 php artisan queue:work       # terminal 2 - report exports/campaigns/webhooks stall without a worker
-php artisan test             # 298 tests
+php artisan test             # requires MySQL (see .env.testing)
 ```
 
 Local (non-Docker) dev queues jobs on the database connection, so the worker above is
@@ -64,7 +64,7 @@ npm install
 cp .env.example .env.local
 npm run dev      # http://localhost:3000
 npm run build
-npm test         # vitest, 70 tests
+npm test         # vitest
 npm run lint
 ```
 
@@ -75,7 +75,7 @@ npm install
 cp .env.example .env
 npm run dev       # http://localhost:4000
 npm run build
-npm test          # vitest, 173 tests
+npm test          # vitest
 ```
 
 
@@ -105,9 +105,10 @@ infrastructure/scripts/mysql-restore.sh <dump.sql.gz> [target_db]
 ## Project status
 
 All 20 phases of the original roadmap are complete and independently verified in this
-environment: backend (298/298 tests), whatsapp-gateway (173/173 tests), frontend (70/70 tests +
-clean lint/typecheck/build), migrate:fresh --seed against real MySQL, and a tested MySQL
-backup/restore round trip. A 2026-09 production-readiness audit round further hardened the stack
+environment: backend (PHPUnit green against a real MySQL test database), whatsapp-gateway
+(vitest green), frontend (vitest green + clean lint/typecheck/build), migrate:fresh --seed against
+real MySQL, and a tested MySQL backup/restore round trip. Run the suites to see the current counts;
+they are deliberately not hard-coded here. A 2026-09 production-readiness audit round further hardened the stack
 (auth-gated realtime sockets, storage-provider routing, realtime event parity, a data-integrity
 migration, DLQ/contract alignment) — see `FINAL_REPORT.md` §22. A Playwright E2E suite and a
 GitHub Actions CI workflow are written and manifest-consistent but have never executed on a real
