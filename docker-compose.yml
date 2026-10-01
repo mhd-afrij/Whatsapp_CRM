@@ -119,19 +119,19 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       LARAVEL_INTERNAL_API_URL: http://backend:8000/api/internal
-      # Required by the gateway's env schema (src/config/env.ts) but not yet
-      # consumed by any gateway->backend call in this codebase as of Phase 19
-      # - reserved for when that direction of internal API traffic is wired
-      # up. Kept here so the container still boots (Zod validation fails hard
-      # on a missing value) rather than being silently dropped.
-      INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-change-me-shared-secret}
+      # Sent as the X-Internal-Shared-Secret header on every notifyNewMessage()
+      # call (src/lib/laravel-client.ts) and verified by the backend's
+      # EnsureInternalSecret middleware, so it must match the backend service's
+      # value of the same name. Required - no default, so a misconfigured
+      # deployment fails at boot instead of serving 401s.
+      INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:?INTERNAL_SHARED_SECRET must be set}
       # Socket.IO requires one explicit origin in Access-Control-Allow-Origin;
       # FRONTEND_URL may be a comma-separated list for Laravel's HTTP CORS.
       SOCKET_CORS_ORIGIN: ${SOCKET_CORS_ORIGIN:-http://localhost:3000}
       WHATSAPP_SESSION_DIR: /app/sessions
       # Must match WHATSAPP_GATEWAY_TOKEN sent by the backend service above.
       INTERNAL_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:-change-me-to-a-long-random-secret}
-      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:?CREDENTIALS_ENCRYPTION_KEY must be set}
       WHATSAPP_WORKSPACE_ID: ${WHATSAPP_WORKSPACE_ID:-1}
       AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}

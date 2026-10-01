@@ -20,6 +20,21 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # phpunit.xml and .env.testing both pin MySQL, so the suite cannot run
+    # without one. Without this service every DB-backed test errors on connect.
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_DATABASE: crm_whatsapp_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -43,13 +58,7 @@ jobs:
         run: vendor/bin/pint --test
 
       - name: Run tests
-        # phpunit.xml pins DB_CONNECTION=sqlite / DB_DATABASE=database/testing.sqlite
-        # for the testing environment, so no MySQL/Redis service container is
-        # required to run the real backend test suite.
-        run: |
-          mkdir -p database
-          touch database/testing.sqlite
-          php artisan test
+        run: php artisan test
 
   gateway:
     name: WhatsApp Gateway (Node)

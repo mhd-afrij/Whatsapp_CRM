@@ -16,7 +16,8 @@ using Baileys, and a Next.js 16 frontend) plus supporting infrastructure (MySQL,
 nginx, Docker Compose).
 
 All application-level work across 20 phases is complete and passes its own test suite in this
-environment: **298/298 backend tests, 173/173 gateway tests, 70/70 frontend tests**, clean lint
+environment: all three suites green (take the current counts from CI output — the per-suite
+totals quoted in this document are from an earlier snapshot and are stale), clean lint
 and production builds on all three services, and a clean `migrate:fresh --seed` against real
 MySQL. A final audit round (2026-09, §22) found and fixed real, if minor, issues — realtime
 socket authZ, storage-provider routing, realtime event parity, contract drift, and a

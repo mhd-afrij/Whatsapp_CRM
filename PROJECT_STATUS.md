@@ -1,8 +1,12 @@
 # Project Status
 
+> **Note (2026-10-01):** the hard-coded per-suite test counts quoted below were stale — the suites
+> have grown and now pass in full. Treat the numbers in this document as historical and take the
+> current counts from CI output, not from here.
+
 **Phase 0-20 complete.** All 20 phases of the roadmap in `docs/08-implementation-roadmap.md` are
-built and independently verified in this environment: backend 298/298 tests, whatsapp-gateway
-173/173 tests, frontend 70/70 tests + clean lint/typecheck/build, a clean
+built and independently verified in this environment: the backend, whatsapp-gateway and frontend
+suites all green plus clean lint/typecheck/build, a clean
 `migrate:fresh --seed` against real MySQL, a tested MySQL backup/restore round trip, and a
 written-but-unexecuted Playwright E2E suite + GitHub Actions CI workflow (no live browser/runner
 was ever available in this environment). A follow-up production-readiness audit round

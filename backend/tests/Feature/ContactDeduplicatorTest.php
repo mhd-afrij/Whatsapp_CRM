@@ -8,14 +8,31 @@ use App\Models\Lead;
 use App\Models\WhatsappContact;
 use App\Services\ContactAutoLinker;
 use App\Services\ContactDeduplicator;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\CreatesWorkspaceUsers;
 use Tests\TestCase;
+use Tests\TruncatesDatabaseBetweenTests;
 
+/**
+ * Guards the contact deduplication contract.
+ *
+ * Several tests here must recreate the legacy state that predates the
+ * active_phone_key unique index (two *active* contacts sharing one number), so
+ * they drop and re-add that index. That is DDL, which implicitly commits
+ * RefreshDatabase's wrapping transaction - the rows the test wrote would be
+ * stranded and leak into every later test class. So this file uses
+ * DatabaseTruncation instead: the schema is migrated once per process and each
+ * test starts from truncated tables with no open transaction, exactly as
+ * CanonicalIdentityMergeTest does for the same reason.
+ *
+ * It also truncates on tearDown (TruncatesDatabaseBetweenTests) so this class
+ * commits nothing that the next RefreshDatabase class would see as fixture data.
+ */
 class ContactDeduplicatorTest extends TestCase
 {
-    use CreatesWorkspaceUsers, RefreshDatabase;
+    use CreatesWorkspaceUsers, TruncatesDatabaseBetweenTests;
+
+    private const ACTIVE_PHONE_INDEX = 'contacts_ws_active_phone_unique';
 
     private function insertWhatsappContact(int $workspaceId, array $overrides = []): int
     {
@@ -56,19 +73,48 @@ class ContactDeduplicatorTest extends TestCase
         return [$manual, $auto];
     }
 
-    private function restoreActivePhoneIndex(): void
+    private function indexExists(string $table, string $index): bool
     {
-        DB::statement('ALTER TABLE contacts ADD UNIQUE `contacts_ws_active_phone_unique` (`workspace_id`, `active_phone_key`)');
+        return DB::selectOne(
+            'SELECT 1 AS ok FROM information_schema.STATISTICS
+             WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? LIMIT 1',
+            [$table, $index]
+        ) !== null;
     }
 
+    /** Idempotent: re-arms the index, and is a no-op when it is already there. */
+    private function restoreActivePhoneIndex(): void
+    {
+        if ($this->indexExists('contacts', self::ACTIVE_PHONE_INDEX)) {
+            return;
+        }
+
+        DB::statement(sprintf(
+            'ALTER TABLE contacts ADD UNIQUE `%s` (`workspace_id`, `active_phone_key`)',
+            self::ACTIVE_PHONE_INDEX
+        ));
+    }
+
+    /**
+     * A test that fails after dropping the index must not leave the schema
+     * un-armoured: the schema is migrated once per process, so a missing key
+     * would silently leak into every later test class (and the unique backstop
+     * test would stop proving anything).
+     *
+     * Runs before the truncation this class does in tearDown, so the rows that
+     * block the index are disposable here - clearing them is not data loss.
+     */
     protected function tearDown(): void
     {
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
         try {
-            DB::statement('ALTER TABLE contacts ADD UNIQUE `contacts_ws_active_phone_unique` (`workspace_id`, `active_phone_key`)');
-        } catch (\Illuminate\Database\QueryException) {
-            // A legacy duplicate pair still exists (e.g. the dry-run test's
-            // preview was the point) - the test body restored it where possible.
+            DB::statement('TRUNCATE TABLE contacts');
+        } finally {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
         }
+
+        $this->restoreActivePhoneIndex();
+
         parent::tearDown();
     }
 
@@ -283,26 +329,31 @@ class ContactDeduplicatorTest extends TestCase
         $this->actingAs($agent);
         $workspaceId = $agent->workspace_id;
 
-        // Pre-fix data: two whatsapp_contacts rows for ONE number, each carrying
-        // a different push name - exactly the "Mohamed Suraimy" / "Suraimy"
-        // duplicate pair. The linker must resolve them to one contact.
+        // One real number can still surface under two WhatsApp jids: the real
+        // phone-number jid, and the privacy-preserving @lid alias. The canonical
+        // identity migration makes that ONE whatsapp_contacts row per number -
+        // the alias lives in the canonical row's lid_jid column, and the LID row
+        // itself carries no phone_number (MySQL keeps NULLs distinct in the
+        // unique key, so it can exist). The two push names ("Mohamed Suraimy"
+        // / "Suraimy") must resolve to a single contact.
         $waPush = $this->insertWhatsappContact($workspaceId, [
             'wa_jid' => '94752112249@s.whatsapp.net',
             'phone_number' => '94752112249',
+            'lid_jid' => '176974261706752@lid',
             'push_name' => 'Mohamed Suraimy',
         ]);
-        $waSaved = $this->insertWhatsappContact($workspaceId, [
-            'wa_jid' => '94752112249',
-            'phone_number' => '94752112249',
+        $waLid = $this->insertWhatsappContact($workspaceId, [
+            'wa_jid' => '176974261706752@lid',
+            'phone_number' => null,
             'push_name' => 'Suraimy',
         ]);
 
         $linker = new ContactAutoLinker();
         $linker->ensureForWhatsappContact(WhatsappContact::find($waPush));
-        $linker->ensureForWhatsappContact(WhatsappContact::find($waSaved));
+        $linker->ensureForWhatsappContact(WhatsappContact::find($waLid));
 
         $this->assertDatabaseCount('contacts', 1);
-        $linkedTo = DB::table('whatsapp_contacts')->where('id', $waSaved)->value('contact_id');
+        $linkedTo = DB::table('whatsapp_contacts')->where('id', $waLid)->value('contact_id');
         $this->assertNotNull($linkedTo);
         $this->assertDatabaseHas('whatsapp_contacts', ['id' => $waPush, 'contact_id' => $linkedTo]);
     }
