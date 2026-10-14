@@ -50,7 +50,7 @@ envVarGroups:
         value: "10000"
       # Generate locally with: php artisan key:generate --show
       # (must be the full "base64:...." string - this is NOT a generated value)
-      - key: base64:vcwfwFWIGfqGS0bbDDeImGbU1/nUTqdxr1vZIC19KmI=
+      - key: APP_KEY
         sync: false
       - key: APP_URL
         value: https://crm-backend.onrender.com
@@ -347,7 +347,6 @@ services:
     dockerContext: ./whatsapp-gateway
     plan: 1c-2g
     healthCheckPath: /healthz
-    maxShutdownDelaySeconds: 60
     # Paired WhatsApp credentials live under WHATSAPP_SESSION_DIR. Without a
     # disk they are wiped on every deploy and every account must be re-paired.
     disk:
@@ -428,7 +427,7 @@ services:
       - key: INTERNAL_SHARED_SECRET
         generateValue: true
       # 32-byte hex key. Generate with: openssl rand -hex 32
-      - key: 26d8882d335ec8a739c2e4adeb0a0d3778dd640d0881224040397ecada2a694a
+      - key: CREDENTIALS_ENCRYPTION_KEY
         sync: false
 
   # ---------------------------------------------------------------------------
