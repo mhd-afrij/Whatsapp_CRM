@@ -65,8 +65,16 @@ envVarGroups:
         value: "4"
       - key: DB_CONNECTION
         value: mysql
+      - key: DB_HOST
+        sync: false
       - key: DB_PORT
         value: "3306"
+      - key: DB_DATABASE
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
       - key: REDIS_CLIENT
         value: phpredis
       - key: QUEUE_CONNECTION
@@ -122,34 +130,6 @@ services:
     ipAllowList: [] # [] = no external access (private network only)
 
   # ---------------------------------------------------------------------------
-  # MySQL 8 as a private service backed by a persistent disk. This keeps the
-  # whole stack self-contained. If you would rather use a managed/external
-  # MySQL (PlanetScale, Aiven, DigitalOcean, AWS RDS, ...), delete this service
-  # and replace the DB_HOST/DB_* references on the backend with your host and
-  # credentials (see docs/render-deployment.md).
-  # ---------------------------------------------------------------------------
-  - type: pserv
-    name: crm-mysql
-    region: oregon
-    runtime: image
-    image:
-      url: mysql:8.0
-    plan: 1c-2g
-    disk:
-      name: crm-mysql-data
-      mountPath: /var/lib/mysql # the only correct mount path - do not change
-      sizeGB: 10
-    envVars:
-      - key: MYSQL_DATABASE
-        value: crm_whatsapp
-      - key: MYSQL_USER
-        value: crm_user
-      - key: MYSQL_PASSWORD
-        generateValue: true
-      - key: MYSQL_ROOT_PASSWORD
-        generateValue: true
-
-  # ---------------------------------------------------------------------------
   # Laravel API (public). Serves /api/v1 and /api/internal.
   # ---------------------------------------------------------------------------
   - type: web
@@ -161,34 +141,13 @@ services:
     plan: 1c-2g
     healthCheckPath: /api/v1/health
     dockerCommand: bash /usr/local/bin/render-entrypoint.sh web
-    # Runs once per deploy, before the new instance goes live. The entrypoint's
-    # "migrate" role retries, so a still-starting MySQL does not fail the deploy.
+    # Runs once per deploy, before the new instance goes live.
     preDeployCommand: bash /usr/local/bin/render-entrypoint.sh migrate
     buildFilter:
       paths:
         - backend/**
     envVars:
       - fromGroup: crm-backend-env
-      - key: DB_HOST
-        fromService:
-          name: crm-mysql
-          type: pserv
-          property: host
-      - key: DB_DATABASE
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_DATABASE
-      - key: DB_USERNAME
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_USER
-      - key: DB_PASSWORD
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_PASSWORD
       - key: REDIS_HOST
         fromService:
           name: crm-redis
@@ -231,26 +190,6 @@ services:
         - backend/**
     envVars:
       - fromGroup: crm-backend-env
-      - key: DB_HOST
-        fromService:
-          name: crm-mysql
-          type: pserv
-          property: host
-      - key: DB_DATABASE
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_DATABASE
-      - key: DB_USERNAME
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_USER
-      - key: DB_PASSWORD
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_PASSWORD
       - key: REDIS_HOST
         fromService:
           name: crm-redis
@@ -273,9 +212,7 @@ services:
           envVarKey: INTERNAL_SHARED_SECRET
 
   # ---------------------------------------------------------------------------
-  # Laravel scheduler as a cron job. The backend's docker/start.sh used
-  # `schedule:work`; on Render we tick it every minute instead. (Cron jobs
-  # cannot have a persistent disk - the scheduler does not need one.)
+  # Laravel scheduler as a cron job.
   # ---------------------------------------------------------------------------
   - type: cron
     name: crm-scheduler
@@ -291,26 +228,6 @@ services:
         - backend/**
     envVars:
       - fromGroup: crm-backend-env
-      - key: DB_HOST
-        fromService:
-          name: crm-mysql
-          type: pserv
-          property: host
-      - key: DB_DATABASE
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_DATABASE
-      - key: DB_USERNAME
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_USER
-      - key: DB_PASSWORD
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_PASSWORD
       - key: REDIS_HOST
         fromService:
           name: crm-redis
@@ -333,8 +250,7 @@ services:
           envVarKey: INTERNAL_SHARED_SECRET
 
   # ---------------------------------------------------------------------------
-  # WhatsApp gateway (Node + Baileys + Socket.IO). Public because browsers open
-  # Socket.IO to it directly and fetch media URLs from it.
+  # WhatsApp gateway (Node + Baileys + Socket.IO).
   # ---------------------------------------------------------------------------
   - type: web
     name: crm-gateway
@@ -344,8 +260,6 @@ services:
     dockerContext: ./whatsapp-gateway
     plan: 1c-2g
     healthCheckPath: /healthz
-    # Paired WhatsApp credentials live under WHATSAPP_SESSION_DIR. Without a
-    # disk they are wiped on every deploy and every account must be re-paired.
     disk:
       name: crm-gateway-sessions
       mountPath: /app/sessions
@@ -364,7 +278,6 @@ services:
         value: /app/sessions
       - key: WHATSAPP_WORKSPACE_ID
         value: "1"
-      # Media storage: Azure Blob Storage is the exclusive persistent storage backend.
       - key: STORAGE_PROVIDER
         value: azure
       - key: AZURE_STORAGE_CONNECTION_STRING
@@ -388,27 +301,15 @@ services:
           type: keyvalue
           property: port
       - key: MYSQL_HOST
-        fromService:
-          name: crm-mysql
-          type: pserv
-          property: host
+        sync: false
       - key: MYSQL_PORT
         value: "3306"
       - key: MYSQL_DATABASE
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_DATABASE
+        sync: false
       - key: MYSQL_USER
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_USER
+        sync: false
       - key: MYSQL_PASSWORD
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_PASSWORD
+        sync: false
       # Gateway -> backend internal API (private call, but the URL is a full
       # string so it must be written out; see the header note).
       - key: LARAVEL_INTERNAL_API_URL
