@@ -1,2 +1,2 @@
-// cPanel startup wrapper for the Next.js standalone server.
+// Optional standalone-server wrapper for non-Compose deployments.
 require("./.next/standalone/server.js");
