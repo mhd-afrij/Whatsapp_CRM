@@ -47,6 +47,11 @@ class VerifyStorageConfig extends Command
         $this->line("  disk   : {$diskName}");
         $this->line("  driver : {$driver}");
 
+        if ($diskName !== 'azure' && app()->environment() !== 'testing') {
+            $this->error("FILESYSTEM_DISK is set to '{$diskName}'. Only 'azure' is permitted for persistent application files.");
+            return self::FAILURE;
+        }
+
         if ($driver === 'azure-storage-blob') {
             $error = $this->checkAzure($config);
             if ($error !== null) {

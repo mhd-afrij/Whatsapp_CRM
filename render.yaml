@@ -82,20 +82,19 @@ envVarGroups:
         value: "true"
       - key: SESSION_SAME_SITE
         value: none
-      # Storage: "local" works out of the box but is EPHEMERAL. Set this to
-      # "azure" and fill the AZURE_STORAGE_* values for durable uploads/exports.
+      # Storage: Azure Blob Storage is the exclusive persistent storage backend.
       - key: FILESYSTEM_DISK
-        value: local
+        value: azure
       - key: AZURE_STORAGE_CONNECTION_STRING
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_ACCOUNT_NAME
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_ACCOUNT_KEY
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_CONTAINER_NAME
         value: whatsapp-media
       - key: AZURE_STORAGE_URL
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_TIMEOUT
         value: "30"
       - key: FRONTEND_URL
@@ -367,20 +366,19 @@ services:
         value: /app/sessions
       - key: WHATSAPP_WORKSPACE_ID
         value: "1"
-      # Media storage: "local" is ephemeral. Set "azure" + the AZURE_STORAGE_*
-      # values (below) to keep message media across deploys.
+      # Media storage: Azure Blob Storage is the exclusive persistent storage backend.
       - key: STORAGE_PROVIDER
-        value: local
+        value: azure
       - key: AZURE_STORAGE_CONNECTION_STRING
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_ACCOUNT_NAME
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_ACCOUNT_KEY
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_CONTAINER_NAME
         value: whatsapp-media
       - key: AZURE_STORAGE_URL
-        value: ""
+        sync: false
       - key: REDIS_HOST
         fromService:
           name: crm-redis

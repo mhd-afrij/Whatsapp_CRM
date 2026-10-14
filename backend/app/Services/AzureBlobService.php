@@ -131,13 +131,16 @@ class AzureBlobService
     }
 
     /**
-     * The disk backing one of the two roles. FILESYSTEM_DISK wins whenever it
-     * names a non-local disk; otherwise the stock local public/private split
-     * is kept (which is also what the test suite fakes).
+     * The disk backing one of the two roles. FILESYSTEM_DISK must resolve to 'azure'.
+     * Local storage fallback is prohibited.
      */
     protected function disk(string $localRole): string
     {
         $default = (string) config('filesystems.default');
+
+        if ($default === 'local' && app()->environment() !== 'testing') {
+            throw new RuntimeException("FILESYSTEM_DISK must be set to 'azure'. Local disk is disabled for persistent application files.");
+        }
 
         return $default === 'local' ? $localRole : $default;
     }

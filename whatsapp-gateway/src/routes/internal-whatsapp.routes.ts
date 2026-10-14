@@ -680,14 +680,9 @@ export function createInternalWhatsappRouter(): Router {
       res.setHeader('Content-Type', media.mime_type);
       if (access.kind === 'buffer') {
         res.send(access.buffer);
-        return;
+      } else {
+        res.status(500).json({ success: false, message: 'Unexpected media storage result', data: null });
       }
-      const stream = createReadStream(access.filePath);
-      stream.on('error', (err) => {
-        logger.error({ err, mediaId: mediaId.data }, 'Failed to read local media file');
-        res.status(404).end();
-      });
-      stream.pipe(res);
     } catch (err) {
       logger.error({ err, mediaId: mediaId.data }, 'Failed to stream media content');
       res.status(500).json({ success: false, message: 'Failed to stream media content', data: null });

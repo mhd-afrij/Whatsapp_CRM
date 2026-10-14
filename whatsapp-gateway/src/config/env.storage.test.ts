@@ -32,6 +32,7 @@ describe('storage env drift guard', () => {
     const result = storageEnvSchema.safeParse(
       withBaseline({
         STORAGE_PROVIDER: 'azure',
+        AZURE_STORAGE_CONNECTION_STRING: '',
         AZURE_STORAGE_ACCOUNT_NAME: 'acct',
         AZURE_STORAGE_ACCOUNT_KEY: 'key',
         AZURE_STORAGE_CONTAINER_NAME: 'whatsapp-media',
@@ -80,8 +81,9 @@ describe('storage env drift guard', () => {
     expect(result.error?.issues.some((i) => i.path[0] === 'AZURE_STORAGE_CONTAINER_NAME')).toBe(true);
   });
 
-  it('does not require azure variables for the local provider', () => {
-    expect(storageEnvSchema.safeParse(withBaseline({ STORAGE_PROVIDER: 'local' })).success).toBe(true);
+  it('rejects the local provider as persistent storage is azure-only', () => {
+    const result = storageEnvSchema.safeParse(withBaseline({ STORAGE_PROVIDER: 'local' }));
+    expect(result.success).toBe(false);
   });
 
   it('rejects an account name and endpoint that drift apart', () => {

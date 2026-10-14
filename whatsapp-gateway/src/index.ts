@@ -14,13 +14,12 @@ import { connectionRegistry } from './whatsapp/manager-instance';
 async function main() {
   const app = createApp();
 
-  // Surface the storage target at boot so a FILESYSTEM_DISK / STORAGE_PROVIDER
-  // mismatch in the shared .env is visible in the logs immediately, rather than
-  // discovered later when media fails to upload. Config only - no secrets.
+  // Surface the storage target at boot so Azure Blob Storage configuration
+  // is verified and logged immediately.
   logger.info(
     {
       storageProvider: env.STORAGE_PROVIDER,
-      storageContainer: env.STORAGE_PROVIDER === 'azure' ? env.AZURE_STORAGE_CONTAINER_NAME : env.MEDIA_LOCAL_STORAGE_DIR,
+      storageContainer: env.AZURE_STORAGE_CONTAINER_NAME,
     },
     'whatsapp-gateway storage target resolved',
   );

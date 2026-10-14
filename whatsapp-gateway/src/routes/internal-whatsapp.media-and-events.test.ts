@@ -138,10 +138,6 @@ describe('internal media/url and events/emit routes', () => {
     });
 
     it('streams media content for the requesting workspace', async () => {
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'media-content-test-'));
-      const filePath = path.join(tmpDir, 'deadbeef.jpg');
-      await fs.writeFile(filePath, Buffer.from('fake image bytes'));
-
       findMessageMediaById.mockResolvedValueOnce({
         id: 5,
         message_id: 99,
@@ -149,19 +145,15 @@ describe('internal media/url and events/emit routes', () => {
         mime_type: 'image/jpeg',
       });
       resolveMediaAccess.mockResolvedValueOnce({
-        kind: 'local_file',
-        filePath,
+        kind: 'buffer',
+        buffer: Buffer.from('fake image bytes from azure'),
       });
 
-      try {
-        const res = await fetch(`${baseUrl}/internal/whatsapp/media/5/content?workspaceId=1`, { headers });
-        expect(res.status).toBe(200);
-        expect(resolveMediaAccess).toHaveBeenCalledWith('1/99/deadbeef.jpg');
-        expect(res.headers.get('content-type')).toBe('image/jpeg');
-        expect(await res.text()).toBe('fake image bytes');
-      } finally {
-        await fs.rm(tmpDir, { recursive: true, force: true });
-      }
+      const res = await fetch(`${baseUrl}/internal/whatsapp/media/5/content?workspaceId=1`, { headers });
+      expect(res.status).toBe(200);
+      expect(resolveMediaAccess).toHaveBeenCalledWith('1/99/deadbeef.jpg');
+      expect(res.headers.get('content-type')).toBe('image/jpeg');
+      expect(await res.text()).toBe('fake image bytes from azure');
     });
   });
 
