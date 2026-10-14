@@ -490,14 +490,29 @@ export class ConnectionManager extends EventEmitter {
       return;
     }
 
-    const restored = await this.repository.restoreCredentialsToDisk(session.id, this.authDir());
-    if (restored) {
-      logger.info({ workspaceId: this.workspaceId, accountId: this.accountId }, 'Restoring WhatsApp session on gateway boot');
-      await this.start();
+    try {
+      const restored = await this.repository.restoreCredentialsToDisk(session.id, this.authDir());
+      if (restored) {
+        logger.info({ workspaceId: this.workspaceId, accountId: this.accountId }, 'Restoring WhatsApp session on gateway boot');
+        await this.start();
+        return;
+      }
+    } catch (err) {
+      logger.error({ err, workspaceId: this.workspaceId, accountId: this.accountId }, 'Failed to restore WhatsApp credentials from database storage; failing closed without overwriting session');
+      this.setStatus('disconnected');
       return;
     }
 
-    await this.startFreshPairing();
+    // Only start fresh pairing when credentials definitely do not exist in the database
+    if (session.status === 'qr_pending' || session.status === 'initializing') {
+      await this.startFreshPairing();
+    } else {
+      logger.warn(
+        { workspaceId: this.workspaceId, accountId: this.accountId, status: session.status },
+        'WhatsApp session was not logged out but has no credentials in storage; leaving disconnected to prevent accidental replacement',
+      );
+      this.setStatus('disconnected');
+    }
   }
 
   /**
