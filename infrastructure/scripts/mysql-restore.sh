@@ -20,6 +20,31 @@ if [ "$#" -lt 1 ]; then
 fi
 
 DUMP_FILE="$1"
+TEMP_DOWNLOADED=""
+
+# If path is an azure:// URI or starts with "blob:", download from Azure first
+if [[ "${DUMP_FILE}" =~ ^azure://([^/]+)/(.+)$ ]]; then
+  CONTAINER="${BASH_REMATCH[1]}"
+  BLOB="${BASH_REMATCH[2]}"
+  TEMP_DOWNLOADED="/tmp/azure_restore_$(date +%s).sql.gz"
+  echo "Downloading dump from Azure container '${CONTAINER}' blob '${BLOB}'..."
+  if [ -n "${AZURE_STORAGE_CONNECTION_STRING:-}" ]; then
+    az storage blob download \
+      --connection-string "${AZURE_STORAGE_CONNECTION_STRING}" \
+      --container-name "${CONTAINER}" \
+      --name "${BLOB}" \
+      --file "${TEMP_DOWNLOADED}"
+  else
+    az storage blob download \
+      --account-name "${AZURE_STORAGE_ACCOUNT_NAME}" \
+      --account-key "${AZURE_STORAGE_ACCOUNT_KEY}" \
+      --container-name "${CONTAINER}" \
+      --name "${BLOB}" \
+      --file "${TEMP_DOWNLOADED}"
+  fi
+  DUMP_FILE="${TEMP_DOWNLOADED}"
+fi
+
 if [ ! -f "${DUMP_FILE}" ]; then
   echo "ERROR: dump file not found: ${DUMP_FILE}" >&2
   exit 1
@@ -48,3 +73,7 @@ gunzip -c "${DUMP_FILE}" | MYSQL_PWD="${DB_PASSWORD}" "${MYSQL_BIN}" \
   "${TARGET_DB}"
 
 echo "Restore complete into '${TARGET_DB}'."
+
+if [ -n "${TEMP_DOWNLOADED}" ] && [ -f "${TEMP_DOWNLOADED}" ]; then
+  rm -f "${TEMP_DOWNLOADED}"
+fi

@@ -1,6 +1,4 @@
 import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { env } from '../config/env';
 
 /**
@@ -15,21 +13,6 @@ export interface StorageClient {
   putObject(key: string, body: Buffer, contentType: string): Promise<string>;
   /** Reads back the bytes stored under `key` (used to send outbound media). */
   getObject(key: string): Promise<Buffer>;
-}
-
-class LocalDiskStorageClient implements StorageClient {
-  constructor(private readonly baseDir: string) {}
-
-  async putObject(key: string, body: Buffer): Promise<string> {
-    const fullPath = path.join(this.baseDir, key);
-    await fs.mkdir(path.dirname(fullPath), { recursive: true });
-    await fs.writeFile(fullPath, body);
-    return key;
-  }
-
-  async getObject(key: string): Promise<Buffer> {
-    return fs.readFile(path.join(this.baseDir, key));
-  }
 }
 
 class AzureBlobStorageClient implements StorageClient {
@@ -64,33 +47,33 @@ class AzureBlobStorageClient implements StorageClient {
 }
 
 /** Provider-pure client creation (no network on construction). */
-export function createStorageClient(provider: string): StorageClient {
-  if (provider === 'azure') {
-    const {
-      AZURE_STORAGE_CONNECTION_STRING,
-      AZURE_STORAGE_ACCOUNT_NAME,
-      AZURE_STORAGE_ACCOUNT_KEY,
-      AZURE_STORAGE_CONTAINER_NAME,
-      AZURE_STORAGE_URL,
-    } = env;
-    if (!AZURE_STORAGE_CONTAINER_NAME) {
-      throw new Error('STORAGE_PROVIDER=azure requires AZURE_STORAGE_CONTAINER_NAME');
-    }
-    if (!AZURE_STORAGE_CONNECTION_STRING && (!AZURE_STORAGE_ACCOUNT_NAME || !AZURE_STORAGE_ACCOUNT_KEY || !AZURE_STORAGE_URL)) {
-      throw new Error(
-        'STORAGE_PROVIDER=azure requires AZURE_STORAGE_CONNECTION_STRING, or AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY + AZURE_STORAGE_URL',
-      );
-    }
-    return new AzureBlobStorageClient({
-      connectionString: AZURE_STORAGE_CONNECTION_STRING || undefined,
-      accountName: AZURE_STORAGE_ACCOUNT_NAME || undefined,
-      accountKey: AZURE_STORAGE_ACCOUNT_KEY || undefined,
-      containerName: AZURE_STORAGE_CONTAINER_NAME,
-      baseUrl: AZURE_STORAGE_URL || undefined,
-    });
+export function createStorageClient(provider: string = 'azure'): StorageClient {
+  if (provider !== 'azure') {
+    throw new Error(`Storage provider '${provider}' is not supported. Azure Blob Storage is the exclusive persistent storage backend.`);
   }
 
-  return new LocalDiskStorageClient(path.resolve(env.MEDIA_LOCAL_STORAGE_DIR));
+  const {
+    AZURE_STORAGE_CONNECTION_STRING,
+    AZURE_STORAGE_ACCOUNT_NAME,
+    AZURE_STORAGE_ACCOUNT_KEY,
+    AZURE_STORAGE_CONTAINER_NAME,
+    AZURE_STORAGE_URL,
+  } = env;
+  if (!AZURE_STORAGE_CONTAINER_NAME) {
+    throw new Error('STORAGE_PROVIDER=azure requires AZURE_STORAGE_CONTAINER_NAME');
+  }
+  if (!AZURE_STORAGE_CONNECTION_STRING && (!AZURE_STORAGE_ACCOUNT_NAME || !AZURE_STORAGE_ACCOUNT_KEY || !AZURE_STORAGE_URL)) {
+    throw new Error(
+      'STORAGE_PROVIDER=azure requires AZURE_STORAGE_CONNECTION_STRING, or AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY + AZURE_STORAGE_URL',
+    );
+  }
+  return new AzureBlobStorageClient({
+    connectionString: AZURE_STORAGE_CONNECTION_STRING || undefined,
+    accountName: AZURE_STORAGE_ACCOUNT_NAME || undefined,
+    accountKey: AZURE_STORAGE_ACCOUNT_KEY || undefined,
+    containerName: AZURE_STORAGE_CONTAINER_NAME,
+    baseUrl: AZURE_STORAGE_URL || undefined,
+  });
 }
 
 let client: StorageClient | null = null;

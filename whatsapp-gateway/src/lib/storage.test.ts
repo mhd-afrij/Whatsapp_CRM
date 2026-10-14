@@ -4,21 +4,21 @@ import { env } from '../config/env';
 import { createStorageClient, getStorageProviderName } from './storage';
 
 describe('storage client selection', () => {
-  it('selects the local disk client under the default provider', async () => {
-    expect(getStorageProviderName()).toBe('local');
+  it('identifies azure as the exclusive storage provider', () => {
+    expect(getStorageProviderName()).toBe('azure');
+  });
 
-    const client = createStorageClient('local');
-    const key = 'storage-test/hello.txt';
-    try {
-      expect(await client.putObject(key, Buffer.from('hello'), 'text/plain')).toBe(key);
-      expect((await client.getObject(key)).toString()).toBe('hello');
-    } finally {
-      await fs.rm(`${env.MEDIA_LOCAL_STORAGE_DIR}/${key}`, { force: true });
-    }
+  it('rejects creation of local storage client', () => {
+    expect(() => createStorageClient('local')).toThrow(/not supported/);
   });
 
   it('fails fast when azure is selected without azure configuration', () => {
-    expect(env.STORAGE_PROVIDER).toBe('local');
-    expect(() => createStorageClient('azure')).toThrow(/AZURE_STORAGE_CONTAINER_NAME/);
+    const originalContainer = env.AZURE_STORAGE_CONTAINER_NAME;
+    try {
+      (env as { AZURE_STORAGE_CONTAINER_NAME: string }).AZURE_STORAGE_CONTAINER_NAME = '';
+      expect(() => createStorageClient('azure')).toThrow(/AZURE_STORAGE_CONTAINER_NAME/);
+    } finally {
+      (env as { AZURE_STORAGE_CONTAINER_NAME: string }).AZURE_STORAGE_CONTAINER_NAME = originalContainer;
+    }
   });
 });

@@ -50,7 +50,7 @@ envVarGroups:
         value: "10000"
       # Generate locally with: php artisan key:generate --show
       # (must be the full "base64:...." string - this is NOT a generated value)
-      - key: base64:vcwfwFWIGfqGS0bbDDeImGbU1/nUTqdxr1vZIC19KmI=
+      - key: APP_KEY
         sync: false
       - key: APP_URL
         value: https://crm-backend.onrender.com
@@ -82,20 +82,19 @@ envVarGroups:
         value: "true"
       - key: SESSION_SAME_SITE
         value: none
-      # Storage: "local" works out of the box but is EPHEMERAL. Set this to
-      # "azure" and fill the AZURE_STORAGE_* values for durable uploads/exports.
+      # Storage: Azure Blob Storage is the exclusive persistent storage backend.
       - key: FILESYSTEM_DISK
-        value: local
+        value: azure
       - key: AZURE_STORAGE_CONNECTION_STRING
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_ACCOUNT_NAME
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_ACCOUNT_KEY
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_CONTAINER_NAME
         value: whatsapp-media
       - key: AZURE_STORAGE_URL
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_TIMEOUT
         value: "30"
       - key: FRONTEND_URL
@@ -165,7 +164,6 @@ services:
     # Runs once per deploy, before the new instance goes live. The entrypoint's
     # "migrate" role retries, so a still-starting MySQL does not fail the deploy.
     preDeployCommand: bash /usr/local/bin/render-entrypoint.sh migrate
-    maxShutdownDelaySeconds: 60
     buildFilter:
       paths:
         - backend/**
@@ -228,7 +226,6 @@ services:
     dockerContext: ./backend
     plan: 1c-2g
     dockerCommand: bash /usr/local/bin/render-entrypoint.sh worker
-    maxShutdownDelaySeconds: 60
     buildFilter:
       paths:
         - backend/**
@@ -347,7 +344,6 @@ services:
     dockerContext: ./whatsapp-gateway
     plan: 1c-2g
     healthCheckPath: /healthz
-    maxShutdownDelaySeconds: 60
     # Paired WhatsApp credentials live under WHATSAPP_SESSION_DIR. Without a
     # disk they are wiped on every deploy and every account must be re-paired.
     disk:
@@ -368,20 +364,19 @@ services:
         value: /app/sessions
       - key: WHATSAPP_WORKSPACE_ID
         value: "1"
-      # Media storage: "local" is ephemeral. Set "azure" + the AZURE_STORAGE_*
-      # values (below) to keep message media across deploys.
+      # Media storage: Azure Blob Storage is the exclusive persistent storage backend.
       - key: STORAGE_PROVIDER
-        value: local
+        value: azure
       - key: AZURE_STORAGE_CONNECTION_STRING
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_ACCOUNT_NAME
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_ACCOUNT_KEY
-        value: ""
+        sync: false
       - key: AZURE_STORAGE_CONTAINER_NAME
         value: whatsapp-media
       - key: AZURE_STORAGE_URL
-        value: ""
+        sync: false
       - key: REDIS_HOST
         fromService:
           name: crm-redis
@@ -428,7 +423,7 @@ services:
       - key: INTERNAL_SHARED_SECRET
         generateValue: true
       # 32-byte hex key. Generate with: openssl rand -hex 32
-      - key: 26d8882d335ec8a739c2e4adeb0a0d3778dd640d0881224040397ecada2a694a
+      - key: CREDENTIALS_ENCRYPTION_KEY
         sync: false
 
   # ---------------------------------------------------------------------------

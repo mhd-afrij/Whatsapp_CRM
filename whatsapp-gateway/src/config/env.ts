@@ -96,9 +96,9 @@ const envSchema = z.object({
 
   MEDIA_LOCAL_STORAGE_DIR: z.string().default('./media-storage'),
 
-  STORAGE_PROVIDER: z.enum(['local', 'azure']).default('local'),
+  STORAGE_PROVIDER: z.literal('azure').default('azure'),
 
-  // Azure Blob Storage (required when STORAGE_PROVIDER=azure). Auth via
+  // Azure Blob Storage (required). Auth via
   // AZURE_STORAGE_CONNECTION_STRING when present, else account key
   // (AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY). AZURE_STORAGE_URL
   // is the account base URL, e.g. https://<account>.blob.core.windows.net.

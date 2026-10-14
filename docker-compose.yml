@@ -1,4 +1,4 @@
-﻿version: "3.9"
+version: "3.9"
 
 x-logging: &default-logging
   driver: json-file
@@ -78,7 +78,7 @@ services:
       # Backend-side storage selector. Interpolated from the SAME root .env that
       # feeds the gateway's STORAGE_PROVIDER below, so the two cannot silently
       # diverge; backend/docker/start.sh runs `storage:verify` at boot.
-      FILESYSTEM_DISK: ${FILESYSTEM_DISK:-local}
+      FILESYSTEM_DISK: ${FILESYSTEM_DISK:-azure}
       AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:-}
@@ -138,7 +138,7 @@ services:
       AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:-}
       AZURE_STORAGE_CONTAINER_NAME: ${AZURE_STORAGE_CONTAINER_NAME:-whatsapp-media}
       AZURE_STORAGE_URL: ${AZURE_STORAGE_URL:-}
-      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-azure}
       AZURE_STORAGE_URL_EXPIRY_SECONDS: ${AZURE_STORAGE_URL_EXPIRY_SECONDS:-300}
     env_file:
       - path: ./whatsapp-gateway/.env
