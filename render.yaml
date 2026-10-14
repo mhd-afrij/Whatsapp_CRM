@@ -50,7 +50,7 @@ envVarGroups:
         value: "10000"
       # Generate locally with: php artisan key:generate --show
       # (must be the full "base64:...." string - this is NOT a generated value)
-      - key: APP_KEY
+      - key: base64:vcwfwFWIGfqGS0bbDDeImGbU1/nUTqdxr1vZIC19KmI=
         sync: false
       - key: APP_URL
         value: https://crm-backend.onrender.com
@@ -428,7 +428,7 @@ services:
       - key: INTERNAL_SHARED_SECRET
         generateValue: true
       # 32-byte hex key. Generate with: openssl rand -hex 32
-      - key: CREDENTIALS_ENCRYPTION_KEY
+      - key: 26d8882d335ec8a739c2e4adeb0a0d3778dd640d0881224040397ecada2a694a
         sync: false
 
   # ---------------------------------------------------------------------------
