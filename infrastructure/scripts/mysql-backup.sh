@@ -58,14 +58,52 @@ if [ "${SIZE_BYTES}" -eq 0 ]; then
   exit 1
 fi
 
-echo "Backup complete: ${DUMP_FILE} (${SIZE_BYTES} bytes)"
+echo "Local temporary backup created: ${DUMP_FILE} (${SIZE_BYTES} bytes)"
 
-# Note on what else production backups need to cover (not scripted here):
-#   - Gateway media files (message attachments) stored on the gateway's
-#     local media-storage directory - include that directory in your backup
-#     strategy; this script only covers the relational database.
-#   - .env secrets (APP_KEY, DB_PASSWORD, WHATSAPP_GATEWAY_TOKEN,
-#     CREDENTIALS_ENCRYPTION_KEY, etc.) - these must NOT be included in any
-#     backup artifact written to shared/long-lived storage. Manage them via a
-#     secrets manager (Vault, Doppler, etc.) with its own
-#     backup/rotation story instead.
+# ---- Upload to Azure Blob Storage ----
+# Backups must not remain permanently on local application containers.
+# When AZURE_STORAGE_CONTAINER_NAME (or AZURE_BACKUP_CONTAINER_NAME) and
+# AZURE_STORAGE_CONNECTION_STRING (or AZURE_STORAGE_ACCOUNT_NAME + KEY) are configured,
+# upload the backup to Azure and remove the local scratch copy.
+AZURE_CONTAINER="${AZURE_BACKUP_CONTAINER_NAME:-${AZURE_STORAGE_CONTAINER_NAME:-database-backups}}"
+BLOB_NAME="backups/${DB_DATABASE}/${DB_DATABASE}_${TIMESTAMP}.sql.gz"
+
+if [ -n "${AZURE_STORAGE_CONNECTION_STRING:-}" ]; then
+  echo "Uploading backup to Azure Blob Storage (container: '${AZURE_CONTAINER}', blob: '${BLOB_NAME}')..."
+  if command -v az >/dev/null 2>&1; then
+    az storage blob upload \
+      --connection-string "${AZURE_STORAGE_CONNECTION_STRING}" \
+      --container-name "${AZURE_CONTAINER}" \
+      --name "${BLOB_NAME}" \
+      --file "${DUMP_FILE}" \
+      --overwrite true
+    echo "Azure upload verified successfully."
+    # Remove local file after successful verification
+    if [ "${KEEP_LOCAL_BACKUP:-false}" != "true" ]; then
+      rm -f "${DUMP_FILE}"
+      echo "Removed local scratch file ${DUMP_FILE}."
+    fi
+  else
+    echo "WARNING: Azure CLI 'az' not found in PATH. Backup remains at ${DUMP_FILE}."
+  fi
+elif [ -n "${AZURE_STORAGE_ACCOUNT_NAME:-}" ] && [ -n "${AZURE_STORAGE_ACCOUNT_KEY:-}" ]; then
+  echo "Uploading backup to Azure Blob Storage using account credentials..."
+  if command -v az >/dev/null 2>&1; then
+    az storage blob upload \
+      --account-name "${AZURE_STORAGE_ACCOUNT_NAME}" \
+      --account-key "${AZURE_STORAGE_ACCOUNT_KEY}" \
+      --container-name "${AZURE_CONTAINER}" \
+      --name "${BLOB_NAME}" \
+      --file "${DUMP_FILE}" \
+      --overwrite true
+    echo "Azure upload verified successfully."
+    if [ "${KEEP_LOCAL_BACKUP:-false}" != "true" ]; then
+      rm -f "${DUMP_FILE}"
+      echo "Removed local scratch file ${DUMP_FILE}."
+    fi
+  else
+    echo "WARNING: Azure CLI 'az' not found in PATH. Backup remains at ${DUMP_FILE}."
+  fi
+else
+  echo "NOTE: Azure storage credentials not set in environment. Backup retained locally at ${DUMP_FILE}."
+fi
