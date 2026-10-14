@@ -164,7 +164,6 @@ services:
     # Runs once per deploy, before the new instance goes live. The entrypoint's
     # "migrate" role retries, so a still-starting MySQL does not fail the deploy.
     preDeployCommand: bash /usr/local/bin/render-entrypoint.sh migrate
-    maxShutdownDelaySeconds: 60
     buildFilter:
       paths:
         - backend/**
@@ -227,7 +226,6 @@ services:
     dockerContext: ./backend
     plan: 1c-2g
     dockerCommand: bash /usr/local/bin/render-entrypoint.sh worker
-    maxShutdownDelaySeconds: 60
     buildFilter:
       paths:
         - backend/**
