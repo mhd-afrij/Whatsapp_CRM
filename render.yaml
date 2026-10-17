@@ -1,359 +1,139 @@
 # =============================================================================
-# render.yaml - Render Blueprint for the CRM-WhatsApp stack
+# render.yaml - Render Blueprint for CRM WhatsApp (Render Free + Supabase)
 # =============================================================================
-# Deploy with: Render Dashboard -> New -> Blueprint -> pick this repo/branch.
-# Render reads this file and provisions every service below in one go.
+# Exactly 3 services deployable on Render Free:
+#   1. crm-backend      (Docker Web Service: API + Database Queue Worker)
+#   2. crm-gateway      (Docker Web Service: WhatsApp Gateway + pg-boss Worker)
+#   3. crm-frontend     (Docker Web Service: Next.js Production Frontend)
 #
-# How the Docker Compose stack maps onto Render:
-#
-#   docker-compose service   ->  Render service (this file)
-#   -----------------------      -------------------------------------------
-#   mysql                    ->  crm-mysql       (private service + disk)
-#   redis                    ->  crm-redis       (managed Render Key Value)
-#   backend                  ->  crm-backend     (public web service)
-#                            ->  crm-worker      (background worker)
-#                            ->  crm-scheduler   (cron job)
-#   whatsapp-gateway         ->  crm-gateway     (public web service + disk)
-#   frontend                 ->  crm-frontend    (public web service)
-#   nginx                    ->  (not needed - Render terminates TLS and
-#                                gives each service its own HTTPS URL)
-#
-# IMPORTANT - cross-service URLs
-# -----------------------------------------------------------------------------
-# Render injects each service's env vars as Docker build ARGs, so the
-# frontend's NEXT_PUBLIC_* values are baked at BUILD time. The three public
-# URLs below are derived from the service *names* in this file
-# (https://<name>.onrender.com). If a name is already taken in your workspace,
-# or you later attach custom domains, update these values and redeploy:
-#   * crm-backend   -> NEXT_PUBLIC_API_URL, LARAVEL_INTERNAL_API_URL (gateway)
-#   * crm-gateway   -> NEXT_PUBLIC_SOCKET_URL, WHATSAPP_GATEWAY_URL (backend)
-#   * crm-frontend  -> NEXT_PUBLIC_APP_URL, FRONTEND_URL / SOCKET_CORS_ORIGIN
+# External Managed Infrastructure:
+#   * Database: Supabase PostgreSQL (replaces MySQL)
+#   * Queues: PostgreSQL database queues & pg-boss (replaces Redis & BullMQ)
+#   * Cache: Laravel PostgreSQL database cache (replaces Redis)
+#   * Storage: Supabase Storage whatsapp-media bucket (replaces Azure Blob)
+#   * WhatsApp Sessions: Encrypted database persistence (whatsapp_session_credentials)
 # =============================================================================
 
 version: "1"
 
 envVarGroups:
-  # Static backend settings shared by the web, worker and cron services.
-  # (Render environment groups can only hold plain key/value vars, so the
-  # database/redis references live on each service individually.)
-  - name: crm-backend-env
+  - name: crm-common-env
     envVars:
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_DATABASE
+        value: postgres
+      - key: DB_USERNAME
+        value: postgres
+      - key: DB_PASSWORD
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: whatsapp-media
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Laravel Backend Web Service
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: crm-backend
+    plan: free
+    region: oregon
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/v1/health
+    dockerCommand: bash /usr/local/bin/render-entrypoint.sh web
+    preDeployCommand: bash /usr/local/bin/render-entrypoint.sh migrate
+    buildFilter:
+      paths:
+        - backend/**
+    envVars:
+      - fromGroup: crm-common-env
       - key: APP_NAME
         value: "CRM WhatsApp"
       - key: APP_ENV
         value: production
       - key: APP_DEBUG
         value: "false"
-      # Render routes traffic to this port; render-entrypoint.sh binds
-      # `php artisan serve` to it.
       - key: PORT
         value: "10000"
-      # Generate locally with: php artisan key:generate --show
-      # (must be the full "base64:...." string - this is NOT a generated value)
       - key: APP_KEY
         sync: false
       - key: APP_URL
         value: https://crm-backend.onrender.com
-      # Log to stdout/stderr so logs show up in the Render dashboard.
       - key: LOG_CHANNEL
         value: stderr
       - key: LOG_LEVEL
         value: info
-      # php artisan serve uses the PHP built-in server; give it worker processes
-      # so it can handle more than one request at a time.
       - key: PHP_CLI_SERVER_WORKERS
         value: "4"
-      - key: DB_CONNECTION
-        value: mysql
-      - key: DB_PORT
-        value: "3306"
-      - key: REDIS_CLIENT
-        value: phpredis
       - key: QUEUE_CONNECTION
-        value: redis
+        value: database
       - key: CACHE_STORE
-        value: redis
+        value: database
       - key: SESSION_DRIVER
         value: database
-      # The SPA is served from a different host, so the session cookie must be
-      # cross-site + secure. (Leave SESSION_DOMAIN unset: onrender.com is a
-      # public suffix, so a ".onrender.com" cookie would be rejected.)
       - key: SESSION_SECURE_COOKIE
         value: "true"
       - key: SESSION_SAME_SITE
         value: none
-      # Storage: Azure Blob Storage is the exclusive persistent storage backend.
       - key: FILESYSTEM_DISK
-        value: azure
-      - key: AZURE_STORAGE_CONNECTION_STRING
+        value: s3
+      - key: AWS_ACCESS_KEY_ID
         sync: false
-      - key: AZURE_STORAGE_ACCOUNT_NAME
+      - key: AWS_SECRET_ACCESS_KEY
         sync: false
-      - key: AZURE_STORAGE_ACCOUNT_KEY
-        sync: false
-      - key: AZURE_STORAGE_CONTAINER_NAME
+      - key: AWS_DEFAULT_REGION
+        value: us-east-1
+      - key: AWS_BUCKET
         value: whatsapp-media
-      - key: AZURE_STORAGE_URL
+      - key: AWS_ENDPOINT
         sync: false
-      - key: AZURE_STORAGE_TIMEOUT
-        value: "30"
+      - key: AWS_USE_PATH_STYLE_ENDPOINT
+        value: "true"
       - key: FRONTEND_URL
         value: https://crm-frontend.onrender.com
       - key: SANCTUM_STATEFUL_DOMAINS
         value: crm-frontend.onrender.com,crm-backend.onrender.com
       - key: WHATSAPP_GATEWAY_URL
         value: https://crm-gateway.onrender.com
+      - key: WHATSAPP_GATEWAY_TOKEN
+        fromService:
+          name: crm-gateway
+          type: web
+          envVarKey: INTERNAL_GATEWAY_TOKEN
+      - key: INTERNAL_SHARED_SECRET
+        fromService:
+          name: crm-gateway
+          type: web
+          envVarKey: INTERNAL_SHARED_SECRET
       - key: WHATSAPP_COUNTRY_CODE
         value: "94"
       - key: MAIL_MAILER
         value: log
 
-services:
   # ---------------------------------------------------------------------------
-  # Managed Redis (queues, cache, BullMQ, Socket.IO adapter).
-  # Internal-only: reachable by the other services, not the public internet.
-  # ---------------------------------------------------------------------------
-  - type: keyvalue
-    name: crm-redis
-    region: oregon
-    plan: 256mb
-    maxmemoryPolicy: noeviction # never evict queued jobs
-    persistenceMode: journal-snapshot
-    ipAllowList: [] # [] = no external access (private network only)
-
-  # ---------------------------------------------------------------------------
-  # MySQL 8 as a private service backed by a persistent disk. This keeps the
-  # whole stack self-contained. If you would rather use a managed/external
-  # MySQL (PlanetScale, Aiven, DigitalOcean, AWS RDS, ...), delete this service
-  # and replace the DB_HOST/DB_* references on the backend with your host and
-  # credentials (see docs/render-deployment.md).
-  # ---------------------------------------------------------------------------
-  - type: pserv
-    name: crm-mysql
-    region: oregon
-    runtime: image
-    image:
-      url: mysql:8.0
-    plan: 1c-2g
-    disk:
-      name: crm-mysql-data
-      mountPath: /var/lib/mysql # the only correct mount path - do not change
-      sizeGB: 10
-    envVars:
-      - key: MYSQL_DATABASE
-        value: crm_whatsapp
-      - key: MYSQL_USER
-        value: crm_user
-      - key: MYSQL_PASSWORD
-        generateValue: true
-      - key: MYSQL_ROOT_PASSWORD
-        generateValue: true
-
-  # ---------------------------------------------------------------------------
-  # Laravel API (public). Serves /api/v1 and /api/internal.
-  # ---------------------------------------------------------------------------
-  - type: web
-    name: crm-backend
-    region: oregon
-    runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    plan: 1c-2g
-    healthCheckPath: /api/v1/health
-    dockerCommand: bash /usr/local/bin/render-entrypoint.sh web
-    # Runs once per deploy, before the new instance goes live. The entrypoint's
-    # "migrate" role retries, so a still-starting MySQL does not fail the deploy.
-    preDeployCommand: bash /usr/local/bin/render-entrypoint.sh migrate
-    buildFilter:
-      paths:
-        - backend/**
-    envVars:
-      - fromGroup: crm-backend-env
-      - key: DB_HOST
-        fromService:
-          name: crm-mysql
-          type: pserv
-          property: host
-      - key: DB_DATABASE
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_DATABASE
-      - key: DB_USERNAME
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_USER
-      - key: DB_PASSWORD
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_PASSWORD
-      - key: REDIS_HOST
-        fromService:
-          name: crm-redis
-          type: keyvalue
-          property: host
-      - key: REDIS_PORT
-        fromService:
-          name: crm-redis
-          type: keyvalue
-          property: port
-      # Shared secret used by the backend -> gateway calls. Must equal the
-      # gateway's INTERNAL_GATEWAY_TOKEN, so it is referenced rather than copied.
-      - key: WHATSAPP_GATEWAY_TOKEN
-        fromService:
-          name: crm-gateway
-          type: web
-          envVarKey: INTERNAL_GATEWAY_TOKEN
-      # Shared secret for the gateway -> backend internal API. Must equal the
-      # gateway's INTERNAL_SHARED_SECRET.
-      - key: INTERNAL_SHARED_SECRET
-        fromService:
-          name: crm-gateway
-          type: web
-          envVarKey: INTERNAL_SHARED_SECRET
-
-  # ---------------------------------------------------------------------------
-  # Laravel queue worker (campaign sends, report exports, ...). Same image as
-  # the backend, but runs only `queue:work`.
-  # ---------------------------------------------------------------------------
-  - type: worker
-    name: crm-worker
-    region: oregon
-    runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    plan: 1c-2g
-    dockerCommand: bash /usr/local/bin/render-entrypoint.sh worker
-    buildFilter:
-      paths:
-        - backend/**
-    envVars:
-      - fromGroup: crm-backend-env
-      - key: DB_HOST
-        fromService:
-          name: crm-mysql
-          type: pserv
-          property: host
-      - key: DB_DATABASE
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_DATABASE
-      - key: DB_USERNAME
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_USER
-      - key: DB_PASSWORD
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_PASSWORD
-      - key: REDIS_HOST
-        fromService:
-          name: crm-redis
-          type: keyvalue
-          property: host
-      - key: REDIS_PORT
-        fromService:
-          name: crm-redis
-          type: keyvalue
-          property: port
-      - key: WHATSAPP_GATEWAY_TOKEN
-        fromService:
-          name: crm-gateway
-          type: web
-          envVarKey: INTERNAL_GATEWAY_TOKEN
-      - key: INTERNAL_SHARED_SECRET
-        fromService:
-          name: crm-gateway
-          type: web
-          envVarKey: INTERNAL_SHARED_SECRET
-
-  # ---------------------------------------------------------------------------
-  # Laravel scheduler as a cron job. The backend's docker/start.sh used
-  # `schedule:work`; on Render we tick it every minute instead. (Cron jobs
-  # cannot have a persistent disk - the scheduler does not need one.)
-  # ---------------------------------------------------------------------------
-  - type: cron
-    name: crm-scheduler
-    region: oregon
-    runtime: docker
-    schedule: "* * * * *"
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    plan: 1c-2g
-    dockerCommand: bash /usr/local/bin/render-entrypoint.sh schedule
-    buildFilter:
-      paths:
-        - backend/**
-    envVars:
-      - fromGroup: crm-backend-env
-      - key: DB_HOST
-        fromService:
-          name: crm-mysql
-          type: pserv
-          property: host
-      - key: DB_DATABASE
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_DATABASE
-      - key: DB_USERNAME
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_USER
-      - key: DB_PASSWORD
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_PASSWORD
-      - key: REDIS_HOST
-        fromService:
-          name: crm-redis
-          type: keyvalue
-          property: host
-      - key: REDIS_PORT
-        fromService:
-          name: crm-redis
-          type: keyvalue
-          property: port
-      - key: WHATSAPP_GATEWAY_TOKEN
-        fromService:
-          name: crm-gateway
-          type: web
-          envVarKey: INTERNAL_GATEWAY_TOKEN
-      - key: INTERNAL_SHARED_SECRET
-        fromService:
-          name: crm-gateway
-          type: web
-          envVarKey: INTERNAL_SHARED_SECRET
-
-  # ---------------------------------------------------------------------------
-  # WhatsApp gateway (Node + Baileys + Socket.IO). Public because browsers open
-  # Socket.IO to it directly and fetch media URLs from it.
+  # 2. WhatsApp Gateway Web Service
   # ---------------------------------------------------------------------------
   - type: web
     name: crm-gateway
+    plan: free
     region: oregon
     runtime: docker
     dockerfilePath: ./whatsapp-gateway/Dockerfile
     dockerContext: ./whatsapp-gateway
-    plan: 1c-2g
     healthCheckPath: /healthz
-    # Paired WhatsApp credentials live under WHATSAPP_SESSION_DIR. Without a
-    # disk they are wiped on every deploy and every account must be re-paired.
-    disk:
-      name: crm-gateway-sessions
-      mountPath: /app/sessions
-      sizeGB: 10
     buildFilter:
       paths:
         - whatsapp-gateway/**
     envVars:
+      - fromGroup: crm-common-env
       - key: PORT
         value: "10000"
       - key: NODE_ENV
@@ -361,93 +141,43 @@ services:
       - key: LOG_LEVEL
         value: info
       - key: WHATSAPP_SESSION_DIR
-        value: /app/sessions
+        value: /tmp/whatsapp-sessions
       - key: WHATSAPP_WORKSPACE_ID
         value: "1"
-      # Media storage: Azure Blob Storage is the exclusive persistent storage backend.
       - key: STORAGE_PROVIDER
-        value: azure
-      - key: AZURE_STORAGE_CONNECTION_STRING
+        value: supabase
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: AZURE_STORAGE_ACCOUNT_NAME
-        sync: false
-      - key: AZURE_STORAGE_ACCOUNT_KEY
-        sync: false
-      - key: AZURE_STORAGE_CONTAINER_NAME
+      - key: SUPABASE_STORAGE_BUCKET
         value: whatsapp-media
-      - key: AZURE_STORAGE_URL
-        sync: false
-      - key: REDIS_HOST
-        fromService:
-          name: crm-redis
-          type: keyvalue
-          property: host
-      - key: REDIS_PORT
-        fromService:
-          name: crm-redis
-          type: keyvalue
-          property: port
-      - key: MYSQL_HOST
-        fromService:
-          name: crm-mysql
-          type: pserv
-          property: host
-      - key: MYSQL_PORT
-        value: "3306"
-      - key: MYSQL_DATABASE
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_DATABASE
-      - key: MYSQL_USER
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_USER
-      - key: MYSQL_PASSWORD
-        fromService:
-          name: crm-mysql
-          type: pserv
-          envVarKey: MYSQL_PASSWORD
-      # Gateway -> backend internal API (private call, but the URL is a full
-      # string so it must be written out; see the header note).
       - key: LARAVEL_INTERNAL_API_URL
         value: https://crm-backend.onrender.com/api/internal
-      # Browsers connect to Socket.IO from the frontend host.
       - key: SOCKET_CORS_ORIGIN
         value: https://crm-frontend.onrender.com
-      # Two shared secrets. Defined here (generated) and pulled into the backend
-      # via fromService, so the two sides can never drift.
       - key: INTERNAL_GATEWAY_TOKEN
         generateValue: true
       - key: INTERNAL_SHARED_SECRET
         generateValue: true
-      # 32-byte hex key. Generate with: openssl rand -hex 32
       - key: CREDENTIALS_ENCRYPTION_KEY
         sync: false
 
   # ---------------------------------------------------------------------------
-  # Next.js frontend (public).
+  # 3. Next.js Frontend Web Service
   # ---------------------------------------------------------------------------
   - type: web
     name: crm-frontend
+    plan: free
     region: oregon
     runtime: docker
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
-    plan: 1c-2g
     healthCheckPath: /
     buildFilter:
       paths:
         - frontend/**
     envVars:
-      # Render routes public traffic to this port; the Dockerfile binds next
-      # start to it.
       - key: PORT
         value: "10000"
-      # NEXT_PUBLIC_* are inlined into the browser bundle at build time. Render
-      # passes service env vars to the Docker build, and the Dockerfile declares
-      # matching ARGs, so these are baked into the deployed image.
       - key: NEXT_PUBLIC_API_URL
         value: https://crm-backend.onrender.com/api/v1
       - key: NEXT_PUBLIC_SOCKET_URL

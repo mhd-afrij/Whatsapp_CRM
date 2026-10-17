@@ -1,5 +1,4 @@
-import type { RowDataPacket } from 'mysql2/promise';
-import { execute, query } from '../lib/mysql';
+import { execute, query, type RowDataPacket } from '../lib/mysql';
 
 /**
  * The whatsapp_sync_checkpoints table is gateway-owned (docs/DATA_OWNERSHIP.md)
@@ -45,11 +44,11 @@ export class SyncRepository {
   async saveSnapshot(workspaceId: number, snapshot: object): Promise<void> {
     await execute(
       'INSERT INTO whatsapp_sync_checkpoints\n' +
-        '         (workspace_id, checkpoint_type, `cursor`, last_synced_at, created_at, updated_at)\n' +
+        '         (workspace_id, checkpoint_type, "cursor", last_synced_at, created_at, updated_at)\n' +
         '       VALUES (?, ?, ?, NOW(), NOW(), NOW())\n' +
-        '       ON DUPLICATE KEY UPDATE\n' +
-        '         `cursor` = VALUES(`cursor`),\n' +
-        '         last_synced_at = VALUES(last_synced_at),\n' +
+        '       ON CONFLICT (workspace_id, checkpoint_type) DO UPDATE SET\n' +
+        '         "cursor" = EXCLUDED."cursor",\n' +
+        '         last_synced_at = EXCLUDED.last_synced_at,\n' +
         '         updated_at = NOW()',
       [workspaceId, HISTORY_SYNC_CHECKPOINT_TYPE, JSON.stringify(snapshot)],
     );

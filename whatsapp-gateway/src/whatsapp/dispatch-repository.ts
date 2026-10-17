@@ -1,5 +1,4 @@
-import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
-import { query, execute } from '../lib/mysql';
+import { query, execute, type RowDataPacket, type ResultSetHeader } from '../lib/mysql';
 
 export type DispatchStatus = 'pending' | 'processing' | 'sent' | 'failed';
 
@@ -72,20 +71,20 @@ export class DispatchRepository {
 
   async markProcessing(id: number): Promise<void> {
     await execute(
-      'UPDATE message_dispatch_queue SET status = "processing", attempts = attempts + 1, updated_at = NOW() WHERE id = ?',
+      "UPDATE message_dispatch_queue SET status = 'processing', attempts = attempts + 1, updated_at = NOW() WHERE id = ?",
       [id],
     );
   }
 
   async markSent(id: number, messageId: number): Promise<void> {
     await execute(
-      'UPDATE message_dispatch_queue SET status = "sent", message_id = ?, updated_at = NOW() WHERE id = ?',
+      "UPDATE message_dispatch_queue SET status = 'sent', message_id = ?, updated_at = NOW() WHERE id = ?",
       [messageId, id],
     );
   }
 
   async markFailed(id: number): Promise<void> {
-    await execute('UPDATE message_dispatch_queue SET status = "failed", updated_at = NOW() WHERE id = ?', [
+    await execute("UPDATE message_dispatch_queue SET status = 'failed', updated_at = NOW() WHERE id = ?", [
       id,
     ]);
   }

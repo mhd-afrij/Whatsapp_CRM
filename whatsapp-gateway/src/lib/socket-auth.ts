@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { query } from './mysql';
-import type { RowDataPacket } from 'mysql2/promise';
+import { query, type RowDataPacket } from './mysql';
 
 /**
  * Verified identity of a Socket.IO client on /gateway, resolved from the
@@ -46,7 +45,7 @@ export async function verifySocketToken(token: unknown): Promise<SocketPrincipal
           AND pat.tokenable_type = 'App\\\\Models\\\\User'
         WHERE pat.token = ?
           AND (pat.expires_at IS NULL OR pat.expires_at > NOW())
-          AND u.is_active = 1
+          AND u.is_active IS TRUE
           AND u.deleted_at IS NULL
         LIMIT 1`,
       [tokenHash],

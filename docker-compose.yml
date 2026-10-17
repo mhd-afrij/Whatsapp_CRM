@@ -7,84 +7,33 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: crm_mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootsecret}
-      MYSQL_DATABASE: ${DB_DATABASE:-crm_whatsapp}
-      MYSQL_USER: ${DB_USERNAME:-crm_user}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-crm_password}
-    ports:
-      # Published on localhost only, and off the default 3306 because a native
-      # (non-Docker) MySQL already holds it. Services still reach this DB over
-      # the compose network as 'mysql:3306', so the container port is unchanged.
-      - "127.0.0.1:3307:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootsecret}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    logging: *default-logging
-    networks: [crm_net]
-
-  redis:
-    image: redis:7-alpine
-    container_name: crm_redis
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_PASSWORD:-}"]
-    ports:
-      # Off the default 6379 because a native (non-Docker) Redis already holds
-      # it. Reached in-network as 'redis:6379'; container port unchanged.
-      - "127.0.0.1:6380:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    logging: *default-logging
-    networks: [crm_net]
-
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: crm_backend
     restart: unless-stopped
-    depends_on:
-      mysql: { condition: service_healthy }
-      redis: { condition: service_healthy }
     environment:
       APP_ENV: ${APP_ENV:-local}
-      DB_HOST: mysql
-      DB_DATABASE: ${DB_DATABASE:-crm_whatsapp}
-      DB_USERNAME: ${DB_USERNAME:-crm_user}
-      DB_PASSWORD: ${DB_PASSWORD:-crm_password}
-      REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      QUEUE_CONNECTION: redis
+      DB_CONNECTION: pgsql
+      DB_HOST: ${DB_HOST:-}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-postgres}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      QUEUE_CONNECTION: database
+      CACHE_STORE: database
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      # Backend -> gateway internal calls must use the container/service name on
-      # the compose network, not "localhost" (that would resolve to the backend
-      # container itself). backend/.env.example defaults to localhost:3000 for
-      # non-docker local dev, so it is overridden explicitly here.
       WHATSAPP_GATEWAY_URL: http://whatsapp-gateway:4000
       WHATSAPP_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:-change-me-to-a-long-random-secret}
-      # Backend-side storage selector. Interpolated from the SAME root .env that
-      # feeds the gateway's STORAGE_PROVIDER below, so the two cannot silently
-      # diverge; backend/docker/start.sh runs `storage:verify` at boot.
-      FILESYSTEM_DISK: ${FILESYSTEM_DISK:-azure}
-      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
-      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
-      AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:-}
-      AZURE_STORAGE_CONTAINER_NAME: ${AZURE_STORAGE_CONTAINER_NAME:-whatsapp-media}
-      AZURE_STORAGE_URL: ${AZURE_STORAGE_URL:-}
-      AZURE_STORAGE_TIMEOUT: ${AZURE_STORAGE_TIMEOUT:-30}
+      INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:?INTERNAL_SHARED_SECRET must be set}
+      FILESYSTEM_DISK: ${FILESYSTEM_DISK:-s3}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      AWS_BUCKET: ${AWS_BUCKET:-whatsapp-media}
+      AWS_ENDPOINT: ${AWS_ENDPOINT:-}
+      AWS_USE_PATH_STYLE_ENDPOINT: "true"
     env_file:
       - path: ./backend/.env
         required: false
@@ -104,42 +53,25 @@ services:
       dockerfile: Dockerfile
     container_name: crm_gateway
     restart: unless-stopped
-    depends_on:
-      mysql: { condition: service_healthy }
-      redis: { condition: service_healthy }
     environment:
       NODE_ENV: production
       PORT: 4000
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_DATABASE: ${DB_DATABASE:-crm_whatsapp}
-      MYSQL_USER: ${DB_USERNAME:-crm_user}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-crm_password}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      DB_HOST: ${DB_HOST:-}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-postgres}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-}
       LARAVEL_INTERNAL_API_URL: http://backend:8000/api/internal
-      # Sent as the X-Internal-Shared-Secret header on every notifyNewMessage()
-      # call (src/lib/laravel-client.ts) and verified by the backend's
-      # EnsureInternalSecret middleware, so it must match the backend service's
-      # value of the same name. Required - no default, so a misconfigured
-      # deployment fails at boot instead of serving 401s.
       INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:?INTERNAL_SHARED_SECRET must be set}
-      # Socket.IO requires one explicit origin in Access-Control-Allow-Origin;
-      # FRONTEND_URL may be a comma-separated list for Laravel's HTTP CORS.
       SOCKET_CORS_ORIGIN: ${SOCKET_CORS_ORIGIN:-http://localhost:3000}
       WHATSAPP_SESSION_DIR: /app/sessions
-      # Must match WHATSAPP_GATEWAY_TOKEN sent by the backend service above.
       INTERNAL_GATEWAY_TOKEN: ${INTERNAL_GATEWAY_TOKEN:-change-me-to-a-long-random-secret}
       CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:?CREDENTIALS_ENCRYPTION_KEY must be set}
       WHATSAPP_WORKSPACE_ID: ${WHATSAPP_WORKSPACE_ID:-1}
-      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
-      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
-      AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:-}
-      AZURE_STORAGE_CONTAINER_NAME: ${AZURE_STORAGE_CONTAINER_NAME:-whatsapp-media}
-      AZURE_STORAGE_URL: ${AZURE_STORAGE_URL:-}
-      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-azure}
-      AZURE_STORAGE_URL_EXPIRY_SECONDS: ${AZURE_STORAGE_URL_EXPIRY_SECONDS:-300}
+      STORAGE_PROVIDER: supabase
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-whatsapp-media}
     env_file:
       - path: ./whatsapp-gateway/.env
         required: false
@@ -159,10 +91,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      # NEXT_PUBLIC_* values are inlined into the client bundle at BUILD time.
-      # The frontend Dockerfile declares them as ARG -> ENV, so Compose must
-      # supply them here (or they resolve to empty strings and override the
-      # values in frontend/.env.local, breaking `next build`).
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
         NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-http://localhost:4000}
@@ -186,27 +114,9 @@ services:
     logging: *default-logging
     networks: [crm_net]
 
-  nginx:
-    image: nginx:alpine
-    container_name: crm_nginx
-    restart: unless-stopped
-    depends_on:
-      - frontend
-      - backend
-      - whatsapp-gateway
-    ports:
-      - "127.0.0.1:8080:80"
-    volumes:
-      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    logging: *default-logging
-    networks: [crm_net]
-
 networks:
   crm_net:
     driver: bridge
 
 volumes:
-  mysql_data:
-  redis_data:
   gateway_sessions:
-

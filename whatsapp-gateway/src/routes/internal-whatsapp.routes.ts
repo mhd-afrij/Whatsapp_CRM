@@ -4,11 +4,10 @@ import { timingSafeEqual } from 'node:crypto';
 import crypto from 'node:crypto';
 import multer from 'multer';
 import { z } from 'zod';
-import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
 import { getStorageClient, getStorageProviderName } from '../lib/storage';
-import { execute, query, transaction } from '../lib/mysql';
+import { execute, query, transaction, type ResultSetHeader, type RowDataPacket } from '../lib/mysql';
 import { normalizePhoneToJid } from '../whatsapp/jid';
 import { connectionManager, connectionRegistry, PairingCodeError } from '../whatsapp/manager-instance';
 import {

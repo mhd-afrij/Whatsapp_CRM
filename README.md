@@ -1,43 +1,36 @@
-﻿# CRM-WhatsApp
+# CRM-WhatsApp
 
 A WhatsApp-first CRM & team collaboration platform: shared team inbox over a single linked
 WhatsApp number, contacts/leads/deals pipelines, tasks, notes, labels, notifications, and
 workspace administration with permission-based RBAC.
 
+Deployed on **Render Free Tier** paired with **Supabase** (PostgreSQL & Storage).
+
 Services:
-- `frontend/` â€” Next.js 14+ (App Router, TS strict, Tailwind, shadcn/ui, TanStack Query, Socket.IO client)
-- `backend/` â€” Laravel 12 REST API (`/api/v1`), MySQL, Redis-backed queues, Sanctum auth
-- `whatsapp-gateway/` â€” Node + TypeScript + Express + Baileys + BullMQ + Socket.IO, owns the WhatsApp connection and WhatsApp-origin data
-- `infrastructure/` â€” docker-compose, nginx, monitoring, scripts
+- `frontend/` — Next.js 14+ (App Router, TS strict, Tailwind, shadcn/ui, TanStack Query, Socket.IO client)
+- `backend/` — Laravel 12 REST API (`/api/v1`), Supabase PostgreSQL, database-backed queues, Sanctum auth
+- `whatsapp-gateway/` — Node + TypeScript + Express + Baileys + pg-boss + Socket.IO, owns the WhatsApp connection and WhatsApp-origin data
+- `infrastructure/` — docker-compose, scripts, Render blueprints
 
 See `docs/` for the full design: architecture, database schema, API contract, permission matrix,
-event catalog, data-ownership split, and the phased implementation roadmap.
+event catalog, data-ownership split, and deployment guides.
 
 ## Prerequisites
 
 - Docker + Docker Compose (recommended path)
-- For local (non-docker) dev: Node.js 20+, PHP 8.2+, Composer 2, MySQL 8, Redis 7
+- For local (non-docker) dev: Node.js 20+, PHP 8.2+, Composer 2, PostgreSQL 15+
 
 ## Quick start (Docker Compose)
 
 ```bash
 cp .env.example .env
 # fill in backend/.env, frontend/.env.local, whatsapp-gateway/.env from their .env.example files
-# (the compose files also work with zero manual .env setup, using insecure dev-only
-# defaults for WHATSAPP_GATEWAY_TOKEN / INTERNAL_GATEWAY_TOKEN / CREDENTIALS_ENCRYPTION_KEY â€”
-# override these for anything beyond a throwaway sandbox)
 docker compose up -d --build
 ```
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000/api/v1/health
 - WhatsApp Gateway: http://localhost:4000/healthz
-- Everything behind nginx: http://localhost:80
-
-**Note:** `docker compose up` has never been run live in the environment this project was built
-in (no Docker daemon available there â€” see `PROJECT_STATUS.md` Phase 19/20 for the manual
-review-and-fix pass that was done in its place). Validate this in the first environment that has
-Docker available: `docker compose config` first, then `docker compose up -d --build`.
 
 ## Local development (per service)
 
@@ -49,13 +42,9 @@ cp .env.example .env
 php artisan key:generate
 php artisan migrate --seed   # creates schema + seeds workspace/roles/permissions/admin user/pipeline
 php artisan serve            # terminal 1 - http://localhost:8000
-php artisan queue:work       # terminal 2 - report exports/campaigns/webhooks stall without a worker
-php artisan test             # requires MySQL (see .env.testing)
+php artisan queue:work       # terminal 2 - report exports/campaigns/webhooks
+php artisan test             # runs PHPUnit tests
 ```
-
-Local (non-Docker) dev queues jobs on the database connection, so the worker above is
-required alongside `serve`. The Docker stack starts its own worker via
-`backend/docker/start.sh` (Redis queue) and needs no extra step.
 
 ### frontend/
 ```bash
@@ -78,57 +67,26 @@ npm run build
 npm test          # vitest
 ```
 
-
-Production Azure Blob variables for `backend/.env`:
-
-```env
-AZURE_STORAGE_ACCOUNT_NAME=
-AZURE_STORAGE_ACCOUNT_KEY=
-AZURE_STORAGE_CONTAINER=
-AZURE_STORAGE_URL=https://<account>.blob.core.windows.net
-AZURE_STORAGE_TIMEOUT=30
-```
-### e2e/ (Playwright, written but not yet executed in any environment used so far)
+### Backup / restore (PostgreSQL)
 ```bash
-cd e2e
-npm install
-npx playwright install
-npm test   # requires the full stack (backend+gateway+frontend+MySQL+Redis) running together
+infrastructure/scripts/postgres-backup.sh          # writes storage/backups/<db>_<timestamp>.sql.gz
+infrastructure/scripts/postgres-restore.sh <dump.sql.gz> [target_db]
 ```
-
-### Backup / restore (MySQL)
-```bash
-infrastructure/scripts/mysql-backup.sh          # writes storage/backups/<db>_<timestamp>.sql.gz
-infrastructure/scripts/mysql-restore.sh <dump.sql.gz> [target_db]
-```
-
-## Project status
-
-All 20 phases of the original roadmap are complete and independently verified in this
-environment: backend (PHPUnit green against a real MySQL test database), whatsapp-gateway
-(vitest green), frontend (vitest green + clean lint/typecheck/build), migrate:fresh --seed against
-real MySQL, and a tested MySQL backup/restore round trip. Run the suites to see the current counts;
-they are deliberately not hard-coded here. A 2026-09 production-readiness audit round further hardened the stack
-(auth-gated realtime sockets, storage-provider routing, realtime event parity, a data-integrity
-migration, DLQ/contract alignment) — see `FINAL_REPORT.md` §22. A Playwright E2E suite and a
-GitHub Actions CI workflow are written and manifest-consistent but have never executed on a real
-browser/runner, and `docker compose up` has never been run against a live Docker daemon — see
-`FINAL_REPORT.md` for the full, itemized breakdown of what's genuinely verified vs. what still
-needs a live WhatsApp/SMTP/Docker environment before shipping, and `PROJECT_STATUS.md` for the
-phase-by-phase history.
 
 ## Documentation index
 
 | Doc | Purpose |
 |---|---|
+| `DEPLOYMENT.md` | Production Render Free + Supabase setup guide |
+| `docs/render-deployment.md` | Render Blueprint architecture and service mapping |
 | `docs/01-requirements-summary.md` | Condensed functional/non-functional requirements |
 | `docs/02-gap-analysis.md` | What exists vs. what's needed |
 | `docs/03-system-architecture.md` | Container diagram, component responsibilities |
 | `docs/04-database-design.md` | Full schema + ERD |
 | `docs/05-api-contract.md` | `/api/v1` endpoint list |
 | `docs/06-frontend-route-map.md` | Next.js route tree |
-| `docs/07-permission-matrix.md` | Permissions Ã— roles |
-| `docs/08-implementation-roadmap.md` | Phase 0â€“20 roadmap |
+| `docs/07-permission-matrix.md` | Permissions × roles |
+| `docs/08-implementation-roadmap.md` | Phase 0–20 roadmap |
 | `docs/09-testing-strategy.md` | Testing approach per service |
 | `docs/10-deployment-plan.md` | Deployment topology & operations |
 | `docs/11-key-flows.md` | Message/QR/lead/reconnect sequence diagrams |
@@ -138,5 +96,4 @@ phase-by-phase history.
 
 ## License
 
-Proprietary â€” internal project.
-
+Proprietary — internal project.

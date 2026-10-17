@@ -9,7 +9,7 @@ use App\Models\WhatsappAccountSetting;
 use App\Models\WhatsappConnectionEvent;
 use App\Models\WhatsappSession;
 use App\Models\Workspace;
-use App\Services\AzureBlobService;
+use App\Services\SupabaseStorageService;
 use App\Support\AuditLogger;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
@@ -21,7 +21,7 @@ class WorkspaceSettingController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(protected AzureBlobService $azureBlob) {}
+    public function __construct(protected SupabaseStorageService $storage) {}
 
     public function show(Request $request)
     {
@@ -70,12 +70,12 @@ class WorkspaceSettingController extends Controller
 
         if ($request->hasFile('logo')) {
             if ($workspace->logo_path) {
-                $this->azureBlob->delete($workspace->logo_path);
+                $this->storage->delete($workspace->logo_path);
             }
-            $upload = $this->azureBlob->upload($request->file('logo'), 'workspace-logos/'.$workspace->id);
+            $upload = $this->storage->upload($request->file('logo'), 'workspace-logos/'.$workspace->id);
             $workspace->logo_path = $upload['file_path'];
         } elseif ($request->boolean('remove_logo') && $workspace->logo_path) {
-            $this->azureBlob->delete($workspace->logo_path);
+            $this->storage->delete($workspace->logo_path);
             $workspace->logo_path = null;
         }
 
@@ -247,7 +247,7 @@ class WorkspaceSettingController extends Controller
             'whatsapp_number' => $workspace->whatsapp_number,
             'timezone' => $workspace->timezone,
             'language' => $workspace->language ?? 'en',
-            'logo_url' => $workspace->logo_path ? $this->azureBlob->getUrl($workspace->logo_path) : null,
+            'logo_url' => $workspace->logo_path ? $this->storage->getUrl($workspace->logo_path) : null,
             'is_active' => (bool) $workspace->is_active,
             'default_pipeline_id' => $settings?->default_pipeline_id ? (int) $settings->default_pipeline_id : null,
             'business_hours' => $settings?->business_hours,
@@ -302,9 +302,8 @@ class WorkspaceSettingController extends Controller
 
         return [
             'driver' => $diskConfig['driver'] ?? $disk,
-            // Azure disks carry the container under 'container' (S3 uses 'bucket');
-            // surface either so the settings UI shows the storage target.
-            'bucket' => $diskConfig['bucket'] ?? $diskConfig['container'] ?? null,
+            // Surface bucket and endpoint so settings UI shows storage target
+            'bucket' => $diskConfig['bucket'] ?? null,
             'endpoint' => $diskConfig['endpoint'] ?? null,
         ];
     }

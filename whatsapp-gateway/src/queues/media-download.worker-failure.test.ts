@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 let capturedFailedHandler: ((job: unknown, err: Error) => Promise<void> | void) | null = null;
 
-vi.mock('bullmq', () => ({
+vi.mock('./connection', () => ({
   Queue: vi.fn().mockImplementation(function FakeQueue() {
     return { add: vi.fn(), close: vi.fn() };
   }),
@@ -25,6 +25,7 @@ vi.mock('bullmq', () => ({
       close: vi.fn(),
     };
   }),
+  getQueueConnectionOptions: vi.fn().mockReturnValue({}),
 }));
 
 const { recordProcessingFailure } = vi.hoisted(() => ({

@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('bullmq', () => ({
+vi.mock('./connection', () => ({
   Queue: vi.fn().mockImplementation(function FakeQueue() {
     return { add: vi.fn(), close: vi.fn() };
   }),
   Worker: vi.fn().mockImplementation(function FakeWorker() {
     return { on: vi.fn(), run: vi.fn(), close: vi.fn() };
   }),
+  getQueueConnectionOptions: vi.fn().mockReturnValue({}),
 }));
 
 // Both mocks are hoisted so the module factory below can reference the *same*

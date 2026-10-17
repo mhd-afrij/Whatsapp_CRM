@@ -8,31 +8,21 @@ use RuntimeException;
 
 /**
  * Storage abstraction for workspace assets (logos) and generated files
- * (report exports). Backed by Laravel's filesystem layer so tests can
- * Storage::fake() the underlying disks and production can point
- * FILESYSTEM_DISK at any Flysystem driver (local, s3/minio, azure) without
- * touching calling code.
+ * (report exports) backed by Supabase Storage (S3-compatible Flysystem API).
  *
- * Disk layout:
- *  - 'public'  → user-uploaded assets (workspace logos); URLs are resolvable.
- *  - 'local'   → private generated content (CSV exports); only reachable via
- *                authenticated controller actions, never public URLs.
- *
- * When FILESYSTEM_DISK names a non-local disk (e.g. 'azure') it becomes the
- * single backing store for both roles - the disk's own access control keeps
- * exports private, exactly as the local/private split did.
+ * Backed by Laravel's filesystem layer so tests can Storage::fake()
+ * the underlying disks and production points FILESYSTEM_DISK at 's3' (Supabase).
  */
-class AzureBlobService
+class SupabaseStorageService
 {
     public const DISK_PUBLIC = 'public';
 
     public const DISK_PRIVATE = 'local';
 
     /**
-     * Lifetime of a generated SAS link, in minutes. Only the read permission
-     * on the single blob being linked is granted.
+     * Lifetime of a generated signed link, in minutes.
      */
-    public const SAS_TTL_MINUTES = 60;
+    public const SIGNED_URL_TTL_MINUTES = 60;
 
     /**
      * Store raw generated content (e.g. a CSV export).
@@ -43,9 +33,6 @@ class AzureBlobService
     {
         $disk = $this->disk(self::DISK_PRIVATE);
 
-        // The azure disk sets 'throw' => false, so a failed write returns false
-        // instead of raising. Check it, otherwise the export is recorded as
-        // 'ready' and only 404s much later at download time.
         if (! Storage::disk($disk)->put($path, $content)) {
             throw new RuntimeException("Failed to write [{$path}] to the [{$disk}] disk.");
         }
@@ -81,8 +68,6 @@ class AzureBlobService
 
     public function delete(string $path): bool
     {
-        // Try the public disk first (assets), then private (generated files);
-        // callers treat this as best-effort cleanup.
         foreach ($this->disks() as $disk) {
             if (Storage::disk($disk)->exists($path)) {
                 return Storage::disk($disk)->delete($path);
@@ -97,17 +82,8 @@ class AzureBlobService
         $name = $this->disk(self::DISK_PUBLIC);
         $disk = Storage::disk($name);
 
-        // A private Azure container answers 403 for every plain url(): with
-        // AZURE_STORAGE_URL set the driver just concatenates an unsigned
-        // path, so a stored logo_url would be dead on arrival. temporaryUrl()
-        // is the only readable link the driver can produce - a short-lived,
-        // read-only SAS scoped to this one blob and regenerated on each call,
-        // so callers that fetch the workspace settings per page load never see
-        // an expired link. Keyed on the driver rather than providesTemporaryUrls()
-        // because Laravel's local disk reports true as well and must keep its
-        // plain /storage/... URL.
-        if ($this->provider($name) === 'azure-storage-blob' && $disk->providesTemporaryUrls()) {
-            return $disk->temporaryUrl($path, now()->addMinutes(self::SAS_TTL_MINUTES));
+        if ($this->provider($name) === 's3' && $disk->providesTemporaryUrls()) {
+            return $disk->temporaryUrl($path, now()->addMinutes(self::SIGNED_URL_TTL_MINUTES));
         }
 
         return $disk->url($path);
@@ -131,21 +107,21 @@ class AzureBlobService
     }
 
     /**
-     * The disk backing one of the two roles. FILESYSTEM_DISK must resolve to 'azure'.
-     * Local storage fallback is prohibited.
+     * The disk backing one of the two roles. FILESYSTEM_DISK must resolve to 's3'.
+     * Local storage fallback is prohibited in production.
      */
     protected function disk(string $localRole): string
     {
         $default = (string) config('filesystems.default');
 
         if ($default === 'local' && app()->environment() !== 'testing') {
-            throw new RuntimeException("FILESYSTEM_DISK must be set to 'azure'. Local disk is disabled for persistent application files.");
+            throw new RuntimeException("FILESYSTEM_DISK must be set to 's3' (Supabase Storage). Local disk is disabled for persistent application files.");
         }
 
         return $default === 'local' ? $localRole : $default;
     }
 
-    /** Both role disks, de-duplicated (they collapse to one under Azure). */
+    /** Both role disks, de-duplicated. */
     protected function disks(): array
     {
         return array_values(array_unique([
@@ -159,3 +135,4 @@ class AzureBlobService
         return (string) config("filesystems.disks.{$disk}.driver", $disk);
     }
 }
+
