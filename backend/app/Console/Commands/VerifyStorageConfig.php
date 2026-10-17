@@ -10,19 +10,13 @@ use Throwable;
  * Startup guard for storage configuration drift.
  *
  * The backend (FILESYSTEM_DISK) and the WhatsApp gateway (STORAGE_PROVIDER)
- * each pick their own storage provider, and a mismatch is invisible until
- * media stops flowing: uploads land on one provider while readers look on the
- * other. Both providers are validated inside their own service, so a
- * disagreement can only be caught in the shared .env.
+ * both use Supabase Storage (bucket: whatsapp-media).
  *
- * This command therefore verifies the backend's own configuration is
+ * This command verifies the backend's own configuration is
  * self-consistent AND usable - the disk named by FILESYSTEM_DISK exists, its
- * driver matches, and an Azure disk is actually configured. It is wired into
- * the container entrypoint so a misconfigured deployment fails to boot loudly
- * instead of running for hours with broken uploads. It never contacts the
- * gateway, so the two services stay decoupled.
+ * driver matches 's3', and Supabase S3 credentials/endpoints are set.
  *
- * Run it by hand with: php artisan storage:verify
+ * Run it with: php artisan storage:verify
  */
 class VerifyStorageConfig extends Command
 {
@@ -47,13 +41,13 @@ class VerifyStorageConfig extends Command
         $this->line("  disk   : {$diskName}");
         $this->line("  driver : {$driver}");
 
-        if ($diskName !== 'azure' && app()->environment() !== 'testing') {
-            $this->error("FILESYSTEM_DISK is set to '{$diskName}'. Only 'azure' is permitted for persistent application files.");
+        if ($diskName !== 's3' && app()->environment() !== 'testing') {
+            $this->error("FILESYSTEM_DISK is set to '{$diskName}'. Only 's3' (Supabase Storage) is permitted for persistent application files.");
             return self::FAILURE;
         }
 
-        if ($driver === 'azure-storage-blob') {
-            $error = $this->checkAzure($config);
+        if ($driver === 's3' && app()->environment() !== 'testing') {
+            $error = $this->checkS3Supabase($config);
             if ($error !== null) {
                 $this->error($error);
 
@@ -61,9 +55,7 @@ class VerifyStorageConfig extends Command
             }
         }
 
-        // Resolving the disk proves the driver is registered and the config is
-        // shaped correctly; without this a typo in the driver name only
-        // surfaces on the first upload.
+        // Resolving the disk proves the driver is registered and the config is shaped correctly.
         try {
             Storage::disk($diskName);
         } catch (Throwable $e) {
@@ -80,37 +72,25 @@ class VerifyStorageConfig extends Command
     /**
      * @param  array<string, mixed>  $config
      */
-    protected function checkAzure(array $config): ?string
+    protected function checkS3Supabase(array $config): ?string
     {
-        $container = (string) ($config['container'] ?? '');
-        if ($container === '') {
-            return 'The azure disk has no container. Set AZURE_STORAGE_CONTAINER_NAME.';
+        $bucket = (string) ($config['bucket'] ?? '');
+        if ($bucket === '') {
+            return 'The s3 disk has no bucket. Set AWS_BUCKET or SUPABASE_STORAGE_BUCKET.';
         }
 
-        $hasConnectionString = is_string($config['connection_string'] ?? null) && $config['connection_string'] !== '';
-        $hasSharedKey = ($config['account_name'] ?? null) && ($config['credential'] ?? null);
-
-        if (! $hasConnectionString && ! $hasSharedKey) {
-            return 'The azure disk has no usable credential. Set AZURE_STORAGE_CONNECTION_STRING.';
+        $key = (string) ($config['key'] ?? '');
+        $secret = (string) ($config['secret'] ?? '');
+        if ($key === '' || $secret === '') {
+            return 'The s3 disk has no credentials. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.';
         }
 
-        $configuredAccount = trim((string) env('AZURE_STORAGE_ACCOUNT_NAME'));
-        $configuredUrl = trim((string) env('AZURE_STORAGE_URL'));
-        if ($configuredAccount !== '' && $configuredUrl !== '') {
-            $host = strtolower((string) parse_url($configuredUrl, PHP_URL_HOST));
-            $expectedHost = strtolower($configuredAccount.'.blob.core.windows.net');
-            if ($host !== '' && $host !== $expectedHost) {
-                return 'Azure configuration drift: AZURE_STORAGE_URL does not match AZURE_STORAGE_ACCOUNT_NAME.';
-            }
+        $endpoint = (string) ($config['endpoint'] ?? '');
+        if ($endpoint === '') {
+            return 'The s3 disk has no endpoint. Set AWS_ENDPOINT to your Supabase S3 endpoint (https://<project-ref>.supabase.co/storage/v1/s3).';
         }
 
-        if ($hasConnectionString && preg_match('/(?:^|;)AccountName=([^;]+)/i', (string) $config['connection_string'], $match)) {
-            if ($configuredAccount !== '' && ! hash_equals(strtolower($configuredAccount), strtolower(trim($match[1])))) {
-                return 'Azure configuration drift: connection-string AccountName does not match AZURE_STORAGE_ACCOUNT_NAME.';
-            }
-        }
-
-        $this->line("  azure  : container '{$container}' authenticated via ".($hasConnectionString ? 'connection string' : 'account key'));
+        $this->line("  supabase storage : bucket '{$bucket}' using endpoint {$endpoint}");
 
         return null;
     }

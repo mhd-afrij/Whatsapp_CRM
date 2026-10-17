@@ -161,36 +161,33 @@ describe('health and readiness endpoints', () => {
 
   it('GET /readyz returns 503 and reports failed checks when upstreams are down', async () => {
     isHealthy.mockReturnValue(true);
-    redisPing.mockRejectedValue(new Error('ECONNREFUSED'));
     poolQuery.mockRejectedValue(new Error('connect ECONNREFUSED'));
 
     const res = await fetch(`${baseUrl}/readyz`);
     expect(res.status).toBe(503);
     const body = await readJson(res);
     expect(body.status).toBe('unavailable');
-    expect(body.checks).toEqual({ redis: 'error', mysql: 'error' });
+    expect(body.checks).toEqual({ database: 'error' });
   });
 
-  it('GET /readyz returns 200 when Redis and MySQL are reachable', async () => {
+  it('GET /readyz returns 200 when Database is reachable', async () => {
     isHealthy.mockReturnValue(true);
-    redisPing.mockResolvedValue('PONG');
     poolQuery.mockResolvedValue([{ '1': 1 }]);
 
     const res = await fetch(`${baseUrl}/readyz`);
     expect(res.status).toBe(200);
     const body = await readJson(res);
     expect(body.status).toBe('ok');
-    expect(body.checks).toEqual({ redis: 'ok', mysql: 'ok' });
+    expect(body.checks).toEqual({ database: 'ok' });
   });
 
-  it('GET /readyz treats an open MySQL circuit breaker as not ready', async () => {
+  it('GET /readyz treats an open database circuit breaker as not ready', async () => {
     isHealthy.mockReturnValue(false);
-    redisPing.mockResolvedValue('PONG');
 
     const res = await fetch(`${baseUrl}/readyz`);
     expect(res.status).toBe(503);
     const body = await readJson(res);
-    expect((body.checks as Record<string, string>).mysql).toBe('error');
+    expect((body.checks as Record<string, string>).database).toBe('error');
   });
 });
 

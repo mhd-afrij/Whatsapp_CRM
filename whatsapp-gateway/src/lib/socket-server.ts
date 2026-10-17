@@ -1,10 +1,8 @@
 import type { Server as HttpServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { Server as SocketIOServer } from 'socket.io';
-import { createAdapter } from '@socket.io/redis-adapter';
 import { env } from '../config/env';
 import { logger } from '../lib/logger';
-import { getRedisClient } from '../lib/redis';
 import { verifySocketToken, canJoinRoom, type SocketPrincipal } from './socket-auth';
 import type { ConnectionUpdatedEvent } from '../whatsapp/connection-manager';
 
@@ -46,10 +44,6 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: { origin: env.SOCKET_CORS_ORIGIN },
   });
-
-  const pubClient = getRedisClient();
-  const subClient = pubClient.duplicate();
-  io.adapter(createAdapter(pubClient, subClient));
 
   const gatewayNamespace = io.of('/gateway');
 
@@ -321,21 +315,7 @@ export async function closeSocketServer(): Promise<void> {
   const server = io;
   io = null;
 
-  // Grab the adapter's pub client BEFORE closing - Server.close() tears the
-  // namespaces down, and the duplicate() client used for pub/sub is not the
-  // same instance that closeRedisClient() manages.
-  const adapter = server.of('/gateway').adapter as {
-    pubClient?: { quit?: () => Promise<unknown> };
-  } | null;
-  const pubClient = adapter?.pubClient;
-
   await new Promise<void>((resolve) => {
     server.close(() => resolve());
   });
-
-  if (pubClient && typeof pubClient.quit === 'function') {
-    await pubClient.quit().catch((err) => {
-      logger.warn({ err }, 'Failed to close Socket.IO Redis adapter client');
-    });
-  }
 }

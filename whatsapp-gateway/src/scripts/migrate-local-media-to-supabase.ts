@@ -26,10 +26,10 @@ function getMimeType(filePath: string): string {
 
 /**
  * Migration script to scan and upload historical local media files
- * from `whatsapp-gateway/media-storage/` into Azure Blob Storage.
+ * from `whatsapp-gateway/media-storage/` into Supabase Storage.
  *
  * Usage:
- *   node dist/scripts/migrate-local-media-to-azure.js [--dry-run]
+ *   node dist/scripts/migrate-local-media-to-supabase.js [--dry-run]
  */
 async function main() {
   const args = process.argv.slice(2);
@@ -77,7 +77,7 @@ async function main() {
       logger.info({ relativeKey, size: buffer.length, mimeType, checksum }, 'Inspecting file');
 
       if (dryRun) {
-        logger.info({ relativeKey }, '[DRY RUN] Would upload to Azure Blob Storage');
+        logger.info({ relativeKey }, '[DRY RUN] Would upload to Supabase Storage');
         totalMigrated++;
         continue;
       }
@@ -87,14 +87,14 @@ async function main() {
       // Verify read-back
       const downloaded = await storage.getObject(relativeKey);
       if (downloaded.length === buffer.length) {
-        logger.info({ relativeKey }, 'Successfully uploaded and verified in Azure');
+        logger.info({ relativeKey }, 'Successfully uploaded and verified in Supabase');
         totalMigrated++;
       } else {
         logger.error({ relativeKey }, 'Verification failed: size mismatch');
         totalFailed++;
       }
     } catch (err) {
-      logger.error({ err, relativeKey }, 'Failed to migrate file to Azure');
+      logger.error({ err, relativeKey }, 'Failed to migrate file to Supabase');
       totalFailed++;
     }
   }

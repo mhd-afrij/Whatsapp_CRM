@@ -1,20 +1,12 @@
-# Backend (Laravel 12) - PHP-FPM based image
+# Backend (Laravel 12) - PHP-FPM / CLI based image
 FROM php:8.2-fpm-alpine AS base
 
-# `redis` is REQUIRED, not optional: config/database.php defaults REDIS_CLIENT to
-# `phpredis` and every env file pins it, so without this extension the queue
-# worker and cache fail to boot with "The PhpRedis extension is not installed".
-# The official php image does NOT bundle the redis extension source, so a plain
-# `docker-php-ext-install redis` fails with "/usr/src/php/ext/redis does not
-# exist"; install it from PECL instead (which needs the phpize toolchain, hence
-# $PHPIZE_DEPS, removed again afterwards to keep the image lean).
+# Install required packages and PostgreSQL extensions.
+# MySQL and Redis have been permanently removed.
 RUN apk add --no-cache \
-    bash git curl libpng-dev libzip-dev zip unzip oniguruma-dev mysql-client \
-    $PHPIZE_DEPS \
-    && docker-php-ext-install pdo_mysql mbstring zip gd bcmath opcache \
-    && pecl install redis \
-    && docker-php-ext-enable redis \
-    && apk del --no-network $PHPIZE_DEPS
+    bash git curl libpng-dev libzip-dev zip unzip oniguruma-dev \
+    postgresql-dev postgresql-client \
+    && docker-php-ext-install pdo_pgsql pgsql mbstring zip gd bcmath opcache
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
@@ -33,8 +25,7 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 COPY docker/start.sh /usr/local/bin/start.sh
 RUN sed -i 's/\r$//' /usr/local/bin/start.sh && chmod +x /usr/local/bin/start.sh
 
-# Render entrypoint: dispatches web / worker / schedule / migrate roles. Used by
-# render.yaml via dockerCommand; docker-compose keeps using start.sh above.
+# Render entrypoint: dispatches web / worker / schedule / migrate roles.
 COPY docker/render-entrypoint.sh /usr/local/bin/render-entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/render-entrypoint.sh && chmod +x /usr/local/bin/render-entrypoint.sh
 

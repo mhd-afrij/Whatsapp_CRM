@@ -1,5 +1,4 @@
-import type { PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
-import { query, execute, transaction } from '../lib/mysql';
+import { query, execute, transaction, type PoolConnection, type RowDataPacket, type ResultSetHeader } from '../lib/mysql';
 import { getStorageProviderName } from '../lib/storage';
 import type { BaileysMessageKey } from './baileys-socket';
 
@@ -46,9 +45,11 @@ export interface MessageRow extends RowDataPacket {
   read_at: string | null;
 }
 
-/** Thrown by getMysqlPool() query paths on a unique-key violation (ER_DUP_ENTRY). */
+/** Thrown by database query paths on a unique-key violation (ER_DUP_ENTRY / 23505). */
 export function isDuplicateEntryError(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === 'ER_DUP_ENTRY';
+  if (typeof err !== 'object' || err === null) return false;
+  const code = (err as { code?: string }).code;
+  return code === 'ER_DUP_ENTRY' || code === '23505';
 }
 
 export class MessageRepository {
@@ -289,7 +290,7 @@ export class MessageRepository {
     await execute(
       `INSERT INTO whatsapp_contacts (workspace_id, wa_jid, contact_name, phone_number, created_at, updated_at)
        VALUES (?, ?, ?, ?, NOW(), NOW())
-       ON DUPLICATE KEY UPDATE contact_name = VALUES(contact_name), updated_at = NOW()`,
+       ON CONFLICT (workspace_id, wa_jid) DO UPDATE SET contact_name = EXCLUDED.contact_name, updated_at = NOW()`,
       [workspaceId, waJid, contactName, phoneNumber],
     );
   }
@@ -766,7 +767,7 @@ export class MessageRepository {
     await execute(
       `INSERT INTO message_reactions (message_id, user_id, emoji, reacted_at, created_at, updated_at)
        VALUES (?, ?, ?, NOW(), NOW(), NOW())
-       ON DUPLICATE KEY UPDATE emoji = VALUES(emoji), reacted_at = NOW(), updated_at = NOW()`,
+       ON CONFLICT (message_id, user_id) DO UPDATE SET emoji = EXCLUDED.emoji, reacted_at = NOW(), updated_at = NOW()`,
       [messageId, userId, emoji],
     );
   }

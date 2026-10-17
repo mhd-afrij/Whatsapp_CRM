@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'default' => env('FILESYSTEM_DISK', 'azure'),
+    'default' => env('FILESYSTEM_DISK', 's3'),
 
     /*
     |--------------------------------------------------------------------------
@@ -24,7 +24,7 @@ return [
     | may even configure multiple disks for the same driver. Examples for
     | most supported storage drivers are configured here for reference.
     |
-    | Supported drivers: "local", "ftp", "sftp"
+    | Supported drivers: "local", "ftp", "sftp", "s3"
     |
     */
 
@@ -47,25 +47,16 @@ return [
             'report' => false,
         ],
 
-        // Azure Blob Storage via azure-oss/storage-blob-laravel. Selected by
-        // setting FILESYSTEM_DISK=azure (default disk). Auth uses the connection
-        // string when present; the driver rejects connection_string combined
-        // with account_name/credential, so shared-key fields are only passed
-        // when there is no connection string. AZURE_STORAGE_URL (CDN/custom
-        // domain) overrides generated URLs when set; private containers then
-        // get SAS URLs from the adapter instead.
-        'azure' => [
-            'driver' => 'azure-storage-blob',
-            ...((string) env('AZURE_STORAGE_CONNECTION_STRING') !== '' ? [
-                'connection_string' => env('AZURE_STORAGE_CONNECTION_STRING'),
-            ] : [
-                'account_name' => env('AZURE_STORAGE_ACCOUNT_NAME'),
-                'account_key' => env('AZURE_STORAGE_ACCOUNT_KEY'),
-                'credential' => 'shared_key',
-            ]),
-            'container' => env('AZURE_STORAGE_CONTAINER_NAME', 'whatsapp-media'),
-            'url' => env('AZURE_STORAGE_URL') ?: null,
-            'timeout' => (int) env('AZURE_STORAGE_TIMEOUT', 30),
+        // Supabase Storage via S3-compatible Flysystem API.
+        's3' => [
+            'driver' => 's3',
+            'key' => env('AWS_ACCESS_KEY_ID'),
+            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+            'bucket' => env('AWS_BUCKET', env('SUPABASE_STORAGE_BUCKET', 'whatsapp-media')),
+            'url' => env('AWS_URL'),
+            'endpoint' => env('AWS_ENDPOINT'),
+            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', true),
             'throw' => false,
         ],
 
