@@ -1,43 +1,35 @@
-import Redis, { type RedisOptions } from 'ioredis';
-import { env } from '../config/env';
 import { logger } from './logger';
 
-export function buildRedisOptions(): RedisOptions {
-  return {
-    host: env.REDIS_HOST,
-    port: env.REDIS_PORT,
-    username: env.REDIS_USERNAME,
-    password: env.REDIS_PASSWORD,
-    maxRetriesPerRequest: null,
-  };
+export interface DummyRedis {
+  ping(): Promise<string>;
+  quit(): Promise<void>;
+  duplicate(): DummyRedis;
+  on(event: string, cb: (...args: any[]) => void): void;
 }
 
-let sharedClient: Redis | null = null;
+const dummyClient: DummyRedis = {
+  async ping() {
+    return 'PONG';
+  },
+  async quit() {
+    // no-op
+  },
+  duplicate() {
+    return dummyClient;
+  },
+  on(_event: string, _cb: (...args: any[]) => void) {
+    // no-op
+  },
+};
 
-/**
- * Returns a lazily-created, process-wide ioredis client for general use
- * (health checks, caching, etc). BullMQ maintains its own dedicated
- * connection - see src/queues/connection.ts.
- */
-export function getRedisClient(): Redis {
-  if (!sharedClient) {
-    sharedClient = new Redis(buildRedisOptions());
+export function buildRedisOptions(): any {
+  return {};
+}
 
-    sharedClient.on('error', (err) => {
-      logger.error({ err }, 'Redis client error');
-    });
-
-    sharedClient.on('connect', () => {
-      logger.info('Redis client connected');
-    });
-  }
-
-  return sharedClient;
+export function getRedisClient(): DummyRedis {
+  return dummyClient;
 }
 
 export async function closeRedisClient(): Promise<void> {
-  if (sharedClient) {
-    await sharedClient.quit();
-    sharedClient = null;
-  }
+  // no-op
 }

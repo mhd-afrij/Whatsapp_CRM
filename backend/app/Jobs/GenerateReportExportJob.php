@@ -7,9 +7,9 @@ use App\Models\Deal;
 use App\Models\ReportExport;
 use App\Models\Task;
 use App\Models\User;
-use App\Services\AzureBlobService;
 use App\Services\NotificationService;
 use App\Services\ReportService;
+use App\Services\SupabaseStorageService;
 use Carbon\Carbon;
 use Dompdf\Dompdf;
 use Illuminate\Bus\Queueable;
@@ -34,7 +34,7 @@ use Throwable;
  *    selected period (claim-aware).
  *  - full_pdf: a real PDF (dompdf) rendering the same snapshot.
  *
- * Writes to private storage (AzureBlobService, local disk) under
+ * Writes to private storage (SupabaseStorageService, local disk) under
  * `exports/{workspace_id}/...` - exports may contain PII, so they are downloaded
  * through authenticated, user+workspace-scoped controller actions, never public URLs.
  */
@@ -51,7 +51,7 @@ class GenerateReportExportJob implements ShouldQueue
         public readonly ?int $reportExportId = null,
     ) {}
 
-    public function handle(AzureBlobService $azureBlob, ReportService $reportService): void
+    public function handle(SupabaseStorageService $storage, ReportService $reportService): void
     {
         $user = User::query()->find($this->userId);
         if (! $user) {
@@ -77,7 +77,7 @@ class GenerateReportExportJob implements ShouldQueue
                 ? $this->renderPdf($reportData, $headers, $rows)
                 : $this->toCsv($headers, $rows);
 
-            $upload = $azureBlob->uploadContent($payload, $filename, $mime);
+            $upload = $storage->uploadContent($payload, $filename, $mime);
 
             if ($export) {
                 $export->update([

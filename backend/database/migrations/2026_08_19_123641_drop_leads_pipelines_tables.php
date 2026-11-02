@@ -10,32 +10,53 @@ return new class extends Migration
     {
         Schema::disableForeignKeyConstraints();
 
-        // Drop pivot table first
-        Schema::dropIfExists('lead_label');
+        // In PostgreSQL, DROP TABLE requires foreign keys to be dropped first or CASCADE
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('DROP TABLE IF EXISTS "lead_label" CASCADE');
+            DB::statement('DROP TABLE IF EXISTS "lead_activities" CASCADE');
+            DB::statement('DROP TABLE IF EXISTS "leads" CASCADE');
+            DB::statement('DROP TABLE IF EXISTS "pipeline_stages" CASCADE');
+            DB::statement('DROP TABLE IF EXISTS "pipelines" CASCADE');
+        } else {
+            // Drop pivot table first
+            Schema::dropIfExists('lead_label');
 
-        // Drop child tables
-        Schema::dropIfExists('lead_activities');
-        Schema::dropIfExists('leads');
+            // Drop child tables
+            Schema::dropIfExists('lead_activities');
+            Schema::dropIfExists('leads');
 
-        // Drop pipeline stages before pipelines
-        Schema::dropIfExists('pipeline_stages');
-        Schema::dropIfExists('pipelines');
+            // Drop pipeline stages before pipelines
+            Schema::dropIfExists('pipeline_stages');
+            Schema::dropIfExists('pipelines');
+        }
 
-        // Remove lead_id FK columns from other tables
-        Schema::table('deals', function (Blueprint $table) {
-            $table->dropForeign(['lead_id']);
-            $table->dropColumn('lead_id');
-        });
+        // Remove lead_id and pipeline FK columns from other tables if they exist
+        if (Schema::hasColumn('deals', 'lead_id')) {
+            Schema::table('deals', function (Blueprint $table) {
+                if (DB::getDriverName() !== 'pgsql') {
+                    $table->dropForeign(['lead_id']);
+                }
+                $table->dropColumn('lead_id');
+            });
+        }
 
-        Schema::table('tasks', function (Blueprint $table) {
-            $table->dropForeign(['lead_id']);
-            $table->dropColumn('lead_id');
-        });
+        if (Schema::hasColumn('tasks', 'lead_id')) {
+            Schema::table('tasks', function (Blueprint $table) {
+                if (DB::getDriverName() !== 'pgsql') {
+                    $table->dropForeign(['lead_id']);
+                }
+                $table->dropColumn('lead_id');
+            });
+        }
 
-        Schema::table('workspace_settings', function (Blueprint $table) {
-            $table->dropForeign(['default_pipeline_id']);
-            $table->dropColumn('default_pipeline_id');
-        });
+        if (Schema::hasColumn('workspace_settings', 'default_pipeline_id')) {
+            Schema::table('workspace_settings', function (Blueprint $table) {
+                if (DB::getDriverName() !== 'pgsql') {
+                    $table->dropForeign(['default_pipeline_id']);
+                }
+                $table->dropColumn('default_pipeline_id');
+            });
+        }
 
         Schema::enableForeignKeyConstraints();
     }

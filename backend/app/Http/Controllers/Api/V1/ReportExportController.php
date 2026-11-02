@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\GenerateReportExportJob;
 use App\Models\Notification;
 use App\Models\ReportExport;
-use App\Services\AzureBlobService;
+use App\Services\SupabaseStorageService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\Validator;
  */
 class ReportExportController extends Controller
 {
-    public function __construct(protected AzureBlobService $azureBlob) {}
+    public function __construct(protected SupabaseStorageService $storage) {}
 
     private const TYPES = ['contacts', 'deals', 'tasks'];
 
@@ -87,11 +87,11 @@ class ReportExportController extends Controller
 
         $path = $notification->data['file'] ?? null;
 
-        if (! $path || ! $this->azureBlob->exists($path)) {
+        if (! $path || ! $this->storage->exists($path)) {
             return $this->error('Export file not found - it may have expired.', null, 404);
         }
 
-        return response($this->azureBlob->download($path), 200, [
+        return response($this->storage->download($path), 200, [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="'.basename($path).'"',
         ]);
@@ -177,11 +177,11 @@ class ReportExportController extends Controller
             abort(404);
         }
 
-        if (! $this->azureBlob->exists($reportExport->file_path)) {
+        if (! $this->storage->exists($reportExport->file_path)) {
             return $this->error('Export file not found - it may have expired.', null, 404);
         }
 
-        return response($this->azureBlob->download($reportExport->file_path), 200, [
+        return response($this->storage->download($reportExport->file_path), 200, [
             'Content-Type' => $reportExport->mime_type ?? 'application/octet-stream',
             'Content-Disposition' => 'attachment; filename="'.($reportExport->file_name ?? basename($reportExport->file_path)).'"',
         ]);

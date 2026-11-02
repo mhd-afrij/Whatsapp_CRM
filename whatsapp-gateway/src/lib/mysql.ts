@@ -1,7 +1,22 @@
-import mysql, { type Pool, type PoolConnection, type QueryOptions, type ResultSetHeader, type FieldPacket, type ExecuteValues } from 'mysql2/promise';
+import { Pool, type PoolClient, type QueryResult as PgQueryResult } from 'pg';
 import { env } from '../config/env';
 import { logger } from './logger';
 import { computeBackoffDelayMs } from './backoff';
+
+export interface RowDataPacket {
+  [key: string]: any;
+}
+
+export interface ResultSetHeader {
+  affectedRows: number;
+  insertId: number;
+}
+
+export interface PoolConnection {
+  query<T = any>(sql: string, values?: any[]): Promise<[T, any[]]>;
+  execute<T = ResultSetHeader>(sql: string, values?: any[]): Promise<[T]>;
+  release(): void;
+}
 
 interface CircuitBreakerState {
   failures: number;
@@ -28,7 +43,7 @@ function recordFailure(): void {
 
   if (circuitBreaker.failures >= CIRCUIT_BREAKER_THRESHOLD && circuitBreaker.state === 'closed') {
     circuitBreaker.state = 'open';
-    logger.warn({ failures: circuitBreaker.failures }, 'MySQL circuit breaker opened');
+    logger.warn({ failures: circuitBreaker.failures }, 'PostgreSQL circuit breaker opened');
   }
 }
 
@@ -36,7 +51,7 @@ function recordSuccess(): void {
   if (circuitBreaker.state === 'half-open') {
     circuitBreaker.state = 'closed';
     circuitBreaker.failures = 0;
-    logger.info('MySQL circuit breaker closed');
+    logger.info('PostgreSQL circuit breaker closed');
   } else if (circuitBreaker.state === 'closed') {
     circuitBreaker.failures = 0;
   }
@@ -47,7 +62,7 @@ function checkCircuitBreaker(): boolean {
     const timeSinceLastFailure = Date.now() - circuitBreaker.lastFailure;
     if (timeSinceLastFailure >= CIRCUIT_BREAKER_RESET_TIMEOUT_MS) {
       circuitBreaker.state = 'half-open';
-      logger.info('MySQL circuit breaker half-open, allowing test query');
+      logger.info('PostgreSQL circuit breaker half-open, allowing test query');
       return true;
     }
     return false;
@@ -55,100 +70,43 @@ function checkCircuitBreaker(): boolean {
   return true;
 }
 
+export function convertPlaceholders(sql: string): string {
+  let paramIndex = 1;
+  return sql.replace(/\?/g, () => `$${paramIndex++}`);
+}
+
 async function createPool(): Promise<Pool> {
-  const newPool = mysql.createPool({
-    host: env.MYSQL_HOST,
-    port: env.MYSQL_PORT,
-    database: env.MYSQL_DATABASE,
-    user: env.MYSQL_USER,
-    password: env.MYSQL_PASSWORD,
-    waitForConnections: true,
-    connectionLimit: 10,
-    maxIdle: 10,
-    idleTimeout: 60_000,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 10_000,
-    charset: 'utf8mb4',
-  });
+  const host = env.DB_HOST || process.env.PGHOST || '127.0.0.1';
+  const isLocal = host === '127.0.0.1' || host === 'localhost';
 
-  // mysql2's Pool event typing only exposes the handful of pool lifecycle
-  // events; 'error' (an uncaught pool error) is typed via the base emitter.
-  const poolEvents = newPool as unknown as import('node:events').EventEmitter;
-  poolEvents.on('error', (err) => {
-    logger.error({ err, code: (err as { code?: string }).code }, 'MySQL pool error');
-    if ((err as { code?: string }).code === 'PROTOCOL_CONNECTION_LOST' ||
-        (err as { code?: string }).code === 'ECONNRESET' ||
-        (err as { code?: string }).code === 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' ||
-        (err as { code?: string }).code === 'PROTOCOL_ENQUEUE_AFTER_QUIT') {
+  const config: any = env.DATABASE_URL
+    ? { connectionString: env.DATABASE_URL }
+    : {
+        host,
+        port: env.DB_PORT || 5432,
+        database: env.DB_DATABASE || 'postgres',
+        user: env.DB_USERNAME || 'postgres',
+        password: env.DB_PASSWORD || '',
+      };
+
+  if (!isLocal && !config.ssl && process.env.NODE_ENV !== 'test') {
+    config.ssl = { rejectUnauthorized: false };
+  }
+
+  config.max = 10;
+  config.idleTimeoutMillis = 60_000;
+  config.connectionTimeoutMillis = 10_000;
+
+  const newPool = new Pool(config);
+
+  newPool.on('error', (err: any) => {
+    logger.error({ err, code: err?.code }, 'PostgreSQL pool error');
+    if (err?.code === 'ECONNRESET' || err?.code === '57P01' || err?.code === 'ETIMEDOUT') {
       recordFailure();
-      schedulePoolRecreation();
     }
-  });
-
-  newPool.on('connection', () => {
-    logger.debug('MySQL new connection established');
-  });
-
-  newPool.on('acquire', () => {
-    logger.debug('MySQL connection acquired');
-  });
-
-  newPool.on('release', () => {
-    logger.debug('MySQL connection released');
   });
 
   return newPool;
-}
-
-let recreationScheduled = false;
-let recreationPromise: Promise<void> | null = null;
-
-function schedulePoolRecreation(): void {
-  if (recreationScheduled) return;
-  recreationScheduled = true;
-
-  recreationPromise = (async () => {
-    let attempt = 0;
-    let recreated = false;
-    while (!recreated) {
-      attempt += 1;
-      if (!checkCircuitBreaker()) {
-        const waitMs = CIRCUIT_BREAKER_RESET_TIMEOUT_MS - (Date.now() - circuitBreaker.lastFailure);
-        logger.warn({ waitMs }, 'Circuit breaker open, waiting before pool recreation');
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
-        continue;
-      }
-
-      try {
-        logger.info({ attempt }, 'Attempting to recreate MySQL pool');
-        await closeMysqlPoolInternal();
-        const newPool = await createPool();
-        await newPool.query('SELECT 1');
-        pool = newPool;
-        recordSuccess();
-        logger.info('MySQL pool recreated successfully');
-        recreated = true;
-      } catch (err) {
-        recordFailure();
-        const delay = computeBackoffDelayMs(attempt, { baseMs: 2000, maxMs: 60_000 });
-        logger.warn({ err, attempt, delay }, 'Failed to recreate MySQL pool, retrying');
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-    recreationScheduled = false;
-    recreationPromise = null;
-  })();
-}
-
-async function closeMysqlPoolInternal(): Promise<void> {
-  if (pool) {
-    try {
-      await pool.end();
-    } catch (err) {
-      logger.warn({ err }, 'Error closing MySQL pool');
-    }
-    pool = null;
-  }
 }
 
 export async function getMysqlPool(): Promise<Pool> {
@@ -165,11 +123,11 @@ export async function getMysqlPool(): Promise<Pool> {
       await newPool.query('SELECT 1');
       pool = newPool;
       recordSuccess();
-      logger.info('MySQL pool initialized');
+      logger.info('PostgreSQL pool initialized');
       return pool;
     } catch (err) {
       recordFailure();
-      logger.error({ err }, 'Failed to initialize MySQL pool');
+      logger.error({ err }, 'Failed to initialize PostgreSQL pool');
       throw err;
     } finally {
       isInitializing = false;
@@ -181,9 +139,13 @@ export async function getMysqlPool(): Promise<Pool> {
 }
 
 export async function closeMysqlPool(): Promise<void> {
-  await closeMysqlPoolInternal();
-  if (recreationPromise) {
-    await recreationPromise;
+  if (pool) {
+    try {
+      await pool.end();
+    } catch (err) {
+      logger.warn({ err }, 'Error closing PostgreSQL pool');
+    }
+    pool = null;
   }
 }
 
@@ -198,15 +160,13 @@ const DEFAULT_RETRY_OPTIONS: Required<RetryOptions> = {
   maxAttempts: 3,
   baseDelayMs: 1000,
   maxDelayMs: 10_000,
-  retryableCodes: ['PROTOCOL_CONNECTION_LOST', 'ECONNRESET', 'ETIMEDOUT', 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR', 'PROTOCOL_ENQUEUE_AFTER_QUIT', 'ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT'],
+  retryableCodes: ['ECONNRESET', 'ETIMEDOUT', '57P01', '40001', '40P01', 'ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT'],
 };
 
 function isRetryableError(err: unknown, retryableCodes: string[]): boolean {
   if (!err || typeof err !== 'object') return false;
   const code = (err as { code?: string }).code;
-  const errno = (err as { errno?: number }).errno;
   if (code && retryableCodes.includes(code)) return true;
-  if (errno && (errno === 1213 || errno === 1205)) return true;
   return false;
 }
 
@@ -220,7 +180,7 @@ async function executeWithRetry<T>(
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
     try {
       if (!checkCircuitBreaker()) {
-        throw new Error('MySQL circuit breaker is open');
+        throw new Error('PostgreSQL circuit breaker is open');
       }
       const result = await operation();
       recordSuccess();
@@ -233,7 +193,7 @@ async function executeWithRetry<T>(
           computeBackoffDelayMs(attempt, { baseMs: opts.baseDelayMs, maxMs: opts.maxDelayMs }),
           opts.maxDelayMs
         );
-        logger.warn({ err, attempt, delay }, 'MySQL query failed, retrying');
+        logger.warn({ err, attempt, delay }, 'PostgreSQL query failed, retrying');
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
@@ -245,22 +205,83 @@ async function executeWithRetry<T>(
   throw lastError;
 }
 
-export async function query<T extends import('mysql2/promise').QueryResult>(
+export async function query<T = any>(
   sql: string,
-  values?: QueryOptions['values']
-): Promise<[T, FieldPacket[]]> {
-  const pool = await getMysqlPool();
-  return executeWithRetry(() => pool.query<T>(sql, values));
+  values?: any[]
+): Promise<[T, any[]]> {
+  const p = await getMysqlPool();
+  const convertedSql = convertPlaceholders(sql);
+  const result = await executeWithRetry(() => p.query(convertedSql, values));
+  return [result.rows as unknown as T, []];
 }
 
-export async function execute(sql: string, values?: ExecuteValues): Promise<ResultSetHeader> {
-  const pool = await getMysqlPool();
-  return executeWithRetry(() => pool.execute<ResultSetHeader>(sql, values).then(([header]) => header));
+export async function execute(sql: string, values?: any[]): Promise<ResultSetHeader> {
+  const p = await getMysqlPool();
+  let convertedSql = convertPlaceholders(sql);
+
+  // If INSERT statement and does not have RETURNING clause, add RETURNING id to capture insertId
+  const isInsert = /^\s*INSERT\s+INTO/i.test(convertedSql);
+  if (isInsert && !/RETURNING/i.test(convertedSql)) {
+    convertedSql += ' RETURNING id';
+  }
+
+  const result = await executeWithRetry(async () => {
+    try {
+      return await p.query(convertedSql, values);
+    } catch (err: any) {
+      // If RETURNING id failed because column 'id' doesn't exist, retry without it
+      if (isInsert && err?.code === '42703' && convertedSql.endsWith(' RETURNING id')) {
+        const fallbackSql = convertedSql.slice(0, -' RETURNING id'.length);
+        return await p.query(fallbackSql, values);
+      }
+      throw err;
+    }
+  });
+
+  const insertId = result.rows && result.rows[0]?.id ? Number(result.rows[0].id) : 0;
+  return {
+    affectedRows: result.rowCount ?? 0,
+    insertId,
+  };
 }
 
 export async function getConnection(): Promise<PoolConnection> {
-  const pool = await getMysqlPool();
-  return executeWithRetry(() => pool.getConnection());
+  const p = await getMysqlPool();
+  const client: PoolClient = await executeWithRetry(() => p.connect());
+
+  return {
+    async query<T = any>(sql: string, values?: any[]): Promise<[T, any[]]> {
+      const convertedSql = convertPlaceholders(sql);
+      const res = await client.query(convertedSql, values);
+      return [res.rows as unknown as T, []];
+    },
+    async execute<T = ResultSetHeader>(sql: string, values?: any[]): Promise<[T]> {
+      let convertedSql = convertPlaceholders(sql);
+      const isInsert = /^\s*INSERT\s+INTO/i.test(convertedSql);
+      if (isInsert && !/RETURNING/i.test(convertedSql)) {
+        convertedSql += ' RETURNING id';
+      }
+      let res: PgQueryResult;
+      try {
+        res = await client.query(convertedSql, values);
+      } catch (err: any) {
+        if (isInsert && err?.code === '42703' && convertedSql.endsWith(' RETURNING id')) {
+          const fallbackSql = convertedSql.slice(0, -' RETURNING id'.length);
+          res = await client.query(fallbackSql, values);
+        } else {
+          throw err;
+        }
+      }
+      const header: ResultSetHeader = {
+        affectedRows: res.rowCount ?? 0,
+        insertId: res.rows && res.rows[0]?.id ? Number(res.rows[0].id) : 0,
+      };
+      return [header as unknown as T];
+    },
+    release(): void {
+      client.release();
+    },
+  };
 }
 
 export async function transaction<T>(
@@ -269,15 +290,12 @@ export async function transaction<T>(
 ): Promise<T> {
   const conn = await getConnection();
   try {
-    await conn.beginTransaction();
-    const result = await executeWithRetry(
-      () => callback(conn),
-      options
-    );
-    await conn.commit();
+    await (conn as any).query('BEGIN');
+    const result = await executeWithRetry(() => callback(conn), options);
+    await (conn as any).query('COMMIT');
     return result;
   } catch (err) {
-    await conn.rollback().catch(() => undefined);
+    await (conn as any).query('ROLLBACK').catch(() => undefined);
     throw err;
   } finally {
     conn.release();

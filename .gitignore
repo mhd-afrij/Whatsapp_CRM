@@ -3,9 +3,12 @@
 .env.local
 .env.*.local
 
-# Editor / OS
+# Editor / Tooling / OS
 .vscode/
 .idea/
+.claude/
+.freebuff/
+.opencode/
 .DS_Store
 Thumbs.db
 *.swp
@@ -18,24 +21,32 @@ dist-ssr/
 coverage/
 
 # Backend (Laravel / PHP) runtime artifacts
+backend/vendor/
+backend/node_modules/
 backend/storage/logs/
 backend/storage/framework/cache/
 backend/storage/framework/sessions/
 backend/storage/framework/views/
+backend/storage/backups/
 backend/bootstrap/cache/*.php
 
 # WhatsApp gateway
 whatsapp-gateway/node_modules/
+whatsapp-gateway/dist/
+whatsapp-gateway/sessions/
 
-# Databases / runtime data
+# Frontend (Next.js)
+frontend/.next/
+frontend/out/
+
+# Databases / runtime data / backups
 dump.rdb
 *.sqlite
 *.sqlite3
 test-results/
 media-storage/
-
-# Leftover tooling artifacts
-.codex-pr4-resolved/
+backups/
+storage/backups/
 
 # Graphify knowledge-graph build artifacts (AST caches, generated graph)
 graphify-out/
@@ -43,23 +54,10 @@ graphify-out/
 # Logs
 *.log
 
-# Generated dependency / build caches (regenerated from lock files)
-backend/vendor/
-backend/node_modules/
-
 # Test runner / tool caches
 .phpunit.result.cache
 .phpunit.result.cache.bak
 *.tsbuildinfo
-
-# DB backup dumps (created by infrastructure/scripts/mysql-backup.sh)
-storage/backups/
-
-# Runtime WhatsApp media and session/auth state
-storage/media/*
-!storage/media/.gitkeep
-storage/sessions/*
-!storage/sessions/.gitkeep
 
 # Ad-hoc temp/scratch files
 /tmp-*

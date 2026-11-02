@@ -1,10 +1,9 @@
-import { BlobServiceClient, StorageSharedKeyCredential } from '@azure/storage-blob';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env } from '../config/env';
 
 /**
- * Object-storage abstraction persisting message media to either the
- * gateway's local disk (MEDIA_LOCAL_STORAGE_DIR) or Azure Blob Storage
- * (STORAGE_PROVIDER=azure), selected via env. Callers only ever receive/
+ * Object-storage abstraction persisting message media to Supabase Storage
+ * (bucket: whatsapp-media), selected via env. Callers only ever receive/
  * store a storage KEY - never a raw public URL - per docs/04-database-design.md
  * (message_media.storage_path).
  */
@@ -15,64 +14,70 @@ export interface StorageClient {
   getObject(key: string): Promise<Buffer>;
 }
 
-class AzureBlobStorageClient implements StorageClient {
-  private readonly container;
+export class SupabaseStorageClient implements StorageClient {
+  private readonly supabase: SupabaseClient;
+  private readonly bucket: string;
 
-  constructor(config: {
-    connectionString?: string;
-    accountName?: string;
-    accountKey?: string;
-    containerName: string;
-    baseUrl?: string;
-  }) {
-    const client = config.connectionString
-      ? BlobServiceClient.fromConnectionString(config.connectionString)
-      : new BlobServiceClient(
-          config.baseUrl!,
-          new StorageSharedKeyCredential(config.accountName!, config.accountKey!),
-        );
-    this.container = client.getContainerClient(config.containerName);
+  constructor(config: { url: string; key: string; bucket: string }) {
+    this.supabase = createClient(config.url, config.key, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+    this.bucket = config.bucket;
   }
 
   async putObject(key: string, body: Buffer, contentType: string): Promise<string> {
-    await this.container.getBlockBlobClient(key).upload(body, body.length, {
-      blobHTTPHeaders: { blobContentType: contentType },
-    });
+    const { error } = await this.supabase.storage
+      .from(this.bucket)
+      .upload(key, body, {
+        contentType,
+        upsert: true,
+      });
+
+    if (error) {
+      throw error;
+    }
+
     return key;
   }
 
   async getObject(key: string): Promise<Buffer> {
-    return await this.container.getBlockBlobClient(key).downloadToBuffer();
+    const { data, error } = await this.supabase.storage
+      .from(this.bucket)
+      .download(key);
+
+    if (error || !data) {
+      throw error || new Error(`Failed to download object: ${key}`);
+    }
+
+    const arrayBuffer = await data.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 }
 
 /** Provider-pure client creation (no network on construction). */
-export function createStorageClient(provider: string = 'azure'): StorageClient {
-  if (provider !== 'azure') {
-    throw new Error(`Storage provider '${provider}' is not supported. Azure Blob Storage is the exclusive persistent storage backend.`);
-  }
-
-  const {
-    AZURE_STORAGE_CONNECTION_STRING,
-    AZURE_STORAGE_ACCOUNT_NAME,
-    AZURE_STORAGE_ACCOUNT_KEY,
-    AZURE_STORAGE_CONTAINER_NAME,
-    AZURE_STORAGE_URL,
-  } = env;
-  if (!AZURE_STORAGE_CONTAINER_NAME) {
-    throw new Error('STORAGE_PROVIDER=azure requires AZURE_STORAGE_CONTAINER_NAME');
-  }
-  if (!AZURE_STORAGE_CONNECTION_STRING && (!AZURE_STORAGE_ACCOUNT_NAME || !AZURE_STORAGE_ACCOUNT_KEY || !AZURE_STORAGE_URL)) {
+export function createStorageClient(provider: string = 'supabase'): StorageClient {
+  if (provider !== 'supabase') {
     throw new Error(
-      'STORAGE_PROVIDER=azure requires AZURE_STORAGE_CONNECTION_STRING, or AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY + AZURE_STORAGE_URL',
+      `Storage provider '${provider}' is not supported. Supabase Storage is the exclusive persistent storage backend.`,
     );
   }
-  return new AzureBlobStorageClient({
-    connectionString: AZURE_STORAGE_CONNECTION_STRING || undefined,
-    accountName: AZURE_STORAGE_ACCOUNT_NAME || undefined,
-    accountKey: AZURE_STORAGE_ACCOUNT_KEY || undefined,
-    containerName: AZURE_STORAGE_CONTAINER_NAME,
-    baseUrl: AZURE_STORAGE_URL || undefined,
+
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET } = env;
+
+  if (!SUPABASE_URL) {
+    throw new Error('STORAGE_PROVIDER=supabase requires SUPABASE_URL');
+  }
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('STORAGE_PROVIDER=supabase requires SUPABASE_SERVICE_ROLE_KEY');
+  }
+
+  return new SupabaseStorageClient({
+    url: SUPABASE_URL,
+    key: SUPABASE_SERVICE_ROLE_KEY,
+    bucket: SUPABASE_STORAGE_BUCKET || 'whatsapp-media',
   });
 }
 

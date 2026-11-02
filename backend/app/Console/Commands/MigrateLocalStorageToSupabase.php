@@ -2,26 +2,25 @@
 
 namespace App\Console\Commands;
 
-use App\Services\AzureBlobService;
+use App\Services\SupabaseStorageService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
  * Migration command to inventory and upload any historical local user files
- * (workspace logos, report exports) to Azure Blob Storage idempotently.
+ * (workspace logos, report exports) to Supabase Storage idempotently.
  *
  * Usage:
- *   php artisan storage:migrate-to-azure [--dry-run]
+ *   php artisan storage:migrate-to-supabase [--dry-run]
  */
-class MigrateLocalStorageToAzure extends Command
+class MigrateLocalStorageToSupabase extends Command
 {
-    protected $signature = 'storage:migrate-to-azure {--dry-run : Inventory and verify files without uploading}';
+    protected $signature = 'storage:migrate-to-supabase {--dry-run : Inventory and verify files without uploading}';
 
-    protected $description = 'Idempotently migrate historical local application files to Azure Blob Storage';
+    protected $description = 'Idempotently migrate historical local application files to Supabase Storage';
 
-    public function handle(AzureBlobService $azure): int
+    public function handle(SupabaseStorageService $storage): int
     {
         $dryRun = (bool) $this->option('dry-run');
 
@@ -58,18 +57,16 @@ class MigrateLocalStorageToAzure extends Command
                 $size = $file->getSize();
                 $this->line(" - Processing: {$relativePath} ({$size} bytes)");
 
-                // Target Azure path matches relative path
                 $targetPath = $relativePath;
 
-                // Check if already in Azure
-                if ($azure->exists($targetPath)) {
-                    $this->comment("   Already present in Azure: {$targetPath} (skipped)");
+                if ($storage->exists($targetPath)) {
+                    $this->comment("   Already present in Supabase: {$targetPath} (skipped)");
                     $totalSkipped++;
                     continue;
                 }
 
                 if ($dryRun) {
-                    $this->info("   [Dry Run] Would upload: {$relativePath} -> Azure [{$targetPath}]");
+                    $this->info("   [Dry Run] Would upload: {$relativePath} -> Supabase [{$targetPath}]");
                     $totalMigrated++;
                     continue;
                 }
@@ -78,10 +75,9 @@ class MigrateLocalStorageToAzure extends Command
                     $content = File::get($file->getRealPath());
                     $mime = File::mimeType($file->getRealPath()) ?: 'application/octet-stream';
 
-                    $res = $azure->uploadContent($content, $targetPath, $mime);
+                    $storage->uploadContent($content, $targetPath, $mime);
 
-                    // Verify size
-                    if ($azure->exists($targetPath)) {
+                    if ($storage->exists($targetPath)) {
                         $this->info("   Successfully uploaded and verified: {$targetPath}");
                         $totalMigrated++;
                     } else {
@@ -96,7 +92,7 @@ class MigrateLocalStorageToAzure extends Command
         }
 
         $this->newLine();
-        $this->info("Migration Summary: {$totalMigrated} migrated, {$totalSkipped} already in Azure, {$totalFailed} failed.");
+        $this->info("Migration Summary: {$totalMigrated} migrated, {$totalSkipped} already in Supabase, {$totalFailed} failed.");
 
         return $totalFailed > 0 ? self::FAILURE : self::SUCCESS;
     }

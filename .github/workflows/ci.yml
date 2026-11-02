@@ -20,21 +20,20 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    # phpunit.xml and .env.testing both pin MySQL, so the suite cannot run
-    # without one. Without this service every DB-backed test errors on connect.
     services:
-      mysql:
-        image: mysql:8.0
+      postgres:
+        image: postgres:15-alpine
         env:
-          MYSQL_ALLOW_EMPTY_PASSWORD: yes
-          MYSQL_DATABASE: crm_whatsapp_test
+          POSTGRES_DB: crm_whatsapp_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
         ports:
-          - 3306:3306
+          - 5432:5432
         options: >-
-          --health-cmd "mysqladmin ping -h localhost"
+          --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +41,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.2"
-          extensions: mbstring, pdo_mysql, pdo_sqlite, zip, gd, bcmath, opcache
+          extensions: mbstring, pdo_pgsql, pgsql, pdo_sqlite, zip, gd, bcmath, opcache
           coverage: none
 
       - name: Copy .env
@@ -58,6 +57,13 @@ jobs:
         run: vendor/bin/pint --test
 
       - name: Run tests
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: crm_whatsapp_test
+          DB_USERNAME: postgres
+          DB_PASSWORD: password
         run: php artisan test
 
   gateway:
@@ -67,27 +73,19 @@ jobs:
       run:
         working-directory: whatsapp-gateway
     services:
-      redis:
-        image: redis:7-alpine
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: crm_whatsapp
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
         ports:
-          - 6379:6379
+          - 5432:5432
         options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ALLOW_EMPTY_PASSWORD: yes
-          MYSQL_DATABASE: crm_whatsapp
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h localhost"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -111,19 +109,20 @@ jobs:
         env:
           NODE_ENV: test
           PORT: 4000
-          REDIS_HOST: 127.0.0.1
-          REDIS_PORT: 6379
-          MYSQL_HOST: 127.0.0.1
-          MYSQL_PORT: 3306
-          MYSQL_DATABASE: crm_whatsapp
-          MYSQL_USER: root
-          MYSQL_PASSWORD: ""
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGDATABASE: crm_whatsapp
+          PGUSER: postgres
+          PGPASSWORD: password
+          DATABASE_URL: postgresql://postgres:password@127.0.0.1:5432/crm_whatsapp
+          SUPABASE_STORAGE_URL: https://mock.supabase.co
+          SUPABASE_SERVICE_KEY: mock-service-key-for-ci
           LARAVEL_INTERNAL_API_URL: http://localhost:8000/api/internal
           INTERNAL_SHARED_SECRET: ci-test-secret
           SOCKET_CORS_ORIGIN: http://localhost:3000
           WHATSAPP_SESSION_DIR: ./sessions
           INTERNAL_GATEWAY_TOKEN: ci-test-secret
-          CREDENTIALS_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000"
+          CREDENTIALS_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
         run: npm test
 
       - name: Build

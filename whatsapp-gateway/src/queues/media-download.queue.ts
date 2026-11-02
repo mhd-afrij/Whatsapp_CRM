@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
-import { Queue, Worker, type Job } from 'bullmq';
-import { getQueueConnectionOptions } from './connection';
+import { Queue, Worker, type Job, getQueueConnectionOptions } from './connection';
 import { logger } from '../lib/logger';
 import { env } from '../config/env';
 import { getStorageClient, getStorageProviderName } from '../lib/storage';

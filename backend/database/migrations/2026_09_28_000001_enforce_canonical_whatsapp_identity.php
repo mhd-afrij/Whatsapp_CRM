@@ -216,20 +216,37 @@ return new class extends Migration
                 // Pivot rows are unique per conversation, so a dupe link that the
                 // keeper already has is redundant and goes; anything unique to
                 // the dupe is carried over.
-                DB::statement(
-                    'DELETE cl FROM conversation_label cl
-                       INNER JOIN conversation_label k
-                         ON k.conversation_id = ? AND k.label_id = cl.label_id
-                      WHERE cl.conversation_id = ?',
-                    [$keeper, $dupe]
-                );
-                DB::statement(
-                    'DELETE cp FROM conversation_participants cp
-                       INNER JOIN conversation_participants k
-                         ON k.conversation_id = ? AND k.user_id = cp.user_id
-                      WHERE cp.conversation_id = ?',
-                    [$keeper, $dupe]
-                );
+                if (DB::getDriverName() === 'pgsql') {
+                    DB::statement(
+                        'DELETE FROM conversation_label cl
+                           USING conversation_label k
+                          WHERE k.conversation_id = ? AND k.label_id = cl.label_id
+                            AND cl.conversation_id = ?',
+                        [$keeper, $dupe]
+                    );
+                    DB::statement(
+                        'DELETE FROM conversation_participants cp
+                           USING conversation_participants k
+                          WHERE k.conversation_id = ? AND k.user_id = cp.user_id
+                            AND cp.conversation_id = ?',
+                        [$keeper, $dupe]
+                    );
+                } else {
+                    DB::statement(
+                        'DELETE cl FROM conversation_label cl
+                           INNER JOIN conversation_label k
+                             ON k.conversation_id = ? AND k.label_id = cl.label_id
+                          WHERE cl.conversation_id = ?',
+                        [$keeper, $dupe]
+                    );
+                    DB::statement(
+                        'DELETE cp FROM conversation_participants cp
+                           INNER JOIN conversation_participants k
+                             ON k.conversation_id = ? AND k.user_id = cp.user_id
+                          WHERE cp.conversation_id = ?',
+                        [$keeper, $dupe]
+                    );
+                }
 
                 foreach (['conversation_label', 'conversation_participants', ...self::CONVERSATION_CHILD_TABLES] as $table) {
                     DB::update(
@@ -242,26 +259,49 @@ return new class extends Migration
                 // the messages separately. Folding has to add them or the
                 // customer's messages silently vanish from the badge. The same
                 // goes for the thread's most recent message.
-                DB::statement(
-                    'UPDATE conversations k
-                        INNER JOIN conversations d ON d.id = ?
-                        SET k.unread_count = k.unread_count + d.unread_count,
-                            k.last_message_at = GREATEST(
-                                COALESCE(k.last_message_at, \'1970-01-01\'),
-                                COALESCE(d.last_message_at, \'1970-01-01\')
-                            ),
-                            k.last_message_preview = CASE
-                                WHEN COALESCE(d.last_message_at, \'1970-01-01\') > COALESCE(k.last_message_at, \'1970-01-01\')
-                                    THEN d.last_message_preview
-                                ELSE k.last_message_preview
-                            END,
-                            k.contact_id = COALESCE(k.contact_id, d.contact_id),
-                            k.assigned_user_id = COALESCE(k.assigned_user_id, d.assigned_user_id),
-                            k.assigned_team_id = COALESCE(k.assigned_team_id, d.assigned_team_id),
-                            k.updated_at = NOW()
-                      WHERE k.id = ?',
-                    [$dupe, $keeper]
-                );
+                if (DB::getDriverName() === 'pgsql') {
+                    DB::statement(
+                        'UPDATE conversations k
+                            SET unread_count = k.unread_count + d.unread_count,
+                                last_message_at = GREATEST(
+                                    COALESCE(k.last_message_at, \'1970-01-01\'::timestamp),
+                                    COALESCE(d.last_message_at, \'1970-01-01\'::timestamp)
+                                ),
+                                last_message_preview = CASE
+                                    WHEN COALESCE(d.last_message_at, \'1970-01-01\'::timestamp) > COALESCE(k.last_message_at, \'1970-01-01\'::timestamp)
+                                        THEN d.last_message_preview
+                                    ELSE k.last_message_preview
+                                END,
+                                contact_id = COALESCE(k.contact_id, d.contact_id),
+                                assigned_user_id = COALESCE(k.assigned_user_id, d.assigned_user_id),
+                                assigned_team_id = COALESCE(k.assigned_team_id, d.assigned_team_id),
+                                updated_at = NOW()
+                            FROM conversations d
+                            WHERE d.id = ? AND k.id = ?',
+                        [$dupe, $keeper]
+                    );
+                } else {
+                    DB::statement(
+                        'UPDATE conversations k
+                            INNER JOIN conversations d ON d.id = ?
+                            SET k.unread_count = k.unread_count + d.unread_count,
+                                last_message_at = GREATEST(
+                                    COALESCE(k.last_message_at, \'1970-01-01\'),
+                                    COALESCE(d.last_message_at, \'1970-01-01\')
+                                ),
+                                last_message_preview = CASE
+                                    WHEN COALESCE(d.last_message_at, \'1970-01-01\') > COALESCE(k.last_message_at, \'1970-01-01\')
+                                        THEN d.last_message_preview
+                                    ELSE k.last_message_preview
+                                END,
+                                contact_id = COALESCE(k.contact_id, d.contact_id),
+                                assigned_user_id = COALESCE(k.assigned_user_id, d.assigned_user_id),
+                                assigned_team_id = COALESCE(k.assigned_team_id, d.assigned_team_id),
+                                updated_at = NOW()
+                          WHERE k.id = ?',
+                        [$dupe, $keeper]
+                    );
+                }
 
                 DB::delete('DELETE FROM conversations WHERE id = ?', [$dupe]);
             }
@@ -279,6 +319,13 @@ return new class extends Migration
 
     private function indexExists(string $table, string $index): bool
     {
+        if (DB::getDriverName() === 'pgsql') {
+            return DB::selectOne(
+                'SELECT 1 AS ok FROM pg_indexes WHERE tablename = ? AND indexname = ? LIMIT 1',
+                [$table, $index]
+            ) !== null;
+        }
+
         return DB::selectOne(
             'SELECT 1 AS ok FROM information_schema.STATISTICS
              WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? LIMIT 1',
@@ -288,6 +335,14 @@ return new class extends Migration
 
     private function columnExists(string $table, string $column): bool
     {
+        if (DB::getDriverName() === 'pgsql') {
+            return DB::selectOne(
+                'SELECT 1 AS ok FROM information_schema.columns
+                 WHERE table_name = ? AND column_name = ? LIMIT 1',
+                [$table, $column]
+            ) !== null;
+        }
+
         return DB::selectOne(
             'SELECT 1 AS ok FROM information_schema.COLUMNS
              WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1',

@@ -2,10 +2,10 @@ import type { Server as HttpServer } from 'node:http';
 import { env } from './config/env';
 import { logger } from './lib/logger';
 import { createApp } from './app';
-import { closeRedisClient } from './lib/redis';
 import { closeMysqlPool } from './lib/mysql';
 import { createSendMessageWorker, sendMessageQueue } from './queues/send-message.queue';
 import { createMediaDownloadWorker, mediaDownloadQueue } from './queues/media-download.queue';
+import { stopBoss } from './queues/connection';
 import { createSocketServer, closeSocketServer } from './lib/socket-server';
 import { markShuttingDown } from './lib/lifecycle';
 import { drainWorkersAndStopManagers } from './lib/shutdown';
@@ -14,12 +14,10 @@ import { connectionRegistry } from './whatsapp/manager-instance';
 async function main() {
   const app = createApp();
 
-  // Surface the storage target at boot so Azure Blob Storage configuration
-  // is verified and logged immediately.
   logger.info(
     {
       storageProvider: env.STORAGE_PROVIDER,
-      storageContainer: env.AZURE_STORAGE_CONTAINER_NAME,
+      storageBucket: env.SUPABASE_STORAGE_BUCKET,
     },
     'whatsapp-gateway storage target resolved',
   );
@@ -133,7 +131,7 @@ async function main() {
       await Promise.allSettled([
         sendMessageQueue.close(),
         mediaDownloadQueue.close(),
-        closeRedisClient(),
+        stopBoss(),
         closeMysqlPool(),
       ]);
 

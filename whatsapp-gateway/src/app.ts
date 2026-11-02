@@ -1,5 +1,4 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { getRedisClient } from './lib/redis';
 import { getMysqlPool, isHealthy } from './lib/mysql';
 import { logger } from './lib/logger';
 import { createInternalWhatsappRouter } from './routes/internal-whatsapp.routes';
@@ -52,27 +51,20 @@ export function createApp() {
     res.status(200).json({ status: 'ok' });
   });
 
-  // Readiness: process is up AND able to serve traffic (Redis + MySQL reachable).
+  // Readiness: process is up AND able to serve traffic (PostgreSQL reachable).
   app.get('/readyz', async (_req: Request, res: Response) => {
-    const checks: Record<string, 'ok' | 'error'> = { redis: 'error', mysql: 'error' };
-
-    try {
-      const pong = await getRedisClient().ping();
-      checks.redis = pong === 'PONG' ? 'ok' : 'error';
-    } catch (err) {
-      logger.error({ err }, 'Readiness check: Redis ping failed');
-    }
+    const checks: Record<string, 'ok' | 'error'> = { database: 'error' };
 
     try {
       if (isHealthy()) {
         const pool = await getMysqlPool();
         await pool.query('SELECT 1');
-        checks.mysql = 'ok';
+        checks.database = 'ok';
       } else {
-        logger.warn('Readiness check: MySQL circuit breaker open');
+        logger.warn('Readiness check: database circuit breaker open');
       }
     } catch (err) {
-      logger.error({ err }, 'Readiness check: MySQL query failed');
+      logger.error({ err }, 'Readiness check: database query failed');
     }
 
     const isReady = Object.values(checks).every((v) => v === 'ok');

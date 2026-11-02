@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ResultSetHeader } from 'mysql2/promise';
+import type { ResultSetHeader } from '../lib/mysql';
 
 /** Captures the SQL+values handed to the (mocked) mysql layer per call. */
 let calls: { sql: string; values?: unknown[] }[] = [];

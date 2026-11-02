@@ -1,5 +1,4 @@
-import type { RowDataPacket } from 'mysql2/promise';
-import { query, execute } from '../lib/mysql';
+import { query, execute, type RowDataPacket } from '../lib/mysql';
 
 /**
  * Data-access layer for `workspace_sync_assignments` - a lease-based session

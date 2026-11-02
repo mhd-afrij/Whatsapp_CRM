@@ -1,0 +1,27 @@
+# Root .dockerignore
+.git
+.github
+.idea
+.vscode
+*.log
+.env
+.env.*
+!.env.example
+
+# Service local dependencies and build outputs
+**/node_modules
+**/vendor
+**/.next
+**/dist
+**/coverage
+**/sessions/*
+!**/sessions/.gitkeep
+**/storage/logs/*
+!**/storage/logs/.gitignore
+**/storage/framework/cache/*
+!**/storage/framework/cache/.gitignore
+**/storage/framework/sessions/*
+!**/storage/framework/sessions/.gitignore
+**/storage/framework/views/*
+!**/storage/framework/views/.gitignore
+

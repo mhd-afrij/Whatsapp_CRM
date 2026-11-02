@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { RowDataPacket } from 'mysql2/promise';
-import { query, execute } from '../lib/mysql';
+import { query, execute, type RowDataPacket } from '../lib/mysql';
 import { encryptCredentialValue, decryptCredentialValue } from '../lib/crypto';
 import { logger } from '../lib/logger';
 
@@ -201,7 +200,7 @@ export class SessionRepository {
       await execute(
         `INSERT INTO whatsapp_session_credentials (whatsapp_session_id, key_name, value, created_at, updated_at)
          VALUES (?, ?, ?, NOW(), NOW())
-         ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()`,
+         ON CONFLICT (whatsapp_session_id, key_name) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
         [sessionId, file, encrypted],
       );
     }

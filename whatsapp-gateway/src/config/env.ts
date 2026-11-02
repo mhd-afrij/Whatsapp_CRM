@@ -2,14 +2,6 @@ import dotenv from 'dotenv';
 import os from 'node:os';
 import { z } from 'zod';
 
-// In tests (vitest) the environment must be DETERMINISTIC: vitest.setup.ts
-// pins every required variable explicitly, and individual tests manipulate
-// MEDIA_* variables directly. Re-reading the developer's .env here
-// (dotenv does not override set vars, but DOES repopulate deleted ones) made
-// storage nondeterministic - e.g. changing MEDIA_LOCAL_STORAGE_DIR in a test
-// was silently undone by this line re-loading it from .env, breaking
-// local-file expectations. Skipping dotenv under NODE_ENV=test changes
-// nothing in dev/prod.
 if (process.env.NODE_ENV !== 'test') {
   dotenv.config();
 }
@@ -18,16 +10,13 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
-  REDIS_HOST: z.string().min(1, 'REDIS_HOST is required'),
-  REDIS_PORT: z.coerce.number().int().positive(),
-  REDIS_USERNAME: z.string().optional(),
-  REDIS_PASSWORD: z.string().optional(),
-
-  MYSQL_HOST: z.string().min(1, 'MYSQL_HOST is required'),
-  MYSQL_PORT: z.coerce.number().int().positive(),
-  MYSQL_DATABASE: z.string().min(1, 'MYSQL_DATABASE is required'),
-  MYSQL_USER: z.string().min(1, 'MYSQL_USER is required'),
-  MYSQL_PASSWORD: z.string().default(''),
+  // PostgreSQL / Supabase Database Configuration
+  DATABASE_URL: z.string().optional(),
+  DB_HOST: z.string().optional(),
+  DB_PORT: z.coerce.number().int().positive().default(5432),
+  DB_DATABASE: z.string().default('postgres'),
+  DB_USERNAME: z.string().default('postgres'),
+  DB_PASSWORD: z.string().default(''),
 
   LARAVEL_INTERNAL_API_URL: z.string().url('LARAVEL_INTERNAL_API_URL must be a valid URL'),
   INTERNAL_SHARED_SECRET: z.string().min(1, 'INTERNAL_SHARED_SECRET is required'),
@@ -42,35 +31,13 @@ const envSchema = z.object({
 
   WHATSAPP_WORKSPACE_ID: z.coerce.number().int().positive().default(1),
 
-  // How many WhatsApp accounts may restore (credential read + WS connect)
-  // concurrently on gateway boot. Bounded to avoid a thundering herd when a
-  // workspace holds many connections (Phase 6.5).
   STARTUP_RESTORE_CONCURRENCY: z.coerce.number().int().positive().default(3),
 
-  // Phase 6.2/6.3 - per-account reconnect policy. Exposed as configuration so
-  // operators tune the storm-protection curve per deployment instead of
-  // editing magic constants inside the lifecycle code:
-  //   delay = min(base * 2^(attempt-1), max) + random jitter
-  // The jitter is what stops 100 accounts that disconnected together from all
-  // reconnecting in the same tick.
   WHATSAPP_RECONNECT_BASE_DELAY_MS: z.coerce.number().int().positive().default(2_000),
-
-  // Hard ceiling for the reconnect backoff so a long outage never produces an
-  // unbounded wait. Attempts beyond WHATSAPP_RECONNECT_MAX_ATTEMPTS stop
-  // automatic reconnection until an operator acts (Phase 6.3).
   WHATSAPP_RECONNECT_MAX_DELAY_MS: z.coerce.number().int().positive().default(5 * 60_000),
   WHATSAPP_RECONNECT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   WHATSAPP_RECONNECT_JITTER_RATIO: z.coerce.number().min(0).max(1).default(0.2),
-
-  // Phase 6.2 - Baileys' restartRequired signal is a routine "reconnect me now"
-  // (e.g. right after pairing), not a failure. It bypasses the backoff curve and
-  // reconnects after this short pause so we never wait out an exponential delay
-  // for something WhatsApp explicitly asked to be restarted.
   WHATSAPP_RESTART_REQUIRED_DELAY_MS: z.coerce.number().int().nonnegative().default(250),
-
-  // Phase 6.4 - how long a generated QR payload stays valid for one account.
-  // Each account owns its own QR/TTL (the account context exposes qrExpiresAt
-  // per account), so this is a policy value, not a shared clock.
   WHATSAPP_QR_TTL_MS: z.coerce.number().int().positive().default(60_000),
 
   SESSION_LOCK_ENABLED: z
@@ -96,75 +63,41 @@ const envSchema = z.object({
 
   MEDIA_LOCAL_STORAGE_DIR: z.string().default('./media-storage'),
 
-  STORAGE_PROVIDER: z.literal('azure').default('azure'),
-
-  // Azure Blob Storage (required). Auth via
-  // AZURE_STORAGE_CONNECTION_STRING when present, else account key
-  // (AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY). AZURE_STORAGE_URL
-  // is the account base URL, e.g. https://<account>.blob.core.windows.net.
-  AZURE_STORAGE_CONNECTION_STRING: z.string().default(''),
-  AZURE_STORAGE_ACCOUNT_NAME: z.string().default(''),
-  AZURE_STORAGE_ACCOUNT_KEY: z.string().default(''),
-  AZURE_STORAGE_CONTAINER_NAME: z.string().default(''),
-  AZURE_STORAGE_URL: z.string().default(''),
+  // Supabase Storage Configuration
+  STORAGE_PROVIDER: z.literal('supabase').default('supabase'),
+  SUPABASE_URL: z.string().default(''),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().default(''),
+  SUPABASE_STORAGE_BUCKET: z.string().default('whatsapp-media'),
 
   SEND_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(1),
   SEND_RATE_LIMIT_DURATION_MS: z.coerce.number().int().positive().default(1000),
 })
-  // Storage config drift guard. createStorageClient() already refuses to build
-  // an Azure client without credentials, but that check only runs on the first
-  // media operation - a gateway booted with STORAGE_PROVIDER=azure and no
-  // credentials looks healthy, then silently fails every download/send hours
-  // later. Validate here so the container refuses to start instead.
   .superRefine((value, ctx) => {
-    if (value.STORAGE_PROVIDER !== 'azure') return;
-
-    const hasSharedKey = Boolean(
-      value.AZURE_STORAGE_ACCOUNT_NAME && value.AZURE_STORAGE_ACCOUNT_KEY && value.AZURE_STORAGE_URL,
-    );
-
-    if (!value.AZURE_STORAGE_CONNECTION_STRING && !hasSharedKey) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['STORAGE_PROVIDER'],
-        message:
-          'STORAGE_PROVIDER=azure requires AZURE_STORAGE_CONNECTION_STRING, or AZURE_STORAGE_ACCOUNT_NAME + AZURE_STORAGE_ACCOUNT_KEY + AZURE_STORAGE_URL',
-      });
-    }
-
-    if (!value.AZURE_STORAGE_CONTAINER_NAME) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['AZURE_STORAGE_CONTAINER_NAME'],
-        message: 'STORAGE_PROVIDER=azure requires AZURE_STORAGE_CONTAINER_NAME',
-      });
-    }
-
-    const configuredHost = (() => {
-      try {
-        return new URL(value.AZURE_STORAGE_URL).hostname.toLowerCase();
-      } catch {
-        return '';
-      }
-    })();
-    if (value.AZURE_STORAGE_ACCOUNT_NAME && configuredHost) {
-      const expectedHost = `${value.AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net`.toLowerCase();
-      if (configuredHost !== expectedHost) {
+    // Database requirement check
+    if (process.env.NODE_ENV !== 'test') {
+      if (!value.DATABASE_URL && !value.DB_HOST && !process.env.PGHOST) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['AZURE_STORAGE_URL'],
-          message: 'AZURE_STORAGE_URL must match AZURE_STORAGE_ACCOUNT_NAME',
+          path: ['DB_HOST'],
+          message: 'Either DATABASE_URL or DB_HOST (PGHOST) is required to connect to PostgreSQL / Supabase',
         });
       }
     }
 
-    if (value.AZURE_STORAGE_CONNECTION_STRING) {
-      const accountName = /(?:^|;)AccountName=([^;]+)/i.exec(value.AZURE_STORAGE_CONNECTION_STRING)?.[1]?.trim();
-      if (accountName && value.AZURE_STORAGE_ACCOUNT_NAME && accountName.toLowerCase() !== value.AZURE_STORAGE_ACCOUNT_NAME.toLowerCase()) {
+    // Storage requirement check
+    if (value.STORAGE_PROVIDER === 'supabase') {
+      if (!value.SUPABASE_URL) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['AZURE_STORAGE_CONNECTION_STRING'],
-          message: 'connection-string AccountName must match AZURE_STORAGE_ACCOUNT_NAME',
+          path: ['SUPABASE_URL'],
+          message: 'SUPABASE_URL is required when STORAGE_PROVIDER=supabase',
+        });
+      }
+      if (!value.SUPABASE_SERVICE_ROLE_KEY) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['SUPABASE_SERVICE_ROLE_KEY'],
+          message: 'SUPABASE_SERVICE_ROLE_KEY is required when STORAGE_PROVIDER=supabase',
         });
       }
     }
@@ -172,7 +105,6 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
-/** Exported so the storage drift guard can be unit tested without booting. */
 export const storageEnvSchema = envSchema;
 
 function loadEnv(): Env {

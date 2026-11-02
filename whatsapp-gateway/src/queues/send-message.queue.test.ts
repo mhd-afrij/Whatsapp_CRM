@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Job } from 'bullmq';
+import type { Job } from './connection';
 
-vi.mock('bullmq', () => ({
+vi.mock('./connection', () => ({
   Queue: vi.fn().mockImplementation(function FakeQueue() {
     return { add: vi.fn(), close: vi.fn() };
   }),
   Worker: vi.fn().mockImplementation(function FakeWorker() {
     return { on: vi.fn(), run: vi.fn(), close: vi.fn() };
   }),
+  getQueueConnectionOptions: vi.fn().mockReturnValue({}),
 }));
 
 const {
