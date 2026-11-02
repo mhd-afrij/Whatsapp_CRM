@@ -3,7 +3,7 @@
 # postgres-backup.sh (a gzip-compressed .sql.gz file).
 #
 # Usage:
-#   ./infrastructure/scripts/postgres-restore.sh <path-to-dump.sql.gz> [target-db-name]
+#   ./scripts/postgres-restore.sh <path-to-dump.sql.gz> [target-db-name]
 #
 # Reads the same DB_HOST/DB_PORT/DB_USERNAME/DB_PASSWORD env vars as
 # postgres-backup.sh.
@@ -39,4 +39,3 @@ gunzip -c "${DUMP_FILE}" | PGPASSWORD="${DB_PASSWORD}" "${PSQL_BIN}" \
   --dbname="${TARGET_DB}"
 
 echo "Restore of '${DUMP_FILE}' into '${TARGET_DB}' completed successfully."
-

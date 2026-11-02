@@ -2,7 +2,7 @@
 # PostgreSQL backup for the CRM-WhatsApp database (Supabase PostgreSQL).
 #
 # Usage:
-#   ./infrastructure/scripts/postgres-backup.sh [output-dir]
+#   ./scripts/postgres-backup.sh [output-dir]
 #
 # Reads connection info from environment variables:
 #   DB_HOST      (default: 127.0.0.1)
@@ -24,7 +24,7 @@ DB_DATABASE="${DB_DATABASE:-postgres}"
 DB_USERNAME="${DB_USERNAME:-postgres}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 
-OUTPUT_DIR="${1:-$(dirname "$0")/../../storage/backups}"
+OUTPUT_DIR="${1:-$(dirname "$0")/../backend/storage/backups}"
 mkdir -p "$OUTPUT_DIR"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
@@ -54,4 +54,3 @@ if [ "${SIZE_BYTES}" -eq 0 ]; then
 fi
 
 echo "Backup completed successfully (${SIZE_BYTES} bytes): ${DUMP_FILE}"
-

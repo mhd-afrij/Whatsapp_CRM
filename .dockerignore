@@ -24,3 +24,4 @@
 !**/storage/framework/sessions/.gitignore
 **/storage/framework/views/*
 !**/storage/framework/views/.gitignore
+
