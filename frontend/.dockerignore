@@ -1,8 +1,20 @@
+# Keep runtime secrets and environment files out of the image
+.env
+.env.*
+!.env.example
+
+# Local dependencies and build artifacts
 node_modules
 .next
-.git
-.github
+dist
 coverage
 test-results
 playwright-report
 *.tsbuildinfo
+*.log
+
+# Version control and IDE files
+.git
+.github
+.idea
+.vscode
