@@ -33,24 +33,47 @@ return new class extends Migration
         });
 
         // Backfill: link existing conversations to the workspace's active connection.
-        DB::statement("
-            UPDATE conversations c
-            INNER JOIN (
-                SELECT workspace_id, id AS whatsapp_account_id
-                FROM whatsapp_connections
-                WHERE is_active = 1
-            ) wa ON wa.workspace_id = c.workspace_id
-            SET c.whatsapp_account_id = wa.whatsapp_account_id
-            WHERE c.whatsapp_account_id IS NULL
-        ");
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement("
+                UPDATE conversations c
+                SET whatsapp_account_id = wa.whatsapp_account_id
+                FROM (
+                    SELECT workspace_id, id AS whatsapp_account_id
+                    FROM whatsapp_connections
+                    WHERE is_active = true
+                ) wa
+                WHERE wa.workspace_id = c.workspace_id
+                  AND c.whatsapp_account_id IS NULL
+            ");
 
-        // Backfill: link existing messages via their conversation's account.
-        DB::statement("
-            UPDATE messages m
-            INNER JOIN conversations c ON c.id = m.conversation_id
-            SET m.whatsapp_account_id = c.whatsapp_account_id
-            WHERE m.whatsapp_account_id IS NULL AND c.whatsapp_account_id IS NOT NULL
-        ");
+            DB::statement("
+                UPDATE messages m
+                SET whatsapp_account_id = c.whatsapp_account_id
+                FROM conversations c
+                WHERE c.id = m.conversation_id
+                  AND m.whatsapp_account_id IS NULL
+                  AND c.whatsapp_account_id IS NOT NULL
+            ");
+        } else {
+            DB::statement("
+                UPDATE conversations c
+                INNER JOIN (
+                    SELECT workspace_id, id AS whatsapp_account_id
+                    FROM whatsapp_connections
+                    WHERE is_active = 1
+                ) wa ON wa.workspace_id = c.workspace_id
+                SET c.whatsapp_account_id = wa.whatsapp_account_id
+                WHERE c.whatsapp_account_id IS NULL
+            ");
+
+            // Backfill: link existing messages via their conversation's account.
+            DB::statement("
+                UPDATE messages m
+                INNER JOIN conversations c ON c.id = m.conversation_id
+                SET m.whatsapp_account_id = c.whatsapp_account_id
+                WHERE m.whatsapp_account_id IS NULL AND c.whatsapp_account_id IS NOT NULL
+            ");
+        }
     }
 
     public function down(): void

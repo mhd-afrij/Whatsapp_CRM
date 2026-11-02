@@ -49,16 +49,30 @@ return new class extends Migration
         });
 
         // Backfill: link existing leases to the workspace's active connection.
-        DB::statement("
-            UPDATE workspace_sync_assignments wsa
-            INNER JOIN (
-                SELECT workspace_id, id AS whatsapp_account_id
-                FROM whatsapp_connections
-                WHERE is_active = 1
-            ) wa ON wa.workspace_id = wsa.workspace_id
-            SET wsa.whatsapp_account_id = wa.whatsapp_account_id
-            WHERE wsa.whatsapp_account_id IS NULL
-        ");
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement("
+                UPDATE workspace_sync_assignments wsa
+                SET whatsapp_account_id = wa.whatsapp_account_id
+                FROM (
+                    SELECT workspace_id, id AS whatsapp_account_id
+                    FROM whatsapp_connections
+                    WHERE is_active = true
+                ) wa
+                WHERE wa.workspace_id = wsa.workspace_id
+                  AND wsa.whatsapp_account_id IS NULL
+            ");
+        } else {
+            DB::statement("
+                UPDATE workspace_sync_assignments wsa
+                INNER JOIN (
+                    SELECT workspace_id, id AS whatsapp_account_id
+                    FROM whatsapp_connections
+                    WHERE is_active = 1
+                ) wa ON wa.workspace_id = wsa.workspace_id
+                SET wsa.whatsapp_account_id = wa.whatsapp_account_id
+                WHERE wsa.whatsapp_account_id IS NULL
+            ");
+        }
     }
 
     public function down(): void

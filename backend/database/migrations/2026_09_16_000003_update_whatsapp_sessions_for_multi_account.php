@@ -40,32 +40,62 @@ return new class extends Migration
         });
 
         // Backfill: link existing sessions to the workspace's active connection.
-        DB::statement("
-            UPDATE whatsapp_sessions ws
-            INNER JOIN (
-                SELECT workspace_id, id AS whatsapp_account_id
-                FROM whatsapp_connections
-                WHERE is_active = 1
-            ) wa ON wa.workspace_id = ws.workspace_id
-            SET ws.whatsapp_account_id = wa.whatsapp_account_id
-            WHERE ws.whatsapp_account_id IS NULL
-        ");
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement("
+                UPDATE whatsapp_sessions ws
+                SET whatsapp_account_id = wa.whatsapp_account_id
+                FROM (
+                    SELECT workspace_id, id AS whatsapp_account_id
+                    FROM whatsapp_connections
+                    WHERE is_active = true
+                ) wa
+                WHERE wa.workspace_id = ws.workspace_id
+                  AND ws.whatsapp_account_id IS NULL
+            ");
 
-        // Backfill credentials.
-        DB::statement("
-            UPDATE whatsapp_session_credentials wsc
-            INNER JOIN whatsapp_sessions ws ON ws.id = wsc.whatsapp_session_id
-            SET wsc.whatsapp_account_id = ws.whatsapp_account_id
-            WHERE wsc.whatsapp_account_id IS NULL AND ws.whatsapp_account_id IS NOT NULL
-        ");
+            DB::statement("
+                UPDATE whatsapp_session_credentials wsc
+                SET whatsapp_account_id = ws.whatsapp_account_id
+                FROM whatsapp_sessions ws
+                WHERE ws.id = wsc.whatsapp_session_id
+                  AND wsc.whatsapp_account_id IS NULL AND ws.whatsapp_account_id IS NOT NULL
+            ");
 
-        // Backfill connection events.
-        DB::statement("
-            UPDATE whatsapp_connection_events wce
-            INNER JOIN whatsapp_sessions ws ON ws.id = wce.whatsapp_session_id
-            SET wce.whatsapp_account_id = ws.whatsapp_account_id
-            WHERE wce.whatsapp_account_id IS NULL AND ws.whatsapp_account_id IS NOT NULL
-        ");
+            DB::statement("
+                UPDATE whatsapp_connection_events wce
+                SET whatsapp_account_id = ws.whatsapp_account_id
+                FROM whatsapp_sessions ws
+                WHERE ws.id = wce.whatsapp_session_id
+                  AND wce.whatsapp_account_id IS NULL AND ws.whatsapp_account_id IS NOT NULL
+            ");
+        } else {
+            DB::statement("
+                UPDATE whatsapp_sessions ws
+                INNER JOIN (
+                    SELECT workspace_id, id AS whatsapp_account_id
+                    FROM whatsapp_connections
+                    WHERE is_active = 1
+                ) wa ON wa.workspace_id = ws.workspace_id
+                SET ws.whatsapp_account_id = wa.whatsapp_account_id
+                WHERE ws.whatsapp_account_id IS NULL
+            ");
+
+            // Backfill credentials.
+            DB::statement("
+                UPDATE whatsapp_session_credentials wsc
+                INNER JOIN whatsapp_sessions ws ON ws.id = wsc.whatsapp_session_id
+                SET wsc.whatsapp_account_id = ws.whatsapp_account_id
+                WHERE wsc.whatsapp_account_id IS NULL AND ws.whatsapp_account_id IS NOT NULL
+            ");
+
+            // Backfill connection events.
+            DB::statement("
+                UPDATE whatsapp_connection_events wce
+                INNER JOIN whatsapp_sessions ws ON ws.id = wce.whatsapp_session_id
+                SET wce.whatsapp_account_id = ws.whatsapp_account_id
+                WHERE wce.whatsapp_account_id IS NULL AND ws.whatsapp_account_id IS NOT NULL
+            ");
+        }
     }
 
     public function down(): void
